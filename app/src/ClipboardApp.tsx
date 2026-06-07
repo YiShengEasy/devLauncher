@@ -3,11 +3,15 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { ClipboardPanel } from "@/components/ClipboardPanel";
+import { applyThemeFromConfig } from "@/api/theme";
 import type { ClipboardEntry } from "@/types/actions";
 
 export function ClipboardApp() {
   const [items, setItems] = useState<ClipboardEntry[]>([]);
   const [favorites, setFavorites] = useState<ClipboardEntry[]>([]);
+
+  // Apply theme on mount
+  useEffect(() => { applyThemeFromConfig(); }, []);
 
   const refresh = useCallback(async () => {
     try {

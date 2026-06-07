@@ -103,7 +103,7 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
         }}>
           {action.type}
         </span>
-        <div style={{ pointerEvents: "none" }}>
+        <div style={{ pointerEvents: "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <ActionIcon action={action} size={32} />
         </div>
         <span style={{

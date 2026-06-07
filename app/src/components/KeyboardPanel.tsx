@@ -11,11 +11,13 @@ interface KeyboardPanelProps {
   onKeyBind?: (keyId: KeyId) => void;
 }
 
-// Row left-padding to mimic keyboard stagger (px)
-const ROW_PADDING = [0, 0, 18, 28];
+// Row left-padding to mimic real keyboard stagger (px)
+// Unit = KEY_SIZE + KEY_GAP = 75px
+// Q: +0.50u, A: +0.75u, Z: +1.25u from number row
+const ROW_PADDING = [0, 38, 57, 95];
 
 const KEY_SIZE = 68;
-const KEY_GAP = 7;
+const KEY_GAP = 6;
 
 export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProps) {
   const [dragKey, setDragKey] = useState<KeyId | null>(null);
