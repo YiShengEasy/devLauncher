@@ -86,6 +86,10 @@ pages:
 cd app
 npm install
 npm run tauri dev      # 启动开发服务器（首次编译 ~2min）
+npm run tauri build
+app\src-tauri\target\release\bundle\
+├── nsis\DevLauncher_0.2.0_x64-setup.exe   ← 安装包（推荐发给别人）
+└── msi\DevLauncher_0.2.0_x64_en-US.msi    ← MSI 安装包
 ```
 
 **TypeScript 检查：**

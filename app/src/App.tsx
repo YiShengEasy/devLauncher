@@ -51,25 +51,7 @@ export default function App() {
   const [tabMenu, setTabMenu] = useState<{ index: number; x: number; y: number } | null>(null);
   const tabMenuRef = useRef<HTMLDivElement>(null);
 
-  // Load config on mount
-  useEffect(() => {
-    async function init() {
-      setLoading(true);
-      try {
-        const cfg = await loadConfig();
-        setConfig(cfg);
-        // Extract app icons in background
-        extractAllAppIcons(cfg);
-      } catch (e) {
-        setError(String(e));
-      } finally {
-        setLoading(false);
-      }
-    }
-    init();
-  }, []);
-
-  // Extract app icons from .exe files
+  // Extract app icons from .exe files — defined BEFORE the effects that call it
   const extractAllAppIcons = useCallback(async (cfg: KeyboardConfig) => {
     const paths = new Set<string>();
     for (const page of cfg.pages) {
@@ -86,10 +68,38 @@ export default function App() {
         targets: Array.from(paths),
       });
       useKeyboardStore.getState().setAppIcons(icons);
-    } catch {
-      // Silently fail - will fall back to letter avatars
+    } catch (e) {
+      console.error("[DevLauncher] extract_app_icons failed:", e);
     }
   }, []);
+
+  // Load config on mount
+  useEffect(() => {
+    async function init() {
+      setLoading(true);
+      try {
+        const cfg = await loadConfig();
+        setConfig(cfg);
+        // Extract app icons in background
+        // Note: also triggered by config-watcher effect below
+        extractAllAppIcons(cfg);
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setLoading(false);
+      }
+    }
+    init();
+  }, []);
+
+  // Re-extract app icons whenever config changes (handles cases where
+  // initial extraction ran before icons were available or failed silently)
+  useEffect(() => {
+    if (!config) return;
+    extractAllAppIcons(config);
+  }, [config]);
+
+  // Extract app icons from .exe files — MOVED above, before first useEffect
 
   // Execute action on key click
   const handleKeyClick = useCallback(async (keyId: KeyId) => {

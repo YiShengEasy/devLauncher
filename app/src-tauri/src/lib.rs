@@ -704,9 +704,14 @@ fn extract_app_icons(
             result.insert(target.clone(), cached.clone());
             continue;
         }
-        if let Some(icon_b64) = extract_icon_from_exe(&target) {
-            cache.insert(target.clone(), icon_b64.clone());
-            result.insert(target, icon_b64);
+        match extract_icon_from_exe(&target) {
+            Some(icon_b64) => {
+                cache.insert(target.clone(), icon_b64.clone());
+                result.insert(target, icon_b64);
+            }
+            None => {
+                eprintln!("[DevLauncher] icon extraction failed for: {}", target);
+            }
         }
     }
     result
@@ -813,6 +818,12 @@ fn extract_icon_from_exe(exe_path: &str) -> Option<String> {
 unsafe fn hicon_to_png(hicon: isize) -> Option<String> {
     let mut icon_info: win32_ffi::IconInfo = std::mem::zeroed();
     if win32_ffi::GetIconInfo(hicon, &mut icon_info) == 0 {
+        return None;
+    }
+
+    // Guard: hbm_color can be 0 for monochrome icons
+    if icon_info.hbm_color == 0 {
+        if icon_info.hbm_mask != 0 { win32_ffi::DeleteObject(icon_info.hbm_mask); }
         return None;
     }
 
