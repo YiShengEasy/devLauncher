@@ -13,25 +13,25 @@ This skill provides coding standards and guidelines for the DevLauncher project,
 
 ```
 dev-launcher/
-������ app/                          # Tauri application root
-��   ������ src/                      # React frontend
-��   ��   ������ main.tsx              # Entry point, no StrictMode
-��   ��   ������ App.tsx               # Main component: global shortcuts, Tab switching, modal control
-��   ��   ������ types/actions.ts      # �� All Action type definitions (single source of truth)
-��   ��   ������ store/useKeyboardStore.ts  # Zustand store (includes showClipboard)
-��   ��   ������ api/config.ts         # load/save config (Rust ↔ frontend format conversion)
-��   ��   ������ components/
-��   ��   ��   ������ KeyCell.tsx       # Single key rendering (68px)
-��   ��   ��   ������ KeyboardPanel.tsx # Keyboard layout (4 rows)
-��   ��   ��   ������ ActionIcon.tsx    # Type icons (SVG)
-��   ��   ��   ������ BindingModal.tsx  # Binding modal (all ActionType tabs)
-��   ��   ��   ������ ClipboardPanel.tsx # Built-in clipboard history panel
-��   ��   ������ index.css             # glass styles, transparent background
-��   ������ src-tauri/
-��       ������ src/lib.rs            # �� Rust commands, tray, clipboard polling
-��       ������ Cargo.toml            # Dependencies: tauri/dialog/global-shortcut/arboard
-��       ������ tauri.conf.json       # Window: 860��480, transparent, decorations:false
-��       ������ capabilities/default.json  # Permission whitelist
+├── app/                          # Tauri application root
+│   ├── src/                      # React frontend
+│   │   ├── main.tsx              # Entry point, no StrictMode
+│   │   ├── App.tsx               # Main component: global shortcuts, Tab switching, modal control
+│   │   ├── types/actions.ts      # ↔ All Action type definitions (single source of truth)
+│   │   ├── store/useKeyboardStore.ts  # Zustand store (includes showClipboard)
+│   │   ├── api/config.ts         # load/save config (Rust ↔ frontend format conversion)
+│   │   ├── components/
+│   │   │   ├── KeyCell.tsx       # Single key rendering (68px)
+│   │   │   ├── KeyboardPanel.tsx # Keyboard layout (4 rows)
+│   │   │   ├── ActionIcon.tsx    # Type icons (SVG)
+│   │   │   ├── BindingModal.tsx  # Binding modal (all ActionType tabs)
+│   │   │   └── ClipboardPanel.tsx # Built-in clipboard history panel
+│   │   └── index.css             # glass styles, transparent background
+│   └── src-tauri/
+│       ├── src/lib.rs            # ★ Rust commands, tray, clipboard polling
+│       ├── Cargo.toml            # Dependencies: tauri/dialog/global-shortcut/arboard
+│       ├── tauri.conf.json       # Window: 860×480, transparent, decorations:false
+│       └── capabilities/default.json  # Permission whitelist
 ```
 
 ## Adding New Action Types
@@ -40,20 +40,20 @@ To add a new action type, modify files in order:
 
 ### 1. `src/types/actions.ts`
 
+✅ Extend union type
 ```typescript
-// 1. Extend union type
 export type ActionType = "app" | "folder" | ... | "your-new-type";
 
-// 2. Define interface (extend ActionBase)
+// ✅ Define interface (extend ActionBase)
 export interface MyAction extends ActionBase {
   type: "your-new-type";
   // ...fields
 }
 
-// 3. Add to Action union
+// ✅ Add to Action union
 export type Action = AppAction | ... | MyAction;
 
-// 4. Add to ACTION_TYPE_META (color required)
+// ✅ Add to ACTION_TYPE_META (color required)
 export const ACTION_TYPE_META: Record<ActionType, { label: string; color: string; bg: string }> = {
   // ...
   "your-new-type": { label: "Display Name", color: "#hex", bg: "rgba(...)" },
@@ -62,25 +62,25 @@ export const ACTION_TYPE_META: Record<ActionType, { label: string; color: string
 
 ### 2. `src/components/ActionIcon.tsx`
 
-- Add new SVG icon function `IconXxx()`
-- Add to `TYPE_ICONS` mapping
-- If special rendering needed, add `if (action.type === "xxx")` branch in ActionIcon component
+- ✅ Add new SVG icon function `IconXxx()`
+- ✅ Add to `TYPE_ICONS` mapping
+- ✅ If special rendering needed, add `if (action.type === "xxx")` branch in ActionIcon component
 - Note: system/builtin use centered SVG rendering; other types use letter avatars
 
 ### 3. `src/components/BindingModal.tsx`
 
-- Add new type to `TABS` array
-- Add corresponding fields in `useState`
-- Add case in `handleSave` switch
-- Add corresponding JSX in form area (conditional render `activeType === "xxx"`)
+- ✅ Add new type to `TABS` array
+- ✅ Add corresponding fields in `useState`
+- ✅ Add case in `handleSave` switch
+- ✅ Add corresponding JSX in form area (conditional render `activeType === "xxx"`)
 
 ### 4. `src-tauri/src/lib.rs`
 
+✅ Add new variant to Action enum (note serde field names match frontend)
 ```rust
-// 1. Add new variant to Action enum (note serde field names match frontend)
 MyType { name: String, field: String },
 
-// 2. Add match arm in execute_action
+// ✅ Add match arm in execute_action
 "mytype" => { /* execution logic */ }
 ```
 
@@ -108,7 +108,7 @@ Minimal modification path:
 | `types/actions.ts` | `KEY_ROWS` defines key distribution (changes here affect globally) |
 
 **Key constraints:**
-- Window fixed at 860��480, keyboard area must not exceed
+- Window fixed at 860↔480, keyboard area must not exceed
 - Use `ACTION_TYPE_META[type].bg` / `.color` for colors, do not hardcode
 - Bound keys: colored background + letter avatar + type abbreviation top-right + key ID top-left
 
@@ -143,9 +143,9 @@ const state = useKeyboardStore.getState();
 let cancelled = false;
 const setup = async () => {
   await unregisterAll();
-  if (cancelled) return;         // �� Must check
+  if (cancelled) return;         // ←→ Must check
   for (const [...]) {
-    if (cancelled) break;        // �� Also check inside loop
+    if (cancelled) break;        // ←→ Also check inside loop
     // ...
   }
 };
@@ -154,9 +154,9 @@ return () => { cancelled = true; unregisterAll().catch(()=>{}); };
 
 **Builtin action callback writing (order matters):**
 ```typescript
-// �� Set state first (synchronous)
+// ① Set state first (synchronous)
 useKeyboardStore.getState().setShowClipboard(true);
-// �� Then operate window (fire-and-forget)
+// ② Then operate window (fire-and-forget)
 win.show().catch(() => {});
 win.setFocus().catch(() => {});
 ```
@@ -197,7 +197,7 @@ pub struct MyState { pub data: Arc<Mutex<Vec<String>>> }
 **YAML structure (Rust serialization format, flat keys):**
 ```yaml
 pages:
-- name: ����
+- name: ↔↔
   keys:
     Q:
       type: app
@@ -205,13 +205,13 @@ pages:
       target: "C:\\Program Files\\Microsoft VS Code\\Code.exe"
     B:
       type: builtin
-      name: ���а���ʷ
+      name: ↔↔
       feature: clipboard
 ```
 
 **Frontend format (after loadConfig conversion):**
 ```typescript
-{ pages: [{ name: "����", keys: { Q: { action: { type: "app", ... } } } }] }
+{ pages: [{ name: "↔↔", keys: { Q: { action: { type: "app", ... } } } }] }
 // keys have an additional { action: ... } wrapper
 ```
 
@@ -232,10 +232,10 @@ npx tsc --noEmit      # TypeScript type checking
 ### Architecture
 
 - **CSS variables** (written to `document.documentElement` by `useEffect` in `App.tsx`):
-  - `--theme-bg` �� `hexToRgba(bgColor, bgOpacity)`
-  - `--theme-blur` �� `${blurRadius}px`
-  - `--theme-border` �� `borderColor`
-  - `--theme-bg-solid` �� `bgColor` (solid color, no transparency)
+  - `--theme-bg` ↔ `hexToRgba(bgColor, bgOpacity)`
+  - `--theme-blur` ↔ `${blurRadius}px`
+  - `--theme-border` ↔ `borderColor`
+  - `--theme-bg-solid` ↔ `bgColor` (solid color, no transparency)
 - **`.glass` CSS class** (`index.css`) consumes above variables, includes fallback defaults
 - **Built-in feature windows** (ClipboardApp, JsonHelperApp, TotpApp) call `applyThemeFromConfig()` (`src/api/theme.ts`) on `useEffect` mount, independently load config and write CSS variables
 
@@ -287,7 +287,7 @@ Project UI is currently primarily in **Chinese**, but architecture should be pre
 1. **Do not inline UI text in logic**, centralize in component top constants or separate objects for easy future replacement with i18n keys:
    ```typescript
    // ✅
-   const LABELS = { save: "����", cancel: "ȡ��" };
+   const LABELS = { save: "保存", cancel: "取消" };
    // ❌ Scattered string literals
    ```
 
