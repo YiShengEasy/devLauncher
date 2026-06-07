@@ -1,0 +1,317 @@
+# DevLauncher AI Coding Skill
+
+## 项目概述
+
+DevLauncher 是一个基于 Tauri 2 + React 19 的桌面效率启动器，用户通过快捷键（Alt+Space）呼出虚拟键盘面板，按键上绑定不同动作实现快速操作。
+
+核心抽象：**Action**（统一动作） → **Page**（键盘页面） → **Key**（键位）
+
+---
+
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 桌面框架 | Tauri 2 |
+| 前端 | React 19 + TypeScript |
+| 状态管理 | Zustand |
+| UI组件 | shadcn/ui |
+| 拖拽 | dnd-kit |
+| 配置存储 | YAML（无数据库） |
+| 样式 | Tailwind CSS（毛玻璃深色主题） |
+
+---
+
+## 多窗口架构（重要）
+
+DevLauncher 使用 Tauri 2 多窗口架构，每个内置功能面板是独立窗口：
+
+| 窗口 | label | 入口 | 独立快捷键 | 特性 |
+|------|-------|------|-----------|------|
+| 主键盘 | `main` | `index.html` | Alt+Space | 键盘面板，绑定操作 |
+| 剪贴板 | `clipboard` | `index.html?view=clipboard` | Ctrl+Shift+V | 始终置顶，独立唤起/隐藏 |
+
+### 多窗口开发规则
+
+1. **窗口间不共享 React 状态**，每个窗口是独立 React 应用，通过 `invoke()` 与 Rust 通信
+2. **`main.tsx` 根据 URL 参数路由**：`?view=clipboard` → `ClipboardApp`，否则 → `App`
+3. **内置面板窗口配置**：`decorations:false`、`transparent:true`、`alwaysOnTop:true`、`visible:false`（初始隐藏）
+4. **面板窗口不关闭，只隐藏**：Esc → `window.hide()`，Rust 侧用 `toggle_clipboard_window` 命令切换
+5. **面板刷新机制**：Rust 通过 `app.emit_to("clipboard", "clipboard-refresh", ())` 通知窗口刷新数据
+6. **剪贴板窗口独立于主窗口**：可以在主窗口隐藏时独立唤起
+
+---
+
+## 项目结构（必须遵循）
+
+```
+app/
+├── src/
+│   ├── main.tsx              # 入口，按 URL 参数路由到 App 或 ClipboardApp
+│   ├── App.tsx               # 主窗口：全局快捷键、Tab切换、模态控制
+│   ├── ClipboardApp.tsx      # 剪贴板窗口：独立悬浮窗
+│   ├── types/actions.ts      # ★ Action 类型 + ClipboardEntry 类型（唯一真相来源）
+│   ├── store/useKeyboardStore.ts  # Zustand store（仅主窗口状态）
+│   ├── api/config.ts         # load/save config（Rust ↔ 前端格式转换）
+│   ├── components/
+│   │   ├── KeyCell.tsx       # 单键渲染（68px）
+│   │   ├── KeyboardPanel.tsx # 键盘布局（4行）
+│   │   ├── ActionIcon.tsx    # 类型图标（SVG）
+│   │   ├── BindingModal.tsx  # 绑定弹窗
+│   │   └── ClipboardPanel.tsx # 剪贴板 UI 组件（文字+图片，被 ClipboardApp 使用）
+│   └── index.css             # glass 样式
+└── src-tauri/
+    ├── src/lib.rs            # ★ Rust 命令、托盘、剪贴板轮询（文字+图片）
+    ├── Cargo.toml            # 依赖：tauri/dialog/global-shortcut/arboard/base64/image
+    ├── tauri.conf.json       # 多窗口配置（main + clipboard）
+    └── capabilities/default.json  # 权限白名单（覆盖所有窗口）
+```
+
+---
+
+## V1 Action 类型清单
+
+| type | 名称 | 字段 |
+|------|------|------|
+| `app` | 启动应用 | name, target |
+| `folder` | 打开文件夹 | name, target |
+| `file` | 打开文件 | name, target |
+| `url` | 打开网址 | name, target |
+| `ssh` | SSH连接 | name, host, user |
+| `script` | 执行脚本 | name, target, shell? |
+| `builtin` | 内置功能 | name, feature |
+
+### ClipboardEntry 类型（剪贴板条目）
+
+```typescript
+type ClipboardEntry =
+  | { kind: "text"; content: string }
+  | { kind: "image"; data: string; width: number; height: number }
+// data 为 base64 JPEG 编码
+```
+
+Rust 侧对应：
+```rust
+enum ClipboardEntry {
+    Text { content: String },
+    Image { data: String, width: u32, height: u32 },
+}
+```
+
+---
+
+## Rust 命令清单
+
+| 命令 | 说明 |
+|------|------|
+| `load_config` / `save_config` / `get_config_path` | 配置读写 |
+| `execute_action` | 执行所有 ActionType |
+| `get_clipboard_history` | 返回 `Vec<ClipboardEntry>`（文字+图片混合） |
+| `set_clipboard_text` | 复制文字到系统剪贴板 |
+| `set_clipboard_image` | 复制图片（base64 JPEG）到系统剪贴板 |
+| `clear_clipboard_history` | 清空历史 |
+| `toggle_clipboard_window` | 切换剪贴板窗口可见性 + 发送 refresh 事件 |
+
+### 剪贴板图片处理
+
+- 轮询间隔 600ms，同时检测文字和图片
+- 图片自动缩放：超过 1920px 宽度等比缩放
+- 编码为 JPEG（85%质量）→ base64
+- 过滤小于 16×16 的图片（图标等）
+- 图片指纹：宽高 + 前 64 字节，用于去重
+- 历史上限：30 条（含图片），图片独立去重
+
+---
+
+## 新增 Action 类型（必须按顺序改4个文件）
+
+1. **`src/types/actions.ts`** — 扩展 ActionType 联合类型 → 定义 interface extends ActionBase → 加入 Action 联合 → 加入 ACTION_TYPE_META（必须含 color + bg）
+2. **`src/components/ActionIcon.tsx`** — 新增 SVG 图标函数 → 加入 TYPE_ICONS 映射 → system/builtin 走 SVG 居中渲染，其他走字母头像
+3. **`src/components/BindingModal.tsx`** — TABS 数组加新类型 → useState 加字段 → handleSave switch 加 case → 表单 JSX 条件渲染
+4. **`src-tauri/src/lib.rs`** — Action enum 加变体（serde 字段名与前端一致） → execute_action match 加处理
+
+---
+
+## 新增内置功能（builtin feature）最小路径
+
+1. **`src/types/actions.ts`** — BuiltinFeature 联合类型加新值，BUILTIN_FEATURES 记录加元数据
+2. **`src/components/BindingModal.tsx`** — builtin tab grid 自动渲染（无需改）
+3. **`src/App.tsx`** — handleKeyClick 和全局快捷键回调加 `else if (b.feature === "xxx")` 分支，调用 `invoke("toggle_xxx_window")`
+4. **新建 `src/XxxApp.tsx`** — 独立窗口应用（参考 ClipboardApp.tsx）
+5. **`src/components/XxxPanel.tsx`** — UI 组件（参考 ClipboardPanel.tsx）
+6. **`src/main.tsx`** — 加 URL 参数路由：`?view=xxx` → `XxxApp`
+7. **`src-tauri/tauri.conf.json`** — 加新窗口定义（label、url、alwaysOnTop、visible:false）
+8. **`src-tauri/src/lib.rs`** — 加 `toggle_xxx_window` 命令 + emit_to 刷新事件
+9. **`src-tauri/capabilities/default.json`** — windows 数组加新 label
+
+需要 Rust 后台服务时：
+- lib.rs 新增 State struct + tauri::command
+- run() 的 .setup() 里 app.manage() 注册状态，spawn 后台线程
+- invoke_handler 注册新命令
+
+---
+
+## 键盘 UI 约束
+
+- 窗口固定 860×480，键盘区不可超出
+- KeyCell: KEY_SIZE=68px，bound/unbound 两套渲染
+- KeyboardPanel: 4行布局，stagger padding [0,0,18,28]px，gap 7px
+- KEY_ROWS 在 types/actions.ts 中定义（改这里影响全局）
+- Bound 键：彩色背景 + 字母头像 + 右上角类型缩写 + 左上角键位ID
+- 颜色必须使用 ACTION_TYPE_META[type].bg / .color，禁止硬编码
+
+---
+
+## Zustand Store 规范（仅主窗口）
+
+```typescript
+// React 组件内 —— 直接解构
+const { config, activePageIndex } = useKeyboardStore();
+
+// 异步回调 / 全局快捷键回调 / effect cleanup —— 用 getState()
+useKeyboardStore.getState().setActivePageIndex(0);
+
+// 需要最新值的 effect（避免闭包陷阱）
+const state = useKeyboardStore.getState();
+```
+
+**注意**：`showClipboard` 已从 store 移除，剪贴板由独立窗口管理，通过 `invoke("toggle_clipboard_window")` 控制。
+
+Store 字段：
+- config: KeyboardConfig | null
+- activePageIndex: number
+- addPage / renamePage / removePage（操作后调 persistConfig()）
+- bindKey / swapKeys
+
+---
+
+## 全局快捷键规范
+
+- 主窗口快捷键格式：Alt+KeyQ、Alt+Digit1（keyIdToShortcut 转换）
+- 剪贴板独立快捷键：Ctrl+Shift+V（在页面快捷键 effect 中一并注册）
+- 注册时机：config 或 activePageIndex 变化时 effect 重新注册
+- Ctrl+Shift+V 在每次重新注册时也会被重新注册
+
+防重复注册必须做：
+```typescript
+let cancelled = false;
+const setup = async () => {
+  await unregisterAll();
+  if (cancelled) return;
+  for (const [...]) {
+    if (cancelled) break;
+  }
+  // 注册 builtin 独立快捷键（如 Ctrl+Shift+V）
+};
+return () => { cancelled = true; unregisterAll().catch(()=>{}); };
+```
+
+Builtin action 回调（剪贴板）：
+```typescript
+// 直接调用 Rust 命令，不操作主窗口
+invoke("toggle_clipboard_window").catch(console.error);
+```
+
+---
+
+## Rust 命令规范
+
+```rust
+#[tauri::command]
+fn my_command(app: tauri::AppHandle, param: String) -> Result<ReturnType, String> {
+    // 错误用 map_err(|e| e.to_string()) 转 String
+}
+```
+
+注册：tauri::generate_handler![..., my_command]
+权限：capabilities/default.json 中 windows 数组须包含所有窗口 label
+
+**窗口操作命令模式**（参考 toggle_clipboard_window）：
+```rust
+#[tauri::command]
+fn toggle_xxx_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("xxx") {
+        if win.is_visible().unwrap_or(false) {
+            win.hide().map_err(|e| e.to_string())?;
+        } else {
+            win.show().map_err(|e| e.to_string())?;
+            win.set_focus().map_err(|e| e.to_string())?;
+            let _ = app.emit_to("xxx", "xxx-refresh", ());
+        }
+    }
+    Ok(())
+}
+```
+
+State 管理模式：
+```rust
+pub struct MyState { pub data: Arc<Mutex<Vec<String>>> }
+// setup() 里 app.manage(MyState { data: Arc::clone(&data) });
+// 命令里 state: tauri::State<'_, MyState>
+```
+
+---
+
+## 配置文件
+
+路径：C:\Users\{user}\AppData\Roaming\com.yisheng.app\keyboard.yaml
+
+YAML（Rust 序列化格式，扁平 keys）：
+```yaml
+pages:
+- name: 开发
+  keys:
+    Q:
+      type: app
+      name: VSCode
+      target: "C:\\Program Files\\Microsoft VS Code\\Code.exe"
+    B:
+      type: builtin
+      name: 剪切板历史
+      feature: clipboard
+```
+
+前端格式（loadConfig 转换后）：
+```typescript
+{ pages: [{ name: "开发", keys: { Q: { action: { type: "app", ... } } } }] }
+// keys 多一层 { action: ... } 包装
+```
+
+---
+
+## 开发命令
+
+```powershell
+cd D:\goworkspace\src\aidk\dev-launcher\app
+npm run tauri dev     # 启动开发服务器（首次 ~2min，热重载 ~13s）
+npx tsc --noEmit      # TypeScript 类型检查
+```
+
+- 修改 src-tauri/ 下文件 → 触发 Rust 重编
+- 修改 src/ 下前端文件 → 仅热重载
+
+---
+
+## 性能目标
+
+| 指标 | 目标 |
+|------|------|
+| 启动时间 | < 1s |
+| 快捷键呼出 | < 100ms |
+| 内存占用 | < 100MB |
+| 后台CPU | 接近 0% |
+
+---
+
+## 编码原则
+
+1. **types/actions.ts 是唯一真相来源**，所有类型定义必须在这里，其他文件只能引用
+2. **前后端字段名必须一致**，Rust serde 字段名 = TypeScript interface 字段名
+3. **颜色不许硬编码**，统一用 ACTION_TYPE_META
+4. **Store 异步场景用 getState()**，避免闭包陷阱
+5. **全局快捷键必须防重复注册**，cleanup 时 cancelled 标记 + unregisterAll
+6. **窗口操作 fire-and-forget**，.catch(() => {}) 吞掉错误
+7. **新增内置功能必须创建独立窗口**，不是主窗口内的 overlay
+8. **配置持久化走 persistConfig()**，不要绕过 store 直接写文件
+9. **剪贴板图片用 base64 JPEG**，前端用 `data:image/jpeg;base64,` 前缀展示
+10. **多窗口间通过 Rust emit_to 通信**，不共享 React 状态
