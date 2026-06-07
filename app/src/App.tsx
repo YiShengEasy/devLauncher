@@ -99,6 +99,14 @@ export default function App() {
     extractAllAppIcons(config);
   }, [config]);
 
+  // Inject theme as CSS custom properties so any panel can read them
+  useEffect(() => {
+    const r = document.documentElement.style;
+    r.setProperty("--theme-bg", hexToRgba(theme.bgColor, theme.bgOpacity));
+    r.setProperty("--theme-blur", `${theme.blurRadius}px`);
+    r.setProperty("--theme-border", theme.borderColor);
+    r.setProperty("--theme-bg-solid", theme.bgColor);
+  }, [theme]);
   // Extract app icons from .exe files — MOVED above, before first useEffect
 
   // Execute action on key click
@@ -518,7 +526,6 @@ export default function App() {
           style={{
             position: "fixed", inset: 0,
             zIndex: 1000,
-            background: "rgba(0,0,0,0.55)",
             display: "flex", alignItems: "center", justifyContent: "center",
             pointerEvents: "auto",
           }}
@@ -529,9 +536,10 @@ export default function App() {
             style={{
               width: 340, maxHeight: "90vh",
               borderRadius: 14,
-              background: "#1c1f33",
-              border: "1px solid rgba(255,255,255,0.10)",
-              boxShadow: "0 16px 64px rgba(0,0,0,0.5)",
+              background: hexToRgba(theme.bgColor, Math.min(theme.bgOpacity + 0.1, 1)),
+              backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
+              WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
+              border: `1px solid ${theme.borderColor}`,
               display: "flex", flexDirection: "column",
               overflow: "hidden",
               pointerEvents: "auto",

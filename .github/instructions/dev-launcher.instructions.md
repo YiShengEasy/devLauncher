@@ -237,3 +237,86 @@ npx tsc --noEmit      # TypeScript 类型检查
 **重编 Rust 触发条件：** 修改 `src-tauri/` 下任意文件（含 `Cargo.toml`、`lib.rs`、`tauri.conf.json`）
 
 **仅热重载（无需重编）：** 修改 `src/` 下前端文件
+
+---
+
+## 9. 主题系统规范
+
+### 架构
+
+- **CSS 变量**（由 `App.tsx` 的 `useEffect` 写入 `document.documentElement`）：
+  - `--theme-bg` → `hexToRgba(bgColor, bgOpacity)`
+  - `--theme-blur` → `${blurRadius}px`
+  - `--theme-border` → `borderColor`
+  - `--theme-bg-solid` → `bgColor`（纯色，无透明度）
+- **`.glass` CSS 类**（`index.css`）统一消费上述变量，含 fallback 默认值
+- **内置功能窗口**（ClipboardApp、JsonHelperApp、TotpApp）在 `useEffect` mount 时调用 `applyThemeFromConfig()`（`src/api/theme.ts`），独立加载配置并写入 CSS 变量
+
+### 新增组件/窗口时必须遵守
+
+1. **主窗口内的弹框**（BindingModal、SettingsPanel 等）：
+   - 背景/边框使用 CSS 变量：`var(--theme-bg)`、`var(--theme-blur)`、`var(--theme-border)`
+   - 提供 fallback：`var(--theme-bg, rgba(22,24,40,0.97))`
+   - 遮罩层**不加背景色**（透明遮罩）
+   
+2. **独立 Tauri 窗口**（新增 `XxxApp.tsx`）：
+   ```typescript
+   // 组件挂载时调用
+   useEffect(() => { applyThemeFromConfig(); }, []);
+   ```
+   - 面板根元素使用 `className="glass"` 而不是硬编码 `background`
+   
+3. **禁止**在新组件中硬编码 `rgba(22,24,40,...)` 或 `rgba(14,16,28,...)`，一律用 `.glass` 或 CSS 变量
+
+4. **SettingsPanel 修改主题**后，`App.tsx` 里的 `useEffect([theme])` 会自动刷新主窗口 CSS 变量；其他窗口只在打开时读取一次配置（够用，因为用户切换主题时其他窗口通常关闭着）
+
+### ThemeConfig 字段
+
+```typescript
+interface ThemeConfig {
+  bgColor: string;       // hex，如 "#10121f"
+  bgOpacity: number;     // 0-1
+  blurRadius: number;    // 0-60 px
+  borderColor: string;   // hex（含 alpha，如 "#ffffff1a"）
+  keyBgOpacity: number;  // 0-0.3，空键背景透明度
+}
+```
+
+---
+
+## 10. 国际化（i18n）规范
+
+### 当前状态
+
+项目 UI 目前以**中文**为主，但架构上应为双语（中/英）做好准备。
+
+### 文字规范
+
+1. **UI 标签、按钮、提示**：新增内容一律使用**中文**（当前产品语言），不要混用英文
+2. **代码注释**：可中英混用，关键逻辑建议用英文注释（方便未来国际化）
+3. **错误信息**（`Err(e.to_string())`、`console.error`）：可英文，用户不直接看到
+4. **Action 类型元数据**（`ACTION_TYPE_META.label`）、`BUILTIN_FEATURES.name`、`SYSTEM_PRESETS.name`：统一中文
+
+### 为国际化预留的实践
+
+1. **不要把 UI 文字内联在逻辑里**，尽量集中到组件顶部常量或单独的对象中，方便将来替换为 i18n key：
+   ```typescript
+   // ✅
+   const LABELS = { save: "保存", cancel: "取消" };
+   // ❌ 散落在各处的字符串字面量
+   ```
+
+2. **`ACTION_TYPE_META` 的 `label` 字段** 是 UI 标签的单一来源，新类型必须在此处定义中文名，不要在 BindingModal 里单独写
+
+3. **Rust 端错误提示**（`.ok_or("missing host")`）用英文，前端展示时若需本地化，在前端做翻译映射
+
+4. **日期/数字格式**：暂无需求，预留即可（不要用 `new Date().toLocaleString("en-US")`，用不带 locale 的 API）
+
+### 新增功能 i18n checklist
+
+- [ ] 新 ActionType 的 `label` 字段填中文
+- [ ] BindingModal 的 tab 名称和表单 label 用中文
+- [ ] 内置功能的 `BUILTIN_FEATURES` 条目填中英文 name/description
+- [ ] 系统预设 `SYSTEM_PRESETS.name` 填中文
+- [ ] Tauri 窗口 title（`tauri.conf.json`）填中文或 App 名称
+

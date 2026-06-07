@@ -1,0 +1,26 @@
+import { invoke } from "@tauri-apps/api/core";
+import { DEFAULT_THEME } from "@/types/actions";
+import type { ThemeConfig } from "@/types/actions";
+
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/** Load theme from config and apply as CSS custom properties on <html>. */
+export async function applyThemeFromConfig(): Promise<void> {
+  let theme: ThemeConfig = { ...DEFAULT_THEME };
+  try {
+    const raw = await invoke<{ theme?: ThemeConfig }>("load_config");
+    if (raw.theme) theme = raw.theme;
+  } catch {
+    // Use defaults if load fails
+  }
+  const r = document.documentElement.style;
+  r.setProperty("--theme-bg", hexToRgba(theme.bgColor, theme.bgOpacity));
+  r.setProperty("--theme-blur", `${theme.blurRadius}px`);
+  r.setProperty("--theme-border", theme.borderColor);
+  r.setProperty("--theme-bg-solid", theme.bgColor);
+}

@@ -71,6 +71,12 @@ pub enum Action {
         port: Option<u16>,
         #[serde(skip_serializing_if = "Option::is_none")]
         identity: Option<String>,
+        /// Password is stored in OS keychain, NOT here. This flag just marks that one exists.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        has_password: Option<bool>,
+        /// Preferred terminal for launching the SSH session.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        terminal: Option<String>,
     },
     Script {
         name: String,
@@ -325,6 +331,29 @@ fn get_config_path(app: tauri::AppHandle) -> String {
     config_path(&app).to_string_lossy().to_string()
 }
 
+// -----------------------------------------------
+// SSH password – stored in OS credential store (Windows Credential Manager)
+// Never written to the YAML config file.
+// -----------------------------------------------
+
+#[tauri::command]
+fn save_ssh_password(key: String, password: String) -> Result<(), String> {
+    let entry = keyring::Entry::new("DevLauncher", &key).map_err(|e| e.to_string())?;
+    entry.set_password(&password).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_ssh_password(key: String) -> Result<(), String> {
+    match keyring::Entry::new("DevLauncher", &key) {
+        Ok(entry) => {
+            // Ignore "not found" – deletion is best-effort
+            let _ = entry.delete_credential();
+            Ok(())
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 #[tauri::command]
 fn execute_action(action: serde_json::Value) -> Result<(), String> {
     let action_type = action["type"].as_str().unwrap_or("");
@@ -347,16 +376,162 @@ fn execute_action(action: serde_json::Value) -> Result<(), String> {
         "ssh" => {
             let host = action["host"].as_str().ok_or("missing host")?;
             let user = action["user"].as_str().ok_or("missing user")?;
+            let port = action["port"].as_u64().unwrap_or(22);
+            let terminal_pref = action["terminal"].as_str().unwrap_or("auto");
             let ssh_target = format!("{}@{}", user, host);
-            if std::process::Command::new("wt.exe")
-                .args(["ssh", &ssh_target])
-                .spawn()
-                .is_err()
-            {
+            let port_str = port.to_string();
+            let cred_key = format!("ssh:{}@{}:{}", user, host, port);
+
+            // Fetch stored password from OS credential store
+            let password: Option<String> = keyring::Entry::new("DevLauncher", &cred_key)
+                .ok()
+                .and_then(|e| e.get_password().ok());
+
+            // ── Helpers ─────────────────────────────────────────────────────────────
+
+            // Open an SSH session using Git Bash + expect (auto-fills password).
+            // Returns true if launched successfully.
+            let launch_gitbash_expect = |pwd: &str| -> bool {
+                // git-bash.exe is mintty (the actual terminal emulator), NOT headless bash.exe
+                let gitbash_candidates = [
+                    r"C:\Program Files\Git\git-bash.exe",
+                    r"C:\Program Files (x86)\Git\git-bash.exe",
+                ];
+                let gitbash = gitbash_candidates.iter().find(|p| std::path::Path::new(p).exists());
+                let Some(&gitbash_exe) = gitbash else { return false; };
+
+                // Escape password for embedding in a double-quoted string
+                let safe_pwd = pwd
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('$', "\\$")
+                    .replace('`', "\\`");
+                let port_opt = if port == 22 { String::new() } else { format!("-p {} ", port) };
+
+                // Write a temp expect script to avoid inline quoting complexity
+                let script_path = std::env::temp_dir()
+                    .join(format!("dl_ssh_{}.exp", std::process::id()));
+                // Convert Windows path to MSYS/POSIX path: C:\foo -> /c/foo
+                let win = script_path.to_string_lossy().to_string();
+                let msys_path = if win.len() >= 2 && win.as_bytes()[1] == b':' {
+                    let drive = win.chars().next().unwrap().to_ascii_lowercase();
+                    let rest = win[2..].replace('\\', "/");
+                    format!("/{}{}", drive, rest)
+                } else {
+                    win.replace('\\', "/")
+                };
+
+                let expect_script = format!(
+                    "#!/usr/bin/expect -f\nlog_user 1\nspawn ssh {port_opt}{ssh_target}\n\
+                     expect {{\n  \"yes/no\" {{ send \"yes\\r\"; exp_continue }}\n\
+                     \"password:*\" {{ send \"{safe_pwd}\\r\"; interact }}\n\
+                     timeout {{ interact }}\n}}\n"
+                );
+                if std::fs::write(&script_path, expect_script.as_bytes()).is_err() {
+                    return false;
+                }
+
+                // git-bash.exe -c "expect '/msys/path/script.exp'; exec bash"
+                // 'exec bash' keeps the mintty window open after expect exits
+                let bash_cmd = format!("expect '{}'; exec bash", msys_path);
+                std::process::Command::new(gitbash_exe)
+                    .args(["-c", &bash_cmd])
+                    .spawn().is_ok()
+            };
+
+            // Open SSH using plink -pw (PuTTY). Returns true if launched.
+            let launch_plink = |pwd: &str| -> bool {
+                let plink_candidates = [
+                    "plink",
+                    r"C:\Program Files\PuTTY\plink.exe",
+                    r"C:\Program Files (x86)\PuTTY\plink.exe",
+                ];
+                let plink = plink_candidates.iter().find(|&&p| {
+                    std::process::Command::new(p).arg("-V").output()
+                        .map(|o| !o.stdout.is_empty() || !o.stderr.is_empty())
+                        .unwrap_or(false)
+                });
+                let Some(&plink_exe) = plink else { return false; };
+
+                let plink_args_wt: Vec<&str> = vec!["--", plink_exe, "-ssh", "-pw", pwd, "-P", &port_str, &ssh_target];
+                let cmd_line = format!("{} -ssh -pw {} -P {} {}", plink_exe, pwd, port_str, ssh_target);
+                if std::process::Command::new("wt.exe").args(&plink_args_wt).spawn().is_ok() { return true; }
                 std::process::Command::new("cmd")
-                    .args(["/C", "start", "cmd", "/K", "ssh", &ssh_target])
-                    .spawn()
-                    .map_err(|e| e.to_string())?;
+                    .args(["/C", "start", "cmd", "/K", &cmd_line])
+                    .spawn().is_ok()
+            };
+
+            // Plain SSH (no auto password) using the given terminal preference.
+            let launch_plain = || -> Result<(), String> {
+                let ssh_args_base: Vec<String> = if port == 22 {
+                    vec![ssh_target.clone()]
+                } else {
+                    vec!["-p".to_string(), port_str.clone(), ssh_target.clone()]
+                };
+                let ssh_args: Vec<&str> = ssh_args_base.iter().map(|s| s.as_str()).collect();
+
+                match terminal_pref {
+                    "wt" => {
+                        let mut a = vec!["ssh"];
+                        a.extend(&ssh_args);
+                        std::process::Command::new("wt.exe").args(&a).spawn().map_err(|e| e.to_string())?;
+                    }
+                    "cmd" => {
+                        let mut a = vec!["/C", "start", "cmd", "/K", "ssh"];
+                        a.extend(&ssh_args);
+                        std::process::Command::new("cmd").args(&a).spawn().map_err(|e| e.to_string())?;
+                    }
+                    "powershell" => {
+                        let ssh_cmd = format!("ssh {}", ssh_args.join(" "));
+                        std::process::Command::new("powershell")
+                            .args(["-NoExit", "-Command", &ssh_cmd])
+                            .spawn().map_err(|e| e.to_string())?;
+                    }
+                    "gitbash" => {
+                        let gitbash_candidates = [
+                            r"C:\Program Files\Git\git-bash.exe",
+                            r"C:\Program Files (x86)\Git\git-bash.exe",
+                        ];
+                        let gitbash = gitbash_candidates.iter()
+                            .find(|p| std::path::Path::new(p).exists())
+                            .ok_or("Git Bash 未找到 (需安装 Git for Windows)")?;
+                        // git-bash.exe is mintty; -c runs a command, exec bash keeps window open
+                        let ssh_cmd = format!("ssh {}; exec bash", ssh_args.join(" "));
+                        std::process::Command::new(gitbash)
+                            .args(["-c", &ssh_cmd])
+                            .spawn()
+                            .map_err(|e| e.to_string())?;
+                    }
+                    _ => {
+                        // auto: try wt first, fallback cmd
+                        let mut a = vec!["ssh"];
+                        a.extend(&ssh_args);
+                        if std::process::Command::new("wt.exe").args(&a).spawn().is_err() {
+                            let mut ca = vec!["/C", "start", "cmd", "/K", "ssh"];
+                            ca.extend(&ssh_args);
+                            std::process::Command::new("cmd").args(&ca).spawn().map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
+                Ok(())
+            };
+
+            // ── Dispatch ──────────────────────────────────────────────────────────
+
+            if let Some(ref pwd) = password {
+                let launched = match terminal_pref {
+                    "gitbash" => launch_gitbash_expect(pwd),
+                    _ => {
+                        // Try plink first (works in any terminal), then Git Bash expect
+                        if launch_plink(pwd) { true } else { launch_gitbash_expect(pwd) }
+                    }
+                };
+                if !launched {
+                    // Password tools unavailable – fall back to plain SSH (user types manually)
+                    launch_plain()?;
+                }
+            } else {
+                launch_plain()?;
             }
         }
         "script" => {
@@ -930,6 +1105,17 @@ fn extract_icon_from_exe(_exe_path: &str) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single-instance: if a second instance is launched, focus the existing window
+        .plugin(tauri_plugin_single_instance::Builder::new()
+            .callback(|app, _argv, _cwd| {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            })
+            .build()
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -952,6 +1138,8 @@ pub fn run() {
             remove_favorite,
             clear_favorites,
             extract_app_icons,
+            save_ssh_password,
+            delete_ssh_password,
         ])
         .setup(|app| {
             // ── App icon cache ──

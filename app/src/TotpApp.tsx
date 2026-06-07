@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { applyThemeFromConfig } from "@/api/theme";
 
 interface TotpToken {
   id: string;
@@ -99,6 +100,9 @@ export function TotpApp() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+
+  // Apply theme on mount
+  useEffect(() => { applyThemeFromConfig(); }, []);
 
   // Load tokens on mount
   useEffect(() => {

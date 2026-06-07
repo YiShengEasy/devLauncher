@@ -1,8 +1,9 @@
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import type {
   Action, ActionType, KeyId,
-  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature
+  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal
 } from "@/types/actions";
 import { ACTION_TYPE_META, SYSTEM_PRESETS, BUILTIN_FEATURES } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
@@ -58,6 +59,9 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
   const [host, setHost]       = useState((initialAction as SshAction)?.host ?? "");
   const [user, setUser]       = useState((initialAction as SshAction)?.user ?? "");
   const [port, setPort]       = useState(String((initialAction as SshAction)?.port ?? 22));
+  const [sshPassword, setSshPassword]           = useState("");
+  const [sshHasPassword, setSshHasPassword]     = useState((initialAction as SshAction)?.hasPassword ?? false);
+  const [sshTerminal, setSshTerminal]           = useState<SshTerminal>((initialAction as SshAction)?.terminal ?? "auto");
   const [shell, setShell]     = useState<"powershell"|"cmd"|"bat"|"wsl">((initialAction as ScriptAction)?.shell ?? "powershell");
   const [content, setContent] = useState((initialAction as ScriptAction)?.content ?? "");
   const [sysCmd, setSysCmd]   = useState((initialAction as SystemAction)?.command ?? "calculator");
@@ -93,7 +97,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     let action: Action | null = null;
     switch (activeType) {
       case "app":
@@ -114,7 +118,10 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
         break;
       case "ssh":
         if (!host.trim() || !user.trim()) return;
-        action = { type: "ssh", name: name || `${user}@${host}`, host: host.trim(), user: user.trim(), port: Number(port) || 22 };
+        {
+          const willHavePassword = sshHasPassword || sshPassword.length > 0;
+          action = { type: "ssh", name: name || `${user}@${host}`, host: host.trim(), user: user.trim(), port: Number(port) || 22, terminal: sshTerminal, ...(willHavePassword ? { hasPassword: true } : {}) };
+        }
         break;
       case "script":
         action = { type: "script", name: name || "脚本", shell, content: content.trim() };
@@ -130,7 +137,14 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
         break;
       }
     }
-    if (action) onSave(action);
+    if (action) {
+      // Persist SSH password to OS credential store (never saved in YAML config)
+      if (activeType === "ssh" && sshPassword.length > 0) {
+        const credKey = `ssh:${(action as SshAction).user}@${(action as SshAction).host}:${(action as SshAction).port ?? 22}`;
+        await invoke("save_ssh_password", { key: credKey, password: sshPassword }).catch(console.error);
+      }
+      onSave(action);
+    }
   };
 
   return (
@@ -138,21 +152,22 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
     <div
       style={{
         position: "fixed", inset: 0,
-        background: "rgba(0,0,0,0.55)",
-        backdropFilter: "blur(4px)",
         display: "flex", alignItems: "center", justifyContent: "center",
         zIndex: 1000,
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+
     >
       {/* Panel */}
       <div
         style={{
           width: 460,
-          background: "rgba(22, 24, 40, 0.95)",
-          border: "1px solid rgba(255,255,255,0.12)",
+          maxHeight: "90vh",
+          display: "flex", flexDirection: "column",
+          background: "var(--theme-bg, rgba(22, 24, 40, 0.97))",
+          backdropFilter: "blur(var(--theme-blur, 32px)) saturate(180%)",
+          WebkitBackdropFilter: "blur(var(--theme-blur, 32px)) saturate(180%)",
+          border: "1px solid var(--theme-border, rgba(255,255,255,0.12))",
           borderRadius: 14,
-          boxShadow: "0 24px 80px rgba(0,0,0,0.7)",
           overflow: "hidden",
         }}
       >
@@ -200,7 +215,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
         </div>
 
         {/* Form body */}
-        <div style={{ padding: "16px 16px 12px" }}>
+        <div style={{ padding: "16px 16px 12px", overflowY: "auto", flex: 1 }}>
           {/* Name field (common) */}
           {activeType !== "system" && (
             <Field label="名称（可选，自动填充）">
@@ -275,6 +290,58 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
               </div>
               <Field label="用户名 *">
                 <input style={INPUT_STYLE} placeholder="root" value={user} onChange={e => setUser(e.target.value)} />
+              </Field>
+              <Field label="密码（可选）">
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <input
+                    style={INPUT_STYLE}
+                    type="password"
+                    placeholder={sshHasPassword ? "••••••••（已保存，留空保持不变）" : "输入密码存入系统凭据"}
+                    value={sshPassword}
+                    onChange={e => setSshPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  {sshHasPassword && (
+                    <button
+                      type="button"
+                      title="清除已保存的密码"
+                      onClick={async () => {
+                        const credKey = `ssh:${user.trim()}@${host.trim()}:${Number(port) || 22}`;
+                        await invoke("delete_ssh_password", { key: credKey }).catch(console.error);
+                        setSshHasPassword(false);
+                        setSshPassword("");
+                      }}
+                      style={{
+                        flexShrink: 0, padding: "7px 10px", cursor: "pointer",
+                        background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)",
+                        borderRadius: 7, color: "rgba(239,68,68,0.8)", fontSize: 11, whiteSpace: "nowrap",
+                      }}
+                    >
+                      清除密码
+                    </button>
+                  )}
+                </div>
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 3, display: "block" }}>
+                  密码存储于系统凭据管理器，不写入配置文件
+                </span>
+              </Field>
+              <Field label="终端">
+                <select
+                  value={sshTerminal}
+                  onChange={e => setSshTerminal(e.target.value as SshTerminal)}
+                  style={{ ...INPUT_STYLE, cursor: "pointer" }}
+                >
+                  <option value="auto" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>自动（优先 Windows Terminal）</option>
+                  <option value="wt" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Windows Terminal (wt.exe)</option>
+                  <option value="cmd" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>CMD</option>
+                  <option value="powershell" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>PowerShell</option>
+                  <option value="gitbash" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Git Bash（支持 expect 自动密码）</option>
+                </select>
+                {sshTerminal === "gitbash" && (
+                  <span style={{ fontSize: 10, color: "rgba(255,195,0,0.7)", marginTop: 3, display: "block" }}>
+                    需安装 Git for Windows，路径 C:\Program Files\Git\bin\bash.exe
+                  </span>
+                )}
               </Field>
             </>
           )}
@@ -366,7 +433,16 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
           <div>
             {onClear && initialAction && (
               <button
-                onClick={onClear}
+                onClick={async () => {
+                  // Also delete stored SSH password when clearing binding
+                  if (initialAction.type === "ssh" && (initialAction as SshAction).hasPassword) {
+                    const a = initialAction as SshAction;
+                    await invoke("delete_ssh_password", {
+                      key: `ssh:${a.user}@${a.host}:${a.port ?? 22}`,
+                    }).catch(console.error);
+                  }
+                  onClear();
+                }}
                 style={{
                   padding: "6px 12px", borderRadius: 7, cursor: "pointer",
                   border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.10)",

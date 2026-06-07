@@ -299,47 +299,6 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           {Math.round(theme.keyBgOpacity * 100)}%
         </span>
       </div>
-
-      {/* Preview */}
-      <div style={LABEL}>预览</div>
-      <div style={{
-        borderRadius: 8, padding: 10, position: "relative", overflow: "hidden",
-        background: `url("data:image/svg+xml,%3Csvg width='20' height='20' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='10' height='10' fill='%23333'/%3E%3Crect x='10' y='10' width='10' height='10' fill='%23333'/%3E%3Crect x='10' width='10' height='10' fill='%23444'/%3E%3Crect y='10' width='10' height='10' fill='%23444'/%3E%3C/svg%3E")`,
-      }}>
-        <div style={{
-          borderRadius: 6,
-          background: hexToRgba(theme.bgColor, theme.bgOpacity),
-          backdropFilter: `blur(${theme.blurRadius}px)`,
-          border: `1px solid ${theme.borderColor}`,
-          padding: "6px 8px",
-          display: "flex", gap: 4,
-        }}>
-          {[0.75, 0.04].map((op, i) => (
-            <div key={i} style={{
-              width: 20, height: 20, borderRadius: 4,
-              background: i === 0 ? `rgba(37,99,235,${op})` : `rgba(255,255,255,${theme.keyBgOpacity})`,
-              border: i === 0 ? "1px solid rgba(96,165,250,0.3)" : "1px dashed rgba(255,255,255,0.14)",
-            }} />
-          ))}
-        </div>
-      </div>
-
-      {/* Reset */}
-      <button
-        onClick={resetTheme}
-        style={{
-          marginTop: 12,
-          padding: "5px 0", borderRadius: 6, cursor: "pointer",
-          border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)",
-          color: "rgba(255,255,255,0.5)", fontSize: 11, fontWeight: 500,
-          transition: "all 0.12s", outline: "none",
-          width: "100%",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.08)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.25)"; e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
-      >
-        恢复默认
-      </button>
     </div>
   );
 }

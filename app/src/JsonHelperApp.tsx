@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { applyThemeFromConfig } from "@/api/theme";
 
 type JsonTab = "format" | "escape" | "unescape" | "openai";
 
@@ -10,6 +11,10 @@ export function JsonHelperApp() {
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
   const [error, setError] = useState("");
+
+  // Apply theme on mount
+  useEffect(() => { applyThemeFromConfig(); }, []);
+
   const [copied, setCopied] = useState(false);
 
   // ── OpenAI doc generator state ──

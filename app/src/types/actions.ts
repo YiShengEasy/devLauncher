@@ -31,12 +31,18 @@ export interface UrlAction extends ActionBase {
   target: string;
 }
 
+export type SshTerminal = "auto" | "wt" | "cmd" | "powershell" | "gitbash";
+
 export interface SshAction extends ActionBase {
   type: "ssh";
   host: string;
   user: string;
   port?: number;
   identity?: string;
+  /** Password is stored in the OS credential store, not here. */
+  hasPassword?: boolean;
+  /** Preferred terminal for launching the SSH session. */
+  terminal?: SshTerminal;
 }
 
 export interface ScriptAction extends ActionBase {
