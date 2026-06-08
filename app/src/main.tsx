@@ -3,6 +3,7 @@ import App from "./App";
 import { ClipboardApp } from "./ClipboardApp";
 import { JsonHelperApp } from "./JsonHelperApp";
 import { TotpApp } from "./TotpApp";
+import { RemoteDeskApp } from "./RemoteDeskApp";
 import "./index.css";
 
 // Route based on URL param: ?view=clipboard → standalone clipboard window
@@ -13,5 +14,6 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   view === "clipboard" ? <ClipboardApp /> :
   view === "json-helper" ? <JsonHelperApp /> :
   view === "totp" ? <TotpApp /> :
+  view === "remotedesk" ? <RemoteDeskApp /> :
   <App />
 );
