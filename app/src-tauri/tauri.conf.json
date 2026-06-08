@@ -67,6 +67,21 @@
         "center": true,
         "skipTaskbar": true,
         "visible": false
+      },
+      {
+        "label": "remotedesk",
+        "url": "index.html?view=remotedesk",
+        "title": "DevLauncher 远程桌面",
+        "width": 580,
+        "height": 660,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
     "security": {

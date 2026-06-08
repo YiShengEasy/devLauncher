@@ -123,6 +123,8 @@ export default function App() {
         invoke("toggle_json_helper_window").catch(console.error);
       } else if (b.feature === "totp") {
         invoke("toggle_totp_window").catch(console.error);
+      } else if (b.feature === "remotedesk") {
+        invoke("toggle_remotedesk_window").catch(console.error);
       }
       return;
     }
@@ -182,6 +184,10 @@ export default function App() {
           }
           if (capturedAction.type === "builtin" && (capturedAction as BuiltinAction).feature === "totp") {
             invoke("toggle_totp_window").catch(console.error);
+            return;
+          }
+          if (capturedAction.type === "builtin" && (capturedAction as BuiltinAction).feature === "remotedesk") {
+            invoke("toggle_remotedesk_window").catch(console.error);
             return;
           }
           invoke("execute_action", { action: capturedAction }).catch(console.error);

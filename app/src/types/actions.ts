@@ -61,7 +61,7 @@ export interface SystemAction extends ActionBase {
   command: SystemCommand;
 }
 
-export type BuiltinFeature = "clipboard" | "json" | "totp";
+export type BuiltinFeature = "clipboard" | "json" | "totp" | "remotedesk";
 
 export interface BuiltinAction extends ActionBase {
   type: "builtin";
@@ -80,6 +80,7 @@ export const BUILTIN_FEATURES: Record<BuiltinFeature, { name: string; descriptio
   clipboard: { name: "剪切板历史", description: "打开剪切板历史记录，一键粘贴", emoji: "📋" },
   json: { name: "JSON 助手", description: "格式化、转义/去转义、生成 OpenAI 文档", emoji: "{ }" },
   totp: { name: "令牌生成器", description: "TOTP 两步验证码生成", emoji: "🔐" },
+  remotedesk: { name: "远程桌面", description: "RDP 管理 + P2P 屏幕共享", emoji: "🖥️" },
 };
 
 export const SYSTEM_PRESETS: { command: SystemCommand; name: string; emoji: string }[] = [

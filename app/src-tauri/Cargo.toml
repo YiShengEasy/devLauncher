@@ -31,4 +31,14 @@ arboard = "3"
 keyring = "3"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+# Remote desktop: screen capture + WebSocket streaming
+# Use screenshots (GDI-based) instead of scrap (DXGI) for better Windows compatibility
+screenshots = "0.8"
+enigo = "0.2"
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.26"
+futures-util = "0.3"
+rand = "0.8"
+ureq = "2"
+windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
 
