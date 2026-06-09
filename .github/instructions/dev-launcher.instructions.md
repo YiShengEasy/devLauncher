@@ -10,11 +10,20 @@ applyTo: "app/**"
 dev-launcher/
 ├── app/                          # Tauri 应用根目录
 │   ├── src/                      # React 前端
-│   │   ├── main.tsx              # 入口，无 StrictMode
+│   │   ├── main.tsx              # 入口，从 BUILTIN_REGISTRY 自动路由，无 StrictMode
 │   │   ├── App.tsx               # 主组件：全局快捷键、Tab切换、模态控制
-│   │   ├── types/actions.ts      # ★ 所有 Action 类型定义（唯一真相来源）
-│   │   ├── store/useKeyboardStore.ts  # Zustand store（含 showClipboard）
-│   │   ├── api/config.ts         # load/save config（Rust ↔ 前端格式转换）
+│   │   ├── types/actions.ts      # ★ 所有 Action 类型（BuiltinFeature 自动从 manifest 派生）
+│   │   ├── store/useKeyboardStore.ts  # Zustand store
+│   │   ├── api/config.ts         # load/save config
+│   │   ├── builtins/             # ★ 内置功能插件目录
+│   │   │   ├── types.ts          #   BuiltinManifest 接口
+│   │   │   ├── _registry.ts      #   ★ 插件注册表（新增功能只改这里 + 4个Rust文件）
+│   │   │   ├── clipboard/
+│   │   │   │   ├── manifest.ts   #   插件声明（id/name/window尺寸等）
+│   │   │   │   └── App.tsx       #   独立窗口组件
+│   │   │   ├── json/...          #   同上（manifest.ts + App.tsx）
+│   │   │   ├── totp/...
+│   │   │   └── remotedesk/...
 │   │   ├── components/
 │   │   │   ├── KeyCell.tsx       # 单键渲染（68px）
 │   │   │   ├── KeyboardPanel.tsx # 键盘布局（4行）
@@ -83,20 +92,61 @@ MyType { name: String, field: String },
 
 ---
 
-## 2. 新增内置功能（builtin feature）
+## 2. 新增内置功能（builtin feature）——插件化方式
 
-**最小改动路径：**
+**最小改动路径（共 5 步）：**
 
-1. **`src/types/actions.ts`** — `BuiltinFeature` 联合类型加新值，`BUILTIN_FEATURES` 记录加元数据
-2. **`src/components/BindingModal.tsx`** — builtin tab 的 grid 自动渲染（无需改）
-3. **`src/App.tsx`** — `handleKeyClick` 和全局快捷键回调里加 `else if (b.feature === "xxx")` 分支
-4. **新建 `src/components/XxxPanel.tsx`** — 参考 `ClipboardPanel.tsx` 结构（overlay + 面板 + Esc关闭）
-5. **`src/store/useKeyboardStore.ts`** — 若面板需全局状态，加 `showXxx + setShowXxx`（模式同 showClipboard）
+### 1. 新建 `src/builtins/<id>/manifest.ts`
+```typescript
+import type { BuiltinManifest } from "../types";
+export const manifest: BuiltinManifest = {
+  id: "myfeature",          // 必须唯一，决定路由 ?view=myfeature
+  name: "功能名称",
+  description: "功能描述",
+  emoji: "🔧",
+  window: { width: 600, height: 500, resizable: true, alwaysOnTop: true },
+};
+```
 
-**Rust 后台服务（如需）：**
-- 在 `lib.rs` 里新增 State struct + tauri::command
-- `run()` 的 `.setup()` 里 `app.manage()` 注册状态，spawn 后台线程
-- `invoke_handler` 注册新命令
+### 2. 新建 `src/builtins/<id>/App.tsx`
+与 manifest 同目录，插件自包含。参考 `builtins/clipboard/App.tsx`：`applyThemeFromConfig()` + Esc 隐藏窗口。组件可独立运行（检测 `window.__TAURI_INTERNALS__` 降级）。
+
+### 3. 在 `src/builtins/_registry.ts` 注册
+```typescript
+import { manifest as myManifest } from "./myfeature/manifest";
+import { MyFeatureApp } from "./myfeature/App";
+// 加入 BUILTIN_REGISTRY 数组：
+{ manifest: myManifest, App: MyFeatureApp },
+```
+
+### 4. 在 `src-tauri/tauri.conf.json` 新增 window
+```json
+{
+  "label": "myfeature",
+  "url": "index.html?view=myfeature",
+  "width": 600, "height": 500,
+  "visible": false, "decorations": false,
+  "transparent": true, "shadow": false,
+  "alwaysOnTop": true, "skipTaskbar": true
+}
+```
+
+### 5. 在 `src-tauri/src/lib.rs` 添加命令
+```rust
+#[tauri::command]
+fn toggle_myfeature_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("myfeature") {
+        if win.is_visible().unwrap_or(false) { win.hide() } else { win.show(); win.set_focus() }
+            .map_err(|e| e.to_string())
+    } else { Ok(()) }
+}
+// invoke_handler 加入 toggle_myfeature_window
+```
+
+**`App.tsx` 和 `main.tsx` 不需要改动——自动从 registry 派生。**
+
+> **命令命名规则：** `toggle_<id>_window`，其中 `<id>` 与 manifest.id 一致。
+> 如 manifest.id = `"json"` 则命令名为 `toggle_json_window`。
 
 ---
 

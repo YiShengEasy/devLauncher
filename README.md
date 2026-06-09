@@ -44,16 +44,28 @@ dev-launcher/
 ├── app/
 │   ├── src/
 │   │   ├── App.tsx                 # 主组件（全局快捷键、Tab 切换）
-│   │   ├── types/actions.ts        # Action 类型系统（唯一真相来源）
+│   │   ├── main.tsx                # 入口路由（从 registry 自动派发内置功能）
+│   │   ├── types/actions.ts        # Action 类型系统（BuiltinFeature 自动从 manifest 派生）
 │   │   ├── store/useKeyboardStore.ts  # Zustand store
 │   │   ├── api/config.ts           # 配置 CRUD
-│   │   └── components/
-│   │       ├── KeyCell.tsx         # 单键渲染
-│   │       ├── KeyboardPanel.tsx   # 键盘布局
-│   │       ├── BindingModal.tsx    # 绑定弹窗
-│   │       ├── SettingsPanel.tsx   # 主题设置
-│   │       ├── ClipboardPanel.tsx  # 剪切板历史
-│   │       └── ActionIcon.tsx      # 类型图标
+│   │   ├── builtins/               # ★ 内置功能插件目录
+│   │   │   ├── types.ts            #   BuiltinManifest 接口
+│   │   │   ├── _registry.ts        #   插件注册表（新增功能只改这里）
+│   │   │   ├── clipboard/manifest.ts
+│   │   │   ├── json/manifest.ts
+│   │   │   ├── totp/manifest.ts
+│   │   │   └── remotedesk/manifest.ts
+│   │   ├── components/
+│   │   │   ├── KeyCell.tsx         # 单键渲染
+│   │   │   ├── KeyboardPanel.tsx   # 键盘布局
+│   │   │   ├── BindingModal.tsx    # 绑定弹窗
+│   │   │   ├── SettingsPanel.tsx   # 主题设置
+│   │   │   ├── ClipboardPanel.tsx  # 剪切板历史
+│   │   │   └── ActionIcon.tsx      # 类型图标
+│   │   ├── ClipboardApp.tsx        # 剪切板历史独立窗口
+│   │   ├── JsonHelperApp.tsx       # JSON 助手独立窗口
+│   │   ├── TotpApp.tsx             # TOTP 令牌独立窗口
+│   │   └── RemoteDeskApp.tsx       # 远程桌面独立窗口
 │   └── src-tauri/
 │       └── src/lib.rs              # Rust 命令、托盘、剪切板轮询
 └── README.md
@@ -98,6 +110,12 @@ npx tsc --noEmit
 ```
 
 ## 版本历史
+
+### v0.3.0
+- 内置功能插件化架构（`src/builtins/` 目录）
+- 新增远程桌面内置功能（RDP 管理 + WebSocket 屏幕共享 + ngrok 穿透）
+- 键盘按键文字放大，移除空白键 `+` 占位符
+- Tooltip 换成玻璃态悬浮提示（替代浏览器原生 title）
 
 ### v0.2.0
 - 多页面 Tab 管理（双击改名 / 右键删除 / + 新增）

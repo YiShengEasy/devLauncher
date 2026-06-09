@@ -2,6 +2,22 @@
 // Action 类型系统 - V1 核心抽象
 // -----------------------------------------------
 
+import { manifest as clipboardManifest } from "@/builtins/clipboard/manifest";
+import { manifest as jsonManifest }      from "@/builtins/json/manifest";
+import { manifest as totpManifest }      from "@/builtins/totp/manifest";
+import { manifest as remoteManifest }    from "@/builtins/remotedesk/manifest";
+
+// 内置功能 manifest 列表（新增插件在此添加）
+const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest] as const;
+
+/** 内置功能 ID 联合类型，自动从 manifest 派生 */
+export type BuiltinFeature = typeof _BUILTIN_MANIFESTS[number]["id"];
+
+/** 内置功能元信息映射表，自动从 manifest 派生 */
+export const BUILTIN_FEATURES = Object.fromEntries(
+  _BUILTIN_MANIFESTS.map(m => [m.id, m])
+) as Record<BuiltinFeature, typeof _BUILTIN_MANIFESTS[number]>;
+
 export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin";
 
 interface ActionBase {
@@ -61,8 +77,6 @@ export interface SystemAction extends ActionBase {
   command: SystemCommand;
 }
 
-export type BuiltinFeature = "clipboard" | "json" | "totp" | "remotedesk";
-
 export interface BuiltinAction extends ActionBase {
   type: "builtin";
   feature: BuiltinFeature;
@@ -75,13 +89,6 @@ export interface BuiltinAction extends ActionBase {
 export type ClipboardEntry =
   | { kind: "text"; id: string; content: string }
   | { kind: "image"; id: string; data: string; width: number; height: number };
-
-export const BUILTIN_FEATURES: Record<BuiltinFeature, { name: string; description: string; emoji: string }> = {
-  clipboard: { name: "剪切板历史", description: "打开剪切板历史记录，一键粘贴", emoji: "📋" },
-  json: { name: "JSON 助手", description: "格式化、转义/去转义、生成 OpenAI 文档", emoji: "{ }" },
-  totp: { name: "令牌生成器", description: "TOTP 两步验证码生成", emoji: "🔐" },
-  remotedesk: { name: "远程桌面", description: "RDP 管理 + P2P 屏幕共享", emoji: "🖥️" },
-};
 
 export const SYSTEM_PRESETS: { command: SystemCommand; name: string; emoji: string }[] = [
   { command: "calculator", name: "计算器", emoji: "🔢" },
