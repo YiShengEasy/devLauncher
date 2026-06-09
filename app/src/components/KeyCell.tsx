@@ -1,4 +1,5 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import type { KeyId, KeyBinding } from "@/types/actions";
 import { ACTION_TYPE_META } from "@/types/actions";
 import { ActionIcon } from "./ActionIcon";
@@ -17,12 +18,49 @@ interface KeyCellProps {
 
 const KEY_SIZE = 68;
 
+// Glass-style tooltip matching the project aesthetic
+function Tooltip({ text, visible }: { text: string; visible: boolean }) {
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    if (!visible) return;
+    const onMove = (e: MouseEvent) => setPos({ x: e.clientX, y: e.clientY });
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
+  }, [visible]);
+
+  if (!visible) return null;
+  return createPortal(
+    <div style={{
+      position: "fixed",
+      left: pos.x + 14,
+      top: pos.y + 14,
+      zIndex: 99999,
+      pointerEvents: "none",
+      background: "rgba(18,18,28,0.93)",
+      border: "1px solid rgba(255,255,255,0.12)",
+      borderRadius: 8,
+      padding: "6px 10px",
+      fontSize: 11,
+      color: "rgba(255,255,255,0.82)",
+      whiteSpace: "pre-line",
+      lineHeight: 1.7,
+      backdropFilter: "blur(16px)",
+      boxShadow: "0 4px 20px rgba(0,0,0,0.55)",
+      maxWidth: 200,
+    }}>
+      {text}
+    </div>,
+    document.body
+  );
+}
+
 export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell({
   keyId, binding, onClick, onBind,
   isDragSource, isDropTarget,
   onMouseDown, wasDrag,
 }, ref) {
   const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const action = binding?.action ?? null;
   const meta = action ? ACTION_TYPE_META[action.type] : null;
   const keyBgOpacity = useKeyboardStore((s) => s.theme.keyBgOpacity);
@@ -63,7 +101,9 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
 
   // ── Bound key ──
   if (action) {
+    const tooltipText = `${action.name}\n[快捷键 ${keyId}] 左键执行 / 右键编辑`;
     return (
+      <>
       <div
         ref={ref}
         role="button"
@@ -72,7 +112,8 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
         onClick={handleClick}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); } }}
         onContextMenu={(e) => { e.preventDefault(); onBind?.(keyId); }}
-        title={`${action.name}\n[${keyId}] 左键执行 / 右键编辑\n拖拽可更换键位`}
+        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.filter = "brightness(1.2)"; setHovered(true); }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.filter = "brightness(1)"; setHovered(false); }}
         style={{
           ...baseStyle,
           border: `1px solid ${meta!.color}44`,
@@ -83,21 +124,19 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
           ...dropStyle,
           ...dragStyle,
         }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.filter = "brightness(1.2)"; }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.filter = "brightness(1)"; }}
       >
         <span style={{
           position: "absolute", top: 3, left: 5,
-          fontSize: 8, fontWeight: 600,
-          color: "rgba(255,255,255,0.38)", lineHeight: 1, letterSpacing: "0.5px",
+          fontSize: 10, fontWeight: 700,
+          color: "rgba(255,255,255,0.5)", lineHeight: 1, letterSpacing: "0.5px",
           pointerEvents: "none",
         }}>
           {keyId}
         </span>
         <span style={{
           position: "absolute", top: 3, right: 4,
-          fontSize: 7, fontWeight: 700, lineHeight: 1,
-          color: meta!.color, opacity: 0.8, letterSpacing: "0.3px",
+          fontSize: 8, fontWeight: 700, lineHeight: 1,
+          color: meta!.color, opacity: 0.85, letterSpacing: "0.3px",
           textTransform: "uppercase",
           pointerEvents: "none",
         }}>
@@ -107,8 +146,8 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
           <ActionIcon action={action} size={32} />
         </div>
         <span style={{
-          fontSize: 10, fontWeight: 500,
-          color: "rgba(255,255,255,0.88)",
+          fontSize: 11, fontWeight: 600,
+          color: "rgba(255,255,255,0.92)",
           maxWidth: KEY_SIZE - 6, overflow: "hidden",
           textOverflow: "ellipsis", whiteSpace: "nowrap",
           lineHeight: 1, textAlign: "center",
@@ -117,11 +156,14 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
           {action.name}
         </span>
       </div>
+      <Tooltip text={tooltipText} visible={hovered} />
+      </>
     );
   }
 
   // ── Unbound key ──
   return (
+    <>
     <div
       ref={ref}
       role="button"
@@ -129,7 +171,6 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
       onMouseDown={onMouseDown}
       onClick={handleClick}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleClick(); } }}
-      title={`绑定 [${keyId}]\n拖拽可更换键位`}
       style={{
         ...baseStyle,
         border: isDropTarget
@@ -150,6 +191,7 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
           el.style.background = "rgba(255,255,255,0.09)";
           el.style.borderColor = "rgba(255,255,255,0.28)";
         }
+        setHovered(true);
       }}
       onMouseLeave={(e) => {
         const el = e.currentTarget as HTMLDivElement;
@@ -157,12 +199,14 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
           el.style.background = `rgba(255,255,255,${keyBgOpacity})`;
           el.style.borderColor = "rgba(255,255,255,0.14)";
         }
+        setHovered(false);
       }}
     >
-      <span style={{ fontSize: 9, fontWeight: 600, color: "rgba(255,255,255,0.25)", letterSpacing: "0.5px", pointerEvents: "none" }}>
+      <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.3)", letterSpacing: "0.5px", pointerEvents: "none" }}>
         {keyId}
       </span>
-      <span style={{ fontSize: 14, color: "rgba(255,255,255,0.15)", lineHeight: 1, pointerEvents: "none" }}>+</span>
     </div>
+    <Tooltip text={`点击绑定 [${keyId}]`} visible={hovered} />
+    </>
   );
 });

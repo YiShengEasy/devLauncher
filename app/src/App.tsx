@@ -117,15 +117,7 @@ export default function App() {
     // Handle builtin actions locally
     if (action.type === "builtin") {
       const b = action as BuiltinAction;
-      if (b.feature === "clipboard") {
-        invoke("toggle_clipboard_window").catch(console.error);
-      } else if (b.feature === "json") {
-        invoke("toggle_json_helper_window").catch(console.error);
-      } else if (b.feature === "totp") {
-        invoke("toggle_totp_window").catch(console.error);
-      } else if (b.feature === "remotedesk") {
-        invoke("toggle_remotedesk_window").catch(console.error);
-      }
+      invoke(`toggle_${b.feature}_window`).catch(console.error);
       return;
     }
     try {
@@ -174,20 +166,8 @@ export default function App() {
         // Capture action value for the callback closure
         const capturedAction = action;
         const handler = makeDebounced(async () => {
-          if (capturedAction.type === "builtin" && (capturedAction as BuiltinAction).feature === "clipboard") {
-            invoke("toggle_clipboard_window").catch(console.error);
-            return;
-          }
-          if (capturedAction.type === "builtin" && (capturedAction as BuiltinAction).feature === "json") {
-            invoke("toggle_json_helper_window").catch(console.error);
-            return;
-          }
-          if (capturedAction.type === "builtin" && (capturedAction as BuiltinAction).feature === "totp") {
-            invoke("toggle_totp_window").catch(console.error);
-            return;
-          }
-          if (capturedAction.type === "builtin" && (capturedAction as BuiltinAction).feature === "remotedesk") {
-            invoke("toggle_remotedesk_window").catch(console.error);
+          if (capturedAction.type === "builtin") {
+            invoke(`toggle_${(capturedAction as BuiltinAction).feature}_window`).catch(console.error);
             return;
           }
           invoke("execute_action", { action: capturedAction }).catch(console.error);
