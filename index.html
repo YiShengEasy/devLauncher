@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="DevLauncher 是开发者效率启动器，把常用操作绑定到虚拟键盘，一键打开应用、文件夹、URL、SSH、脚本和内置工具。"
+    />
+    <meta name="theme-color" content="#05070b" />
+    <title>DevLauncher - 开发者效率启动器</title>
+    <link rel="icon" href="./public/devlauncher-icon.png" />
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <nav class="nav" aria-label="主导航">
+      <a class="brand" href="#top" aria-label="DevLauncher 首页">
+        <img src="./public/devlauncher-icon.png" alt="" />
+        <span>DevLauncher</span>
+      </a>
+      <div class="nav-links">
+        <a href="#keyboard">虚拟键盘</a>
+        <a href="#plugins">内置插件</a>
+        <a href="#build-plugin">制作插件</a>
+      </div>
+      <a class="nav-action" href="#download">下载</a>
+    </nav>
+
+    <main id="top">
+      <header class="hero">
+        <section class="hero-copy">
+          <p class="kicker">Developer launcher for daily workflow</p>
+          <h1>把常用操作绑定到一块虚拟键盘。</h1>
+          <p class="lede">
+            DevLauncher 是一个 Windows 桌面效率工具。你可以把应用、文件夹、文件、URL、SSH、
+            脚本、系统命令和内置功能绑定到键盘页，通过点击或全局快捷键快速触发。
+          </p>
+          <div id="download" class="actions">
+            <a class="primary-action" href="https://github.com/" target="_blank" rel="noreferrer">
+              查看项目
+            </a>
+            <a class="secondary-action" href="#plugins">查看内置插件</a>
+          </div>
+          <dl class="hero-stats" aria-label="产品摘要">
+            <div>
+              <dt>4 行</dt>
+              <dd>拟物键盘布局</dd>
+            </div>
+            <div>
+              <dt>Alt + Key</dt>
+              <dd>全局快捷触发</dd>
+            </div>
+            <div>
+              <dt>YAML</dt>
+              <dd>本地配置保存</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="keyboard" class="launcher-preview" aria-label="DevLauncher 虚拟键盘预览">
+          <div class="app-titlebar">
+            <div class="title-left">
+              <span class="app-logo">D</span>
+              <span>DevLauncher</span>
+            </div>
+            <div class="window-controls" aria-hidden="true">
+              <i class="settings-dot"></i>
+              <i class="min-dot"></i>
+              <i class="close-dot"></i>
+            </div>
+          </div>
+          <div class="page-tabs" aria-label="键盘页面">
+            <button class="active" type="button">开发</button>
+            <button type="button">运维</button>
+            <button type="button">工具</button>
+            <button type="button" class="add-tab">+</button>
+          </div>
+          <div class="keyboard-pad" aria-label="虚拟键盘">
+            <div class="key-row row-0">
+              <button class="key app"><span class="key-id">1</span><span class="key-type">app</span><strong>⌘</strong><em>VSCode</em></button>
+              <button class="key url"><span class="key-id">2</span><span class="key-type">url</span><strong>↗</strong><em>Docs</em></button>
+              <button class="key empty"><span>3</span></button>
+              <button class="key ssh"><span class="key-id">4</span><span class="key-type">ssh</span><strong>&gt;_</strong><em>Server</em></button>
+              <button class="key empty"><span>5</span></button>
+              <button class="key file"><span class="key-id">6</span><span class="key-type">file</span><strong>□</strong><em>Config</em></button>
+              <button class="key empty"><span>7</span></button>
+              <button class="key empty"><span>8</span></button>
+              <button class="key empty"><span>9</span></button>
+              <button class="key empty"><span>0</span></button>
+            </div>
+            <div class="key-row row-1">
+              <button class="key builtin"><span class="key-id">Q</span><span class="key-type">builtin</span><strong>⌘</strong><em>剪贴板</em></button>
+              <button class="key builtin"><span class="key-id">W</span><span class="key-type">builtin</span><strong>{ }</strong><em>JSON</em></button>
+              <button class="key empty"><span>E</span></button>
+              <button class="key script"><span class="key-id">R</span><span class="key-type">script</span><strong>ps</strong><em>Build</em></button>
+              <button class="key empty"><span>T</span></button>
+              <button class="key folder"><span class="key-id">Y</span><span class="key-type">folder</span><strong>▣</strong><em>Project</em></button>
+              <button class="key empty"><span>U</span></button>
+              <button class="key empty"><span>I</span></button>
+              <button class="key empty"><span>O</span></button>
+              <button class="key empty"><span>P</span></button>
+            </div>
+            <div class="key-row row-2">
+              <button class="key builtin"><span class="key-id">A</span><span class="key-type">builtin</span><strong>2FA</strong><em>TOTP</em></button>
+              <button class="key builtin"><span class="key-id">S</span><span class="key-type">builtin</span><strong>RDP</strong><em>远程桌面</em></button>
+              <button class="key empty"><span>D</span></button>
+              <button class="key system"><span class="key-id">F</span><span class="key-type">system</span><strong>⚙</strong><em>锁屏</em></button>
+              <button class="key empty"><span>G</span></button>
+              <button class="key empty"><span>H</span></button>
+              <button class="key empty"><span>J</span></button>
+              <button class="key empty"><span>K</span></button>
+              <button class="key empty"><span>L</span></button>
+            </div>
+            <div class="key-row row-3">
+              <button class="key builtin"><span class="key-id">Z</span><span class="key-type">builtin</span><strong>$_</strong><em>终端</em></button>
+              <button class="key empty"><span>X</span></button>
+              <button class="key app"><span class="key-id">C</span><span class="key-type">app</span><strong>▶</strong><em>Chrome</em></button>
+              <button class="key empty"><span>V</span></button>
+              <button class="key empty"><span>B</span></button>
+              <button class="key empty"><span>N</span></button>
+              <button class="key empty"><span>M</span></button>
+            </div>
+          </div>
+        </section>
+      </header>
+
+      <section class="section">
+        <div class="section-head">
+          <p class="kicker">Core workflow</p>
+          <h2>主页介绍围绕项目真实能力展开。</h2>
+          <p>
+            DevLauncher 的核心不是普通官网模板，而是一个可配置的开发者启动器：多页面键盘、拖拽换位、
+            右键编辑、全局快捷键、托盘隐藏和本地配置持久化。
+          </p>
+        </div>
+        <div class="capability-grid">
+          <article>
+            <h3>多页面键盘</h3>
+            <p>按开发、运维、工具等场景创建多个键盘页，Tab 或 Shift+Tab 切换。</p>
+          </article>
+          <article>
+            <h3>多动作绑定</h3>
+            <p>支持 App、文件夹、文件、URL、SSH、脚本、系统命令和内置功能。</p>
+          </article>
+          <article>
+            <h3>全局快捷键</h3>
+            <p>窗口隐藏时仍可用 Alt+Space 呼出，用 Alt+按键触发当前页绑定。</p>
+          </article>
+          <article>
+            <h3>主题设置</h3>
+            <p>玻璃面板支持背景、透明度、模糊强度、边框颜色和按键透明度配置。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="plugins" class="section plugin-effects">
+        <div class="section-head">
+          <p class="kicker">Built-in plugins</p>
+          <h2>每个内置插件都有独立窗口和使用场景。</h2>
+          <p>
+            下方不是简单罗列名称，而是把当前项目里的插件效果单独展示出来，说明它们在 DevLauncher
+            里各自解决什么问题。
+          </p>
+        </div>
+        <div class="plugin-showcase">
+          <article class="plugin-effect">
+            <div class="effect-copy">
+              <span class="plugin-id">clipboard</span>
+              <h3>剪贴板历史</h3>
+              <p>自动记录最近复制过的文本和图片，支持搜索、收藏和一键复制，适合反复切换命令、路径、配置片段。</p>
+            </div>
+            <div class="effect-window clipboard-window" aria-label="剪贴板历史效果">
+              <div class="mini-title">Clipboard History</div>
+              <label>搜索剪贴板</label>
+              <div class="search-bar">nginx.conf</div>
+              <div class="clip-list">
+                <span>server_name dev.local;</span>
+                <span>docker compose up -d</span>
+                <span>C:\projects\dev-launcher</span>
+              </div>
+            </div>
+          </article>
+
+          <article class="plugin-effect reverse">
+            <div class="effect-copy">
+              <span class="plugin-id">json</span>
+              <h3>JSON 助手</h3>
+              <p>提供 JSON 格式化、压缩、转义、去转义和结构化文档生成，适合调试接口、整理配置和复制给模型。</p>
+            </div>
+            <div class="effect-window json-window" aria-label="JSON 助手效果">
+              <div class="mini-title">JSON Helper</div>
+              <div class="json-columns">
+                <pre>{"name":"DevLauncher","version":"0.2.0"}</pre>
+                <pre>{
+  "name": "DevLauncher",
+  "version": "0.2.0"
+}</pre>
+              </div>
+            </div>
+          </article>
+
+          <article class="plugin-effect">
+            <div class="effect-copy">
+              <span class="plugin-id">totp</span>
+              <h3>TOTP 令牌</h3>
+              <p>本地管理二步验证码令牌，直接在小窗口里查看当前验证码，减少在浏览器、手机和终端之间切换。</p>
+            </div>
+            <div class="effect-window totp-window" aria-label="TOTP 令牌效果">
+              <div class="mini-title">TOTP</div>
+              <div class="token-row">
+                <span>GitHub</span>
+                <strong>482 915</strong>
+              </div>
+              <div class="token-row">
+                <span>Server Panel</span>
+                <strong>039 774</strong>
+              </div>
+              <div class="progress-ring">24s</div>
+            </div>
+          </article>
+
+          <article class="plugin-effect reverse">
+            <div class="effect-copy">
+              <span class="plugin-id">remotedesk</span>
+              <h3>远程桌面</h3>
+              <p>集中管理 RDP 配置，并提供屏幕共享、WebSocket 连接、frp/ngrok 穿透相关入口。</p>
+            </div>
+            <div class="effect-window remote-window" aria-label="远程桌面效果">
+              <div class="mini-title">RemoteDesk</div>
+              <div class="remote-card active">生产服务器 · 10.0.0.12:3389</div>
+              <div class="remote-card">测试机 · 192.168.1.22:3389</div>
+              <div class="connection-line"><span></span><span></span><span></span></div>
+            </div>
+          </article>
+
+          <article class="plugin-effect">
+            <div class="effect-copy">
+              <span class="plugin-id">terminal</span>
+              <h3>内置终端</h3>
+              <p>通过独立终端窗口承接命令执行和 SSH 会话，让快捷键触发的任务可以留在 DevLauncher 内查看。</p>
+            </div>
+            <div class="effect-window terminal-window" aria-label="内置终端效果">
+              <div class="mini-title">Terminal</div>
+              <pre>$ npm run build
+> tsc && vite build
+✓ built in 1.2s
+$ ssh root@server</pre>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="build-plugin" class="band">
+        <div>
+          <p class="kicker">Make a plugin</p>
+          <h2>新增插件时，按项目现有 registry 接入。</h2>
+          <p>
+            当前项目的内置功能位于 `src/builtins/`。新增插件时创建 manifest 和独立 App，
+            再注册到 `BUILTIN_REGISTRY`，最后在 Tauri 配置和 Rust 命令里补上窗口入口。
+          </p>
+        </div>
+        <ol class="steps">
+          <li><span>01</span>创建 `src/builtins/&lt;id&gt;/manifest.ts`</li>
+          <li><span>02</span>创建 `src/builtins/&lt;id&gt;/App.tsx`</li>
+          <li><span>03</span>在 `BUILTIN_REGISTRY` 中注册 manifest 和组件</li>
+          <li><span>04</span>在 `tauri.conf.json` 添加插件窗口配置</li>
+          <li><span>05</span>在 Rust 中添加 `toggle_&lt;id&gt;_window` 命令</li>
+        </ol>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>DevLauncher</span>
+      <a href="mailto:hello@example.com">hello@example.com</a>
+    </footer>
+  </body>
+</html>
