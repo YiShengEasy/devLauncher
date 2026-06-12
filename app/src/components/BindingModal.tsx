@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import type {
   Action, ActionType, KeyId,
-  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal
+  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith
 } from "@/types/actions";
 import { ACTION_TYPE_META, SYSTEM_PRESETS, BUILTIN_FEATURES } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
@@ -56,6 +56,11 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
   // Form state for each type
   const [name, setName]       = useState(initialAction?.name ?? "");
   const [target, setTarget]   = useState((initialAction as AppAction | FolderAction | FileAction | UrlAction)?.target ?? "");
+  const [folderOpenWith, setFolderOpenWith] = useState<FolderOpenWith>(
+    (initialAction as FolderAction)?.openWith ?? "explorer"
+  );
+  const [customOpener, setCustomOpener] = useState((initialAction as FolderAction)?.customOpener ?? "");
+  const [customOpenerArgs, setCustomOpenerArgs] = useState((initialAction as FolderAction)?.customOpenerArgs ?? "{path}");
   const [host, setHost]       = useState((initialAction as SshAction)?.host ?? "");
   const [user, setUser]       = useState((initialAction as SshAction)?.user ?? "");
   const [port, setPort]       = useState(String((initialAction as SshAction)?.port ?? 22));
@@ -97,6 +102,17 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
     }
   };
 
+  const handleBrowseCustomOpener = async () => {
+    const result = await dialogOpen({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Program", extensions: ["exe", "cmd", "bat", "lnk"] }],
+    });
+    if (typeof result === "string") {
+      setCustomOpener(result);
+    }
+  };
+
   const handleSave = async () => {
     let action: Action | null = null;
     switch (activeType) {
@@ -106,7 +122,17 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
         break;
       case "folder":
         if (!target.trim()) return;
-        action = { type: "folder", name: name || "文件夹", target: target.trim() };
+        if (folderOpenWith === "custom" && !customOpener.trim()) return;
+        action = {
+          type: "folder",
+          name: name || "文件夹",
+          target: target.trim(),
+          openWith: folderOpenWith,
+          ...(folderOpenWith === "custom" ? {
+            customOpener: customOpener.trim(),
+            customOpenerArgs: customOpenerArgs.trim() || "{path}",
+          } : {}),
+        };
         break;
       case "file":
         if (!target.trim()) return;
@@ -259,6 +285,49 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                 >浏览</button>
               </div>
             </Field>
+          )}
+
+          {activeType === "folder" && (
+            <>
+              <Field label="打开方式">
+                <select
+                  value={folderOpenWith}
+                  onChange={e => setFolderOpenWith(e.target.value as FolderOpenWith)}
+                  style={{ ...INPUT_STYLE, cursor: "pointer" }}
+                >
+                  <option value="explorer" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>文件资源管理器</option>
+                  <option value="vscode" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>VS Code</option>
+                  <option value="cursor" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Cursor</option>
+                  <option value="custom" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>其他工具</option>
+                </select>
+              </Field>
+              {folderOpenWith === "custom" && (
+                <>
+                  <Field label="工具路径 *">
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <input
+                        style={{ ...INPUT_STYLE, flex: 1 }}
+                        placeholder="C:\Program Files\...\app.exe"
+                        value={customOpener}
+                        onChange={e => setCustomOpener(e.target.value)}
+                      />
+                      <button style={BROWSE_BTN_STYLE} onClick={handleBrowseCustomOpener}>浏览</button>
+                    </div>
+                  </Field>
+                  <Field label="启动参数">
+                    <input
+                      style={INPUT_STYLE}
+                      placeholder="{path}"
+                      value={customOpenerArgs}
+                      onChange={e => setCustomOpenerArgs(e.target.value)}
+                    />
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 3, display: "block" }}>
+                      使用 {"{path}"} 作为目录占位符；留空时默认只传目录路径。
+                    </span>
+                  </Field>
+                </>
+              )}
+            </>
           )}
 
           {/* URL */}

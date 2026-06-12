@@ -1,13 +1,173 @@
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
 use futures_util::{SinkExt, StreamExt};
 use image::{DynamicImage, ImageFormat, RgbaImage, imageops};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+
+// -----------------------------------------------
+// Built-in Terminal (xterm.js + PTY)
+// -----------------------------------------------
+
+/// Safety: portable-pty's concrete MasterPty implementations
+/// (ConPtyMaster on Windows, UnixMasterPty on Unix) use thread-safe
+/// OS handles (HANDLE / fd) and are safe to move across threads.
+struct SendableMaster(Box<dyn portable_pty::MasterPty>);
+unsafe impl Send for SendableMaster {}
+unsafe impl Sync for SendableMaster {}
+
+pub struct PtySession {
+    writer: Box<dyn Write + Send>,
+    master: SendableMaster,
+}
+
+pub struct TerminalState {
+    pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+    /// Command staged by `terminal_run`; consumed once by `terminal_take_pending_cmd`.
+    pub pending_cmd: Arc<Mutex<Option<String>>>,
+}
+
+/// Spawn a PTY process and begin streaming its output as Tauri events.
+#[tauri::command]
+fn terminal_spawn(
+    app: tauri::AppHandle,
+    session_id: String,
+    cmd: String,
+    args: Vec<String>,
+    cols: u16,
+    rows: u16,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+        .map_err(|e| e.to_string())?;
+
+    let mut cb = CommandBuilder::new(&cmd);
+    for arg in &args {
+        cb.arg(arg);
+    }
+
+    let _child = pair.slave.spawn_command(cb).map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+
+    // Store session (writer + master for resize)
+    {
+        let mut sessions = state.sessions.lock().unwrap();
+        sessions.insert(
+            session_id.clone(),
+            PtySession { writer, master: SendableMaster(pair.master) },
+        );
+    }
+
+    // Relay PTY output → Tauri events (base64-encoded bytes)
+    let sid = session_id.clone();
+    std::thread::spawn(move || {
+        let mut buf = [0u8; 4096];
+        loop {
+            match reader.read(&mut buf) {
+                Ok(0) | Err(_) => {
+                    let _ = app.emit(&format!("terminal-exit-{}", sid), ());
+                    break;
+                }
+                Ok(n) => {
+                    let b64 = BASE64.encode(&buf[..n]);
+                    let _ = app.emit(&format!("terminal-data-{}", sid), b64);
+                }
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Send raw bytes (base64-encoded) to the PTY's stdin.
+#[tauri::command]
+fn terminal_write(
+    session_id: String,
+    data: String,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
+    let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
+    let mut sessions = state.sessions.lock().unwrap();
+    if let Some(s) = sessions.get_mut(&session_id) {
+        s.writer.write_all(&bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Notify the PTY of a terminal resize.
+#[tauri::command]
+fn terminal_resize(
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
+    let sessions = state.sessions.lock().unwrap();
+    if let Some(s) = sessions.get(&session_id) {
+        s.master.0
+            .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Kill a PTY session and release its resources.
+#[tauri::command]
+fn terminal_kill(
+    session_id: String,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
+    state.sessions.lock().unwrap().remove(&session_id);
+    Ok(())
+}
+
+/// Stage a command and show the terminal window; the frontend polls once on mount.
+#[tauri::command]
+fn terminal_run(
+    app: tauri::AppHandle,
+    cmd: String,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
+    *state.pending_cmd.lock().unwrap() = Some(cmd);
+    if let Some(win) = app.get_webview_window("terminal") {
+        if !win.is_visible().unwrap_or(false) {
+            win.show().map_err(|e| e.to_string())?;
+        }
+        win.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Take (and clear) any pending command staged by `terminal_run`.
+#[tauri::command]
+fn terminal_take_pending_cmd(
+    state: tauri::State<'_, TerminalState>,
+) -> Option<String> {
+    state.pending_cmd.lock().unwrap().take()
+}
+
+/// Toggle terminal window visibility.
+#[tauri::command]
+fn toggle_terminal_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("terminal") {
+        if win.is_visible().unwrap_or(false) {
+            win.hide().map_err(|e| e.to_string())?;
+        } else {
+            win.show().map_err(|e| e.to_string())?;
+            win.set_focus().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
 use tauri::{
     Emitter,
     Manager,
@@ -50,6 +210,12 @@ pub enum Action {
         #[serde(skip_serializing_if = "Option::is_none")]
         icon: Option<String>,
         target: String,
+        #[serde(rename = "openWith", alias = "open_with", skip_serializing_if = "Option::is_none")]
+        open_with: Option<String>,
+        #[serde(rename = "customOpener", alias = "custom_opener", skip_serializing_if = "Option::is_none")]
+        custom_opener: Option<String>,
+        #[serde(rename = "customOpenerArgs", alias = "custom_opener_args", skip_serializing_if = "Option::is_none")]
+        custom_opener_args: Option<String>,
     },
     File {
         name: String,
@@ -333,6 +499,114 @@ fn get_config_path(app: tauri::AppHandle) -> String {
     config_path(&app).to_string_lossy().to_string()
 }
 
+fn split_command_args(input: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut quote: Option<char> = None;
+
+    for ch in input.chars() {
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            } else {
+                current.push(ch);
+            }
+            continue;
+        }
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            c if c.is_whitespace() => {
+                if !current.is_empty() {
+                    args.push(current.clone());
+                    current.clear();
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    args
+}
+
+fn spawn_first(candidates: &[String], args: &[String]) -> Result<(), String> {
+    let mut last_err = None;
+    for candidate in candidates {
+        match std::process::Command::new(candidate).args(args).spawn() {
+            Ok(_) => return Ok(()),
+            Err(e) => last_err = Some(e.to_string()),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| "no opener candidates".to_string()))
+}
+
+fn folder_opener_candidates(open_with: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    match open_with {
+        "vscode" => {
+            candidates.push("code".to_string());
+            candidates.push("code.cmd".to_string());
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                candidates.push(format!(r"{}\Programs\Microsoft VS Code\Code.exe", local));
+            }
+            if let Ok(program_files) = std::env::var("ProgramFiles") {
+                candidates.push(format!(r"{}\Microsoft VS Code\Code.exe", program_files));
+            }
+        }
+        "cursor" => {
+            candidates.push("cursor".to_string());
+            candidates.push("cursor.cmd".to_string());
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                candidates.push(format!(r"{}\Programs\Cursor\Cursor.exe", local));
+            }
+            if let Ok(program_files) = std::env::var("ProgramFiles") {
+                candidates.push(format!(r"{}\Cursor\Cursor.exe", program_files));
+            }
+        }
+        _ => {
+            #[cfg(target_os = "windows")]
+            candidates.push("explorer.exe".to_string());
+        }
+    }
+    candidates
+}
+
+fn open_folder_with(action: &serde_json::Value, target: &str) -> Result<(), String> {
+    let open_with = action["openWith"]
+        .as_str()
+        .or_else(|| action["open_with"].as_str())
+        .unwrap_or("explorer");
+
+    if open_with == "custom" {
+        let opener = action["customOpener"]
+            .as_str()
+            .or_else(|| action["custom_opener"].as_str())
+            .ok_or("missing custom opener")?;
+        let template = action["customOpenerArgs"]
+            .as_str()
+            .or_else(|| action["custom_opener_args"].as_str())
+            .unwrap_or("{path}");
+        let args = if template.trim().is_empty() || template.trim() == "{path}" {
+            vec![target.to_string()]
+        } else {
+            split_command_args(&template.replace("{path}", target))
+        };
+        return std::process::Command::new(opener)
+            .args(args)
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+    }
+
+    let candidates = folder_opener_candidates(open_with);
+    if !candidates.is_empty() {
+        return spawn_first(&candidates, &[target.to_string()]);
+    }
+
+    open::that(target).map_err(|e| e.to_string())
+}
+
 // -----------------------------------------------
 // SSH password – stored in OS credential store (Windows Credential Manager)
 // Never written to the YAML config file.
@@ -357,7 +631,11 @@ fn delete_ssh_password(key: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn execute_action(action: serde_json::Value) -> Result<(), String> {
+fn execute_action(
+    app: tauri::AppHandle,
+    action: serde_json::Value,
+    term_state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
     let action_type = action["type"].as_str().unwrap_or("");
     match action_type {
         "app" => {
@@ -371,7 +649,11 @@ fn execute_action(action: serde_json::Value) -> Result<(), String> {
                 .spawn()
                 .map_err(|e| format!("启动失败: {}", e))?;
         }
-        "folder" | "file" | "url" => {
+        "folder" => {
+            let target = action["target"].as_str().ok_or("missing target")?;
+            open_folder_with(&action, target)?;
+        }
+        "file" | "url" => {
             let target = action["target"].as_str().ok_or("missing target")?;
             open::that(target).map_err(|e| e.to_string())?;
         }
@@ -519,6 +801,25 @@ fn execute_action(action: serde_json::Value) -> Result<(), String> {
             };
 
             // ── Dispatch ──────────────────────────────────────────────────────────
+
+            // Built-in terminal: stage the SSH command and open the terminal window.
+            // The user can type the password interactively inside xterm.
+            if terminal_pref == "terminal" {
+                let port_flag = if port == 22 {
+                    String::new()
+                } else {
+                    format!("-p {} ", port)
+                };
+                let ssh_cmd = format!("ssh {}{}", port_flag, ssh_target);
+                *term_state.pending_cmd.lock().unwrap() = Some(ssh_cmd);
+                if let Some(win) = app.get_webview_window("terminal") {
+                    if !win.is_visible().unwrap_or(false) {
+                        win.show().map_err(|e| e.to_string())?;
+                    }
+                    win.set_focus().map_err(|e| e.to_string())?;
+                }
+                return Ok(());
+            }
 
             if let Some(ref pwd) = password {
                 let launched = match terminal_pref {
@@ -1832,6 +2133,13 @@ pub fn run() {
             start_ngrok,
             stop_ngrok,
             get_ngrok_status,
+            terminal_spawn,
+            terminal_write,
+            terminal_resize,
+            terminal_kill,
+            terminal_run,
+            terminal_take_pending_cmd,
+            toggle_terminal_window,
         ])
         .setup(|app| {
             // ── App icon cache ──
@@ -1848,6 +2156,12 @@ pub fn run() {
             // ── frp process state ──
             app.manage(FrpState {
                 child: Arc::new(Mutex::new(None)),
+            });
+
+            // ── PTY terminal state ──
+            app.manage(TerminalState {
+                sessions: Arc::new(Mutex::new(HashMap::new())),
+                pending_cmd: Arc::new(Mutex::new(None)),
             });
 
             // ── ngrok state ──

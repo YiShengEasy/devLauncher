@@ -82,6 +82,21 @@
         "center": true,
         "skipTaskbar": true,
         "visible": false
+      },
+      {
+        "label": "terminal",
+        "url": "index.html?view=terminal",
+        "title": "DevLauncher 终端",
+        "width": 860,
+        "height": 520,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "alwaysOnTop": false,
+        "center": true,
+        "skipTaskbar": false,
+        "visible": false
       }
     ],
     "security": {

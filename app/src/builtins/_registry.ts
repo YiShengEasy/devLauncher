@@ -15,11 +15,13 @@ import { manifest as clipboardManifest } from "./clipboard/manifest";
 import { manifest as jsonManifest }      from "./json/manifest";
 import { manifest as totpManifest }      from "./totp/manifest";
 import { manifest as remoteManifest }    from "./remotedesk/manifest";
+import { manifest as terminalManifest }  from "./terminal/manifest";
 
 import { ClipboardApp }   from "./clipboard/App";
 import { JsonHelperApp }  from "./json/App";
 import { TotpApp }        from "./totp/App";
 import { RemoteDeskApp }  from "./remotedesk/App";
+import { TerminalApp }    from "./terminal/App";
 
 export interface BuiltinPlugin {
   manifest: BuiltinManifest;
@@ -31,6 +33,7 @@ export const BUILTIN_REGISTRY: BuiltinPlugin[] = [
   { manifest: jsonManifest,       App: JsonHelperApp },
   { manifest: totpManifest,       App: TotpApp },
   { manifest: remoteManifest,     App: RemoteDeskApp },
+  { manifest: terminalManifest,   App: TerminalApp },
 ];
 
 /** 按 id 查找插件 */
