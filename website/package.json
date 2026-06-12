@@ -1,0 +1,15 @@
+{
+  "name": "devlauncher-website",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs",
+    "dev:start": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-dev.ps1",
+    "dev:stop": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-dev.ps1",
+    "dev:status": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/status-dev.ps1",
+    "dev:tail": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/tail-log.ps1",
+    "build": "node scripts/build.mjs",
+    "preview": "node server.mjs dist 4173"
+  }
+}

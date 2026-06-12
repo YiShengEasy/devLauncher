@@ -32,9 +32,14 @@ export interface AppAction extends ActionBase {
   args?: string[];
 }
 
+export type FolderOpenWith = "explorer" | "vscode" | "cursor" | "custom";
+
 export interface FolderAction extends ActionBase {
   type: "folder";
   target: string;
+  openWith?: FolderOpenWith;
+  customOpener?: string;
+  customOpenerArgs?: string;
 }
 
 export interface FileAction extends ActionBase {
@@ -47,7 +52,7 @@ export interface UrlAction extends ActionBase {
   target: string;
 }
 
-export type SshTerminal = "auto" | "wt" | "cmd" | "powershell" | "gitbash";
+export type SshTerminal = "auto" | "wt" | "cmd" | "powershell" | "gitbash" | "terminal";
 
 export interface SshAction extends ActionBase {
   type: "ssh";
