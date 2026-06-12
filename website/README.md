@@ -2,6 +2,16 @@
 
 独立的 DevLauncher 个人产品介绍主页，不依赖 `app/` 桌面工具项目运行。
 
+## GitHub Pages
+
+推送到 `main` 后，GitHub Actions 会自动构建并发布 `website/dist`。
+
+访问地址：
+
+```text
+https://yishengeasy.github.io/devLauncher/
+```
+
 ## 本地运行
 
 ```powershell
