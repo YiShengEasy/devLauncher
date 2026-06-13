@@ -10,6 +10,7 @@
 
 import type { BuiltinManifest } from "./types";
 import type { ComponentType } from "react";
+import { lazy } from "react";
 
 import { manifest as clipboardManifest } from "./clipboard/manifest";
 import { manifest as jsonManifest }      from "./json/manifest";
@@ -18,14 +19,7 @@ import { manifest as remoteManifest }    from "./remotedesk/manifest";
 import { manifest as terminalManifest }  from "./terminal/manifest";
 import { manifest as screenshotAiManifest } from "./screenshotai/manifest";
 import { manifest as screenshotManifest }   from "./screenshot/manifest";
-
-import { ClipboardApp }   from "./clipboard/App";
-import { JsonHelperApp }  from "./json/App";
-import { TotpApp }        from "./totp/App";
-import { RemoteDeskApp }  from "./remotedesk/App";
-import { TerminalApp }    from "./terminal/App";
-import { ScreenshotAiApp } from "./screenshotai/App";
-import { ScreenshotApp }  from "./screenshot/App";
+import { manifest as webaccountsManifest } from "./webaccounts/manifest";
 
 export interface BuiltinPlugin {
   manifest: BuiltinManifest;
@@ -33,13 +27,14 @@ export interface BuiltinPlugin {
 }
 
 export const BUILTIN_REGISTRY: BuiltinPlugin[] = [
-  { manifest: clipboardManifest,    App: ClipboardApp },
-  { manifest: jsonManifest,         App: JsonHelperApp },
-  { manifest: totpManifest,         App: TotpApp },
-  { manifest: remoteManifest,       App: RemoteDeskApp },
-  { manifest: terminalManifest,     App: TerminalApp },
-  { manifest: screenshotAiManifest, App: ScreenshotAiApp },
-  { manifest: screenshotManifest,   App: ScreenshotApp },
+  { manifest: clipboardManifest,    App: lazy(() => import("./clipboard/App").then(m => ({ default: m.ClipboardApp }))) },
+  { manifest: jsonManifest,         App: lazy(() => import("./json/App").then(m => ({ default: m.JsonHelperApp }))) },
+  { manifest: totpManifest,         App: lazy(() => import("./totp/App").then(m => ({ default: m.TotpApp }))) },
+  { manifest: remoteManifest,       App: lazy(() => import("./remotedesk/App").then(m => ({ default: m.RemoteDeskApp }))) },
+  { manifest: terminalManifest,     App: lazy(() => import("./terminal/App").then(m => ({ default: m.TerminalApp }))) },
+  { manifest: screenshotAiManifest, App: lazy(() => import("./screenshotai/App").then(m => ({ default: m.ScreenshotAiApp }))) },
+  { manifest: screenshotManifest,   App: lazy(() => import("./screenshot/App").then(m => ({ default: m.ScreenshotApp }))) },
+  { manifest: webaccountsManifest,  App: lazy(() => import("./webaccounts/App").then(m => ({ default: m.WebAccountsApp }))) },
 ];
 
 /** 按 id 查找插件 */

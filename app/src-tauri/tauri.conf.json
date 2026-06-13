@@ -127,6 +127,21 @@
         "center": true,
         "skipTaskbar": true,
         "visible": false
+      },
+      {
+        "label": "webaccounts",
+        "url": "index.html?view=webaccounts",
+        "title": "DevLauncher Web Accounts",
+        "width": 560,
+        "height": 620,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
     "security": {

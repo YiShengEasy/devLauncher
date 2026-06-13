@@ -8,6 +8,7 @@ interface KeyboardState {
   loading: boolean;
   error: string | null;
   appIcons: Record<string, string>; // exe_path → base64 PNG data URL
+  favicons: Record<string, string>;
   showSettings: boolean;
 
   // Derived
@@ -25,6 +26,7 @@ interface KeyboardState {
   addPage: (name: string) => void;
   renamePage: (index: number, name: string) => void;
   removePage: (index: number) => void;
+  setFavicons: (icons: Record<string, string>) => void;
   setShowSettings: (show: boolean) => void;
   setTheme: (theme: Partial<ThemeConfig>) => void;
 }
@@ -35,6 +37,7 @@ export const useKeyboardStore = create<KeyboardState>((set, get) => ({
   loading: false,
   error: null,
   appIcons: {},
+  favicons: {},
   showSettings: false,
   theme: DEFAULT_THEME,
 
@@ -49,6 +52,7 @@ export const useKeyboardStore = create<KeyboardState>((set, get) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setAppIcons: (icons) => set({ appIcons: icons }),
+  setFavicons: (icons) => set((state) => ({ favicons: { ...state.favicons, ...icons } })),
   setShowSettings: (show) => set({ showSettings: show }),
 
   bindKey: (pageIndex, keyId, action) =>

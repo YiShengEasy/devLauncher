@@ -6,6 +6,12 @@
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![tauri](https://img.shields.io/badge/Tauri-2.x-orange)
 
+## 截图工作流命名
+
+- `截图`：负责快速截图、选区、在截图模式中添加编号、方框、文字、马赛克等可视标注，并保存到剪贴板或截图列表。
+- `截图问题报告`：原“AI 截图标注”，负责从截图列表中选择图片，维护编号说明和问题上下文，并生成面向 AI 或协作者的问题报告与 Prompt。
+- 内部插件 id 仍保留 `screenshotai`，仅调整展示名称，避免影响现有窗口、路由和本地存储。
+
 ## 功能特性
 
 | 功能 | 说明 |

@@ -1,4 +1,5 @@
 import ReactDOM from "react-dom/client";
+import { Suspense } from "react";
 import App from "./App";
 import { BUILTIN_REGISTRY } from "./builtins/_registry";
 import "./index.css";
@@ -9,5 +10,9 @@ const view = params.get("view");
 const plugin = view ? BUILTIN_REGISTRY.find(p => p.manifest.id === view) : null;
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  plugin ? <plugin.App /> : <App />
+  plugin ? (
+    <Suspense fallback={null}>
+      <plugin.App />
+    </Suspense>
+  ) : <App />
 );

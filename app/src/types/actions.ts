@@ -9,9 +9,10 @@ import { manifest as remoteManifest }    from "@/builtins/remotedesk/manifest";
 import { manifest as terminalManifest }  from "@/builtins/terminal/manifest";
 import { manifest as screenshotAiManifest } from "@/builtins/screenshotai/manifest";
 import { manifest as screenshotManifest }   from "@/builtins/screenshot/manifest";
+import { manifest as webaccountsManifest }  from "@/builtins/webaccounts/manifest";
 
 // 内置功能 manifest 列表（新增插件在此添加）
-const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest, terminalManifest, screenshotAiManifest, screenshotManifest] as const;
+const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest, terminalManifest, screenshotAiManifest, screenshotManifest, webaccountsManifest] as const;
 
 /** 内置功能 ID 联合类型，自动从 manifest 派生 */
 export type BuiltinFeature = typeof _BUILTIN_MANIFESTS[number]["id"];
@@ -53,6 +54,17 @@ export interface FileAction extends ActionBase {
 export interface UrlAction extends ActionBase {
   type: "url";
   target: string;
+  username?: string;
+  /** Password is stored in the OS credential store, not here. */
+  hasPassword?: boolean;
+  /** Open in Google Chrome and let the DevLauncher Chrome extension fill matching login forms. */
+  autofill?: boolean;
+  /** Submit after filling. Disabled by default for safety. */
+  autoSubmit?: boolean;
+  /** Optional CSS selector override for unusual login pages. */
+  usernameSelector?: string;
+  /** Optional CSS selector override for unusual login pages. */
+  passwordSelector?: string;
 }
 
 export type SshTerminal = "auto" | "wt" | "cmd" | "powershell" | "gitbash" | "terminal";
