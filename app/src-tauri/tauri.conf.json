@@ -40,7 +40,7 @@
       },
       {
         "label": "json-helper",
-        "url": "index.html?view=json-helper",
+        "url": "index.html?view=json",
         "title": "DevLauncher JSON Helper",
         "width": 700,
         "height": 620,
@@ -96,6 +96,36 @@
         "alwaysOnTop": false,
         "center": true,
         "skipTaskbar": false,
+        "visible": false
+      },
+      {
+        "label": "screenshotai",
+        "url": "index.html?view=screenshotai",
+        "title": "DevLauncher AI Screenshot Annotator",
+        "width": 1180,
+        "height": 720,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "skipTaskbar": true,
+        "visible": false
+      },
+      {
+        "label": "screenshot",
+        "url": "index.html?view=screenshot",
+        "title": "DevLauncher Screenshot",
+        "width": 1280,
+        "height": 800,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "skipTaskbar": true,
         "visible": false
       }
     ],

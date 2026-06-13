@@ -67,7 +67,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
   const [sshPassword, setSshPassword]           = useState("");
   const [sshHasPassword, setSshHasPassword]     = useState((initialAction as SshAction)?.hasPassword ?? false);
   const [sshTerminal, setSshTerminal]           = useState<SshTerminal>((initialAction as SshAction)?.terminal ?? "auto");
-  const [shell, setShell]     = useState<"powershell"|"cmd"|"bat"|"wsl">((initialAction as ScriptAction)?.shell ?? "powershell");
+  const [shell, setShell]     = useState<"powershell"|"cmd"|"bat"|"wsl"|"terminal">((initialAction as ScriptAction)?.shell ?? "powershell");
   const [content, setContent] = useState((initialAction as ScriptAction)?.content ?? "");
   const [sysCmd, setSysCmd]   = useState((initialAction as SystemAction)?.command ?? "calculator");
   const [builtinFeature, setBuiltinFeature] = useState<BuiltinFeature>(
@@ -405,6 +405,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                   <option value="cmd" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>CMD</option>
                   <option value="powershell" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>PowerShell</option>
                   <option value="gitbash" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Git Bash（支持 expect 自动密码）</option>
+                  <option value="terminal" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>内置终端</option>
                 </select>
                 {sshTerminal === "gitbash" && (
                   <span style={{ fontSize: 10, color: "rgba(255,195,0,0.7)", marginTop: 3, display: "block" }}>
@@ -428,6 +429,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                   <option value="cmd" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>CMD</option>
                   <option value="bat" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Bat 文件</option>
                   <option value="wsl" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>WSL (Ubuntu)</option>
+                  <option value="terminal" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>内置终端</option>
                 </select>
               </Field>
               <Field label="脚本内容 *">

@@ -840,6 +840,16 @@ fn execute_action(
         "script" => {
             let shell = action["shell"].as_str().unwrap_or("powershell");
             let content = action["content"].as_str().unwrap_or("");
+            if shell == "terminal" {
+                *term_state.pending_cmd.lock().unwrap() = Some(content.to_string());
+                if let Some(win) = app.get_webview_window("terminal") {
+                    if !win.is_visible().unwrap_or(false) {
+                        win.show().map_err(|e| e.to_string())?;
+                    }
+                    win.set_focus().map_err(|e| e.to_string())?;
+                }
+                return Ok(());
+            }
             match shell {
                 "powershell" => {
                     std::process::Command::new("powershell")
@@ -952,6 +962,12 @@ fn set_clipboard_text(text: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_clipboard_text() -> Result<String, String> {
+    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    cb.get_text().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn set_clipboard_image(data: String) -> Result<(), String> {
     let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
     let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
@@ -1011,6 +1027,90 @@ fn toggle_totp_window(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Toggle screenshot AI annotator window visibility
+#[tauri::command]
+fn toggle_screenshotai_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("screenshotai") {
+        if win.is_visible().unwrap_or(false) {
+            win.hide().map_err(|e| e.to_string())?;
+        } else {
+            win.show().map_err(|e| e.to_string())?;
+            win.set_focus().map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+// -----------------------------------------------
+// Screenshot capture state
+// -----------------------------------------------
+
+pub struct ScreenshotCaptureState {
+    pub image_data: Arc<Mutex<Option<String>>>,
+}
+
+#[tauri::command]
+fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("screenshot") {
+        if win.is_visible().unwrap_or(false) {
+            win.hide().map_err(|e| e.to_string())?;
+        } else {
+            use screenshots::Screen;
+            let screens = Screen::all().map_err(|e| e.to_string())?;
+            let screen = screens.iter()
+                .find(|s| s.display_info.is_primary)
+                .or_else(|| screens.first())
+                .ok_or("no screen found")?;
+
+            let sx = screen.display_info.x;
+            let sy = screen.display_info.y;
+            let sw = screen.display_info.width;
+            let sh = screen.display_info.height;
+
+            // ── Step 1: capture FIRST (pure BitBlt, ~5ms) BEFORE window is shown ──
+            // This guarantees the screenshot window itself never appears in the image.
+            let captured = screen.capture().map_err(|e| e.to_string())?;
+            let w   = captured.width();
+            let h   = captured.height();
+            let raw = captured.into_raw();
+
+            // ── Step 2: show window immediately after capture ──────────────────────
+            win.set_position(tauri::PhysicalPosition::new(sx, sy))
+                .map_err(|e| e.to_string())?;
+            win.set_size(tauri::PhysicalSize::new(sw, sh))
+                .map_err(|e| e.to_string())?;
+            win.show().map_err(|e| e.to_string())?;
+            win.set_focus().map_err(|e| e.to_string())?;
+
+            // ── Step 3: encode JPEG in background thread (~30ms) ──────────────────
+            // Raw pixels are already in memory; encoding is the only remaining work.
+            let app2 = app.clone();
+            std::thread::spawn(move || {
+                let rgba = match RgbaImage::from_raw(w, h, raw) { Some(i) => i, None => return };
+                // JPEG quality 92 is visually lossless and ~10× faster than PNG
+                match encode_image_jpeg(&rgba, w, 92) {
+                    Ok((b64, _, _)) => { let _ = app2.emit_to("screenshot", "screenshot-ready", b64); }
+                    Err(e)          => eprintln!("[screenshot] encode failed: {}", e),
+                }
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Frontend calls this on mount to retrieve the captured image (one-shot).
+#[tauri::command]
+fn get_pending_screenshot(state: tauri::State<'_, ScreenshotCaptureState>) -> Option<String> {
+    state.image_data.lock().unwrap().take()
+}
+
+/// Write base64-encoded PNG bytes to the given file path.
+#[tauri::command]
+fn screenshot_write_file(path: String, data: String) -> Result<(), String> {
+    let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
+    fs::write(&path, &bytes).map_err(|e| e.to_string())
 }
 
 // -----------------------------------------------
@@ -2103,12 +2203,14 @@ pub fn run() {
             get_config_path,
             execute_action,
             get_clipboard_history,
+            get_clipboard_text,
             set_clipboard_text,
             set_clipboard_image,
             clear_clipboard_history,
             toggle_clipboard_window,
             toggle_json_helper_window,
             toggle_totp_window,
+            toggle_screenshotai_window,
             load_totp_tokens,
             save_totp_tokens,
             get_clipboard_favorites,
@@ -2140,6 +2242,9 @@ pub fn run() {
             terminal_run,
             terminal_take_pending_cmd,
             toggle_terminal_window,
+            toggle_screenshot_window,
+            get_pending_screenshot,
+            screenshot_write_file,
         ])
         .setup(|app| {
             // ── App icon cache ──
@@ -2162,6 +2267,11 @@ pub fn run() {
             app.manage(TerminalState {
                 sessions: Arc::new(Mutex::new(HashMap::new())),
                 pending_cmd: Arc::new(Mutex::new(None)),
+            });
+
+            // ── Screenshot capture state ──
+            app.manage(ScreenshotCaptureState {
+                image_data: Arc::new(Mutex::new(None)),
             });
 
             // ── ngrok state ──

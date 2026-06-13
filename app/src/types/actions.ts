@@ -6,9 +6,12 @@ import { manifest as clipboardManifest } from "@/builtins/clipboard/manifest";
 import { manifest as jsonManifest }      from "@/builtins/json/manifest";
 import { manifest as totpManifest }      from "@/builtins/totp/manifest";
 import { manifest as remoteManifest }    from "@/builtins/remotedesk/manifest";
+import { manifest as terminalManifest }  from "@/builtins/terminal/manifest";
+import { manifest as screenshotAiManifest } from "@/builtins/screenshotai/manifest";
+import { manifest as screenshotManifest }   from "@/builtins/screenshot/manifest";
 
 // 内置功能 manifest 列表（新增插件在此添加）
-const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest] as const;
+const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest, terminalManifest, screenshotAiManifest, screenshotManifest] as const;
 
 /** 内置功能 ID 联合类型，自动从 manifest 派生 */
 export type BuiltinFeature = typeof _BUILTIN_MANIFESTS[number]["id"];
@@ -68,7 +71,7 @@ export interface SshAction extends ActionBase {
 
 export interface ScriptAction extends ActionBase {
   type: "script";
-  shell: "powershell" | "cmd" | "bat" | "wsl";
+  shell: "powershell" | "cmd" | "bat" | "wsl" | "terminal";
   content: string;
   file?: string;
 }

@@ -88,12 +88,15 @@ export function TerminalApp() {
       });
     };
 
-    // Check for a pending command (e.g. SSH initiated from execute_action)
+    // Check for a pending command (e.g. SSH/script initiated from execute_action)
     invoke<string | null>("terminal_take_pending_cmd").then((pendingCmd) => {
       if (pendingCmd) {
-        // Run the SSH/script command directly instead of a shell
-        const parts = pendingCmd.split(" ");
-        spawnPty(parts[0], parts.slice(1));
+        // Route through a shell so inline commands, arguments, and quotes are preserved.
+        if (navigator.platform.startsWith("Win")) {
+          spawnPty("powershell.exe", ["-NoExit", "-Command", pendingCmd]);
+        } else {
+          spawnPty("bash", ["-lc", `${pendingCmd}; exec bash`]);
+        }
         setTitle(pendingCmd.slice(0, 40));
       } else {
         spawnPty(shell, []);
