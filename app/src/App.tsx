@@ -16,6 +16,10 @@ function keyIdToShortcut(keyId: string): string {
   return `Alt+Key${keyId}`;
 }
 
+function builtinToggleCommand(feature: BuiltinAction["feature"]): string {
+  return feature === "json" ? "toggle_json_helper_window" : `toggle_${feature}_window`;
+}
+
 // Hex → rgba helper
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -117,7 +121,7 @@ export default function App() {
     // Handle builtin actions locally
     if (action.type === "builtin") {
       const b = action as BuiltinAction;
-      invoke(`toggle_${b.feature}_window`).catch(console.error);
+      invoke(builtinToggleCommand(b.feature)).catch(console.error);
       return;
     }
     try {
@@ -167,7 +171,7 @@ export default function App() {
         const capturedAction = action;
         const handler = makeDebounced(async () => {
           if (capturedAction.type === "builtin") {
-            invoke(`toggle_${(capturedAction as BuiltinAction).feature}_window`).catch(console.error);
+            invoke(builtinToggleCommand((capturedAction as BuiltinAction).feature)).catch(console.error);
             return;
           }
           invoke("execute_action", { action: capturedAction }).catch(console.error);
@@ -296,12 +300,16 @@ export default function App() {
         >
           {/* Left: logo + name */}
           <div style={{ display: "flex", alignItems: "center", gap: 7, pointerEvents: "none" }}>
-            <div style={{
-              width: 18, height: 18, borderRadius: 5,
-              background: "linear-gradient(135deg, #3b82f6, #8b5cf6)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: 10, fontWeight: 800, color: "#fff",
-            }}>D</div>
+            <img
+              src="/devlauncher-icon.png"
+              alt=""
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 5,
+                display: "block",
+              }}
+            />
             <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.75)", letterSpacing: "0.3px" }}>
               DevLauncher
             </span>

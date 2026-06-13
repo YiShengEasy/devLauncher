@@ -68,5 +68,62 @@ export function BuiltinIcon({ feature, size = 20 }: BuiltinIconProps) {
           <path d="M9.5 12l1.5 1.5 3-3.5" stroke="url(#totp-grad)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" fill="none" />
         </svg>
       );
+    case "remotedesk":
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="remotedesk-grad" x1="3" y1="4" x2="21" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#38bdf8" />
+              <stop offset="1" stopColor="#22c55e" />
+            </linearGradient>
+          </defs>
+          <rect x="3.5" y="5" width="17" height="11" rx="2" stroke="url(#remotedesk-grad)" strokeWidth="1.8" />
+          <path d="M9 20h6M12 16v4" stroke="url(#remotedesk-grad)" strokeWidth="1.8" strokeLinecap="round" />
+          <path d="M8 10h5l-2-2M13 10l-2 2" stroke="url(#remotedesk-grad)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" opacity="0.7" />
+        </svg>
+      );
+    case "terminal":
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="terminal-grad" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#5eead4" />
+              <stop offset="1" stopColor="#38bdf8" />
+            </linearGradient>
+          </defs>
+          <rect x="3.5" y="5" width="17" height="14" rx="2.5" stroke="url(#terminal-grad)" strokeWidth="1.8" />
+          <path d="M7.5 10l2.5 2-2.5 2M12.5 14h4" stroke="url(#terminal-grad)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "screenshotai":
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="screenshotai-grad" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#fb7185" />
+              <stop offset="0.55" stopColor="#facc15" />
+              <stop offset="1" stopColor="#38bdf8" />
+            </linearGradient>
+          </defs>
+          <rect x="3.5" y="5" width="17" height="14" rx="2.5" stroke="url(#screenshotai-grad)" strokeWidth="1.8" />
+          <circle cx="8" cy="10" r="2.5" fill="url(#screenshotai-grad)" />
+          <path d="M12 9.5h5M12 13.5h3.5" stroke="url(#screenshotai-grad)" strokeWidth="1.7" strokeLinecap="round" opacity="0.75" />
+          <path d="M6.5 17l3-3 2 2 2.5-2.5 3.5 3.5" stroke="url(#screenshotai-grad)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      );
+    case "screenshot":
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="screenshot-grad" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#0a84ff" />
+              <stop offset="1" stopColor="#5ac8fa" />
+            </linearGradient>
+          </defs>
+          <path d="M7 4H5.5A1.5 1.5 0 004 5.5V7M17 4h1.5A1.5 1.5 0 0120 5.5V7M7 20H5.5A1.5 1.5 0 014 18.5V17M17 20h1.5a1.5 1.5 0 001.5-1.5V17" stroke="url(#screenshot-grad)" strokeWidth="1.8" strokeLinecap="round" />
+          <rect x="7" y="8" width="10" height="8" rx="1.5" stroke="url(#screenshot-grad)" strokeWidth="1.8" />
+          <path d="M9.5 13.5l2-2 1.5 1.5 1.5-1.5 2 2.5" stroke="url(#screenshot-grad)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
+        </svg>
+      );
   }
 }
