@@ -142,6 +142,21 @@
         "center": true,
         "skipTaskbar": true,
         "visible": false
+      },
+      {
+        "label": "quickmemory",
+        "url": "index.html?view=quickmemory",
+        "title": "DevLauncher 快捷记忆",
+        "width": 1040,
+        "height": 720,
+        "resizable": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": false,
+        "center": true,
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
     "security": {

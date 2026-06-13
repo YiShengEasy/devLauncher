@@ -10,9 +10,10 @@ import { manifest as terminalManifest }  from "@/builtins/terminal/manifest";
 import { manifest as screenshotAiManifest } from "@/builtins/screenshotai/manifest";
 import { manifest as screenshotManifest }   from "@/builtins/screenshot/manifest";
 import { manifest as webaccountsManifest }  from "@/builtins/webaccounts/manifest";
+import { manifest as quickMemoryManifest }  from "@/builtins/quickmemory/manifest";
 
 // 内置功能 manifest 列表（新增插件在此添加）
-const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest, terminalManifest, screenshotAiManifest, screenshotManifest, webaccountsManifest] as const;
+const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest, terminalManifest, screenshotAiManifest, screenshotManifest, webaccountsManifest, quickMemoryManifest] as const;
 
 /** 内置功能 ID 联合类型，自动从 manifest 派生 */
 export type BuiltinFeature = typeof _BUILTIN_MANIFESTS[number]["id"];
