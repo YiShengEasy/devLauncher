@@ -5,6 +5,18 @@ export type StoredScreenshot = {
   height: number;
   createdAt: number;
   title: string;
+  annotations?: StoredScreenshotAnnotation[];
+};
+
+export type StoredScreenshotAnnotation = {
+  id: number;
+  label: string;
+  tone?: "problem" | "expected" | "focus";
+  x: number;
+  y: number;
+  kind?: "marker" | "boxCallout";
+  color?: string;
+  burnedIn?: boolean;
 };
 
 export const SCREENSHOT_STORE_KEY = "devlauncher_screenshots";
@@ -36,4 +48,3 @@ export function addScreenshot(item: Omit<StoredScreenshot, "id" | "createdAt" | 
   saveScreenshots([saved, ...loadScreenshots()]);
   return saved;
 }
-

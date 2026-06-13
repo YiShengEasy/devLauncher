@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
-import { loadScreenshots, type StoredScreenshot } from "../screenshotStore";
+import { loadScreenshots, saveScreenshots, type StoredScreenshot, type StoredScreenshotAnnotation } from "../screenshotStore";
 
 type MarkerTone = "problem" | "expected" | "focus";
 
@@ -14,6 +14,7 @@ type Annotation = {
   tone: MarkerTone;
   x: number;
   y: number;
+  burnedIn?: boolean;
 };
 
 const DRAFT_KEY = "screenshotai_annotation_draft";
@@ -86,6 +87,68 @@ function getPointInImage(event: MouseEvent<HTMLDivElement>, image: HTMLImageElem
   return { x, y };
 }
 
+function toStoredAnnotations(annotations: Annotation[]): StoredScreenshotAnnotation[] {
+  return annotations.map((annotation) => ({
+    id: annotation.id,
+    label: annotation.label,
+    tone: annotation.tone,
+    x: annotation.x,
+    y: annotation.y,
+    burnedIn: annotation.burnedIn ?? false,
+    kind: "marker",
+  }));
+}
+
+function drawNumberAnnotation(
+  ctx: CanvasRenderingContext2D,
+  annotation: Annotation,
+  width: number,
+  height: number,
+) {
+  const x = annotation.x * width;
+  const y = annotation.y * height;
+  const radius = Math.max(18, Math.round(width * 0.012));
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.28)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = toneMeta[annotation.tone].color;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `700 ${Math.round(radius * 0.95)}px Arial`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(annotation.id), x, y + 1);
+
+  const text = annotation.label.trim();
+  if (text) {
+    ctx.font = "600 14px Arial";
+    const padX = 9;
+    const textX = x + radius + 10;
+    const textY = y - 13;
+    const boxW = ctx.measureText(text).width + padX * 2;
+    const boxH = 26;
+    ctx.fillStyle = "rgba(28,28,30,0.78)";
+    ctx.beginPath();
+    if ((ctx as any).roundRect) {
+      (ctx as any).roundRect(textX, textY, boxW, boxH, 8);
+    } else {
+      ctx.rect(textX, textY, boxW, boxH);
+    }
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.textAlign = "left";
+    ctx.fillText(text, textX + padX, textY + boxH / 2 + 1);
+  }
+  ctx.restore();
+}
+
 async function decodeImage(item: StoredScreenshot) {
   const image = new Image();
   image.src = `data:image/jpeg;base64,${item.data}`;
@@ -152,13 +215,34 @@ export function ScreenshotAiApp() {
   }, [appName, page, operation, expected, annotations, zoom]);
 
   useEffect(() => {
-    setAnnotations([]);
-  }, [selectedId]);
+    if (!selected?.annotations?.length) {
+      setAnnotations([]);
+      return;
+    }
+    setAnnotations(selected.annotations.map((annotation) => ({
+      id: annotation.id,
+      label: annotation.label,
+      tone: annotation.tone ?? "problem",
+      x: annotation.x,
+      y: annotation.y,
+      burnedIn: annotation.burnedIn,
+    })));
+  }, [selected?.id]);
 
   const prompt = useMemo(
     () => buildPrompt(appName, page, operation, expected, annotations),
     [appName, page, operation, expected, annotations],
   );
+
+  function setAnnotationsAndPersist(next: Annotation[]) {
+    setAnnotations(next);
+    if (!selected) return;
+    const nextItems = items.map((item) => (
+      item.id === selected.id ? { ...item, annotations: toStoredAnnotations(next) } : item
+    ));
+    setItems(nextItems);
+    saveScreenshots(nextItems);
+  }
 
   function addPoint(event: MouseEvent<HTMLDivElement>) {
     if (!selected) return;
@@ -167,11 +251,15 @@ export function ScreenshotAiApp() {
     const point = getPointInImage(event, image);
     if (!point) return;
     const id = annotations.reduce((max, annotation) => Math.max(max, annotation.id), 0) + 1;
-    setAnnotations([...annotations, { id, label: "", tone: "problem", x: point.x, y: point.y }]);
+    setAnnotationsAndPersist([...annotations, { id, label: "", tone: "problem", x: point.x, y: point.y }]);
   }
 
   function updateAnnotation(id: number, patch: Partial<Annotation>) {
-    setAnnotations(annotations.map((annotation) => annotation.id === id ? { ...annotation, ...patch } : annotation));
+    setAnnotationsAndPersist(annotations.map((annotation) => annotation.id === id ? { ...annotation, ...patch } : annotation));
+  }
+
+  function deleteAnnotation(id: number) {
+    setAnnotationsAndPersist(annotations.filter((annotation) => annotation.id !== id));
   }
 
   async function copyPrompt() {
@@ -193,22 +281,8 @@ export function ScreenshotAiApp() {
     if (!ctx) return;
     ctx.drawImage(image, 0, 0, selected.width, selected.height);
 
-    for (const annotation of annotations) {
-      const x = annotation.x * selected.width;
-      const y = annotation.y * selected.height;
-      const radius = Math.max(18, Math.round(selected.width * 0.012));
-      ctx.fillStyle = toneMeta[annotation.tone].color;
-      ctx.strokeStyle = "#111827";
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#111827";
-      ctx.font = `700 ${Math.round(radius * 1.1)}px Arial`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(String(annotation.id), x, y + 1);
+    for (const annotation of annotations.filter((item) => !item.burnedIn)) {
+      drawNumberAnnotation(ctx, annotation, selected.width, selected.height);
     }
 
     const dataUrl = canvas.toDataURL("image/png");
@@ -272,9 +346,16 @@ export function ScreenshotAiApp() {
             {selected ? (
               <div style={{ position: "relative", width: selected.width * scale, height: selected.height * scale, margin: 12 }}>
                 <img ref={imageRef} src={`data:image/jpeg;base64,${selected.data}`} alt="selected screenshot" draggable={false} style={{ display: "block", width: selected.width * scale, height: selected.height * scale, userSelect: "none" }} />
-                {annotations.map((annotation) => (
-                  <div key={annotation.id} style={{ position: "absolute", left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, transform: "translate(-50%, -50%)", width: 24, height: 24, borderRadius: "50%", background: toneMeta[annotation.tone].color, border: "2px solid #111827", color: "#111827", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                    {annotation.id}
+                {annotations.filter((item) => !item.burnedIn).map((annotation) => (
+                  <div key={annotation.id} style={{ position: "absolute", left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, transform: "translate(-50%, -50%)", display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
+                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: toneMeta[annotation.tone].color, border: "2px solid rgba(255,255,255,0.92)", color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.35)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 16px rgba(0,0,0,0.25)" }}>
+                      {annotation.id}
+                    </div>
+                    {annotation.label.trim() && (
+                      <div style={{ borderRadius: 8, background: "rgba(28,28,30,0.78)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 12, fontWeight: 600, padding: "5px 8px", boxShadow: "0 6px 16px rgba(0,0,0,0.22)", whiteSpace: "nowrap" }}>
+                        {annotation.label}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -296,7 +377,7 @@ export function ScreenshotAiApp() {
           <div style={{ ...panelStyle, padding: 12, display: "flex", flexDirection: "column", gap: 9 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: 12, fontWeight: 700 }}>编号标注</div>
-              <button onClick={() => setAnnotations([])} style={btnStyle}>清空</button>
+              <button onClick={() => setAnnotationsAndPersist([])} style={btnStyle}>清空</button>
             </div>
             {annotations.map((annotation) => (
               <div key={annotation.id} style={{ display: "grid", gridTemplateColumns: "30px 74px 1fr 26px", gap: 6, alignItems: "center" }}>
@@ -307,7 +388,7 @@ export function ScreenshotAiApp() {
                   <option value="focus">关注</option>
                 </select>
                 <input style={inputStyle} value={annotation.label} onChange={(event) => updateAnnotation(annotation.id, { label: event.target.value })} placeholder="说明" />
-                <button onClick={() => setAnnotations(annotations.filter((item) => item.id !== annotation.id))} style={{ ...btnStyle, width: 26, height: 26, padding: 0 }}>-</button>
+                <button onClick={() => deleteAnnotation(annotation.id)} style={{ ...btnStyle, width: 26, height: 26, padding: 0 }}>-</button>
               </div>
             ))}
           </div>
