@@ -139,5 +139,20 @@ export function BuiltinIcon({ feature, size = 20 }: BuiltinIconProps) {
           <path d="M14.7 13.8h2.2v3.6h-5.4v-3.6h1.1v-1.2a2.1 2.1 0 014.2 0v1.2h-1.2v-1.2a.9.9 0 10-1.8 0v1.2h.9Z" fill="url(#webaccounts-grad)" opacity="0.82" />
         </svg>
       );
+    case "quickmemory":
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="quickmemory-grad" x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#5eead4" />
+              <stop offset="0.52" stopColor="#facc15" />
+              <stop offset="1" stopColor="#fb7185" />
+            </linearGradient>
+          </defs>
+          <path d="M7 4h8.5L19 7.5V20H7a2 2 0 01-2-2V6a2 2 0 012-2Z" stroke="url(#quickmemory-grad)" strokeWidth="1.8" strokeLinejoin="round" />
+          <path d="M15.5 4V8H19" stroke="url(#quickmemory-grad)" strokeWidth="1.6" strokeLinejoin="round" />
+          <path d="M8.5 11h7M8.5 14h5M8.5 17h6.5" stroke="url(#quickmemory-grad)" strokeWidth="1.6" strokeLinecap="round" opacity="0.75" />
+        </svg>
+      );
   }
 }

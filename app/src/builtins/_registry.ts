@@ -20,6 +20,7 @@ import { manifest as terminalManifest }  from "./terminal/manifest";
 import { manifest as screenshotAiManifest } from "./screenshotai/manifest";
 import { manifest as screenshotManifest }   from "./screenshot/manifest";
 import { manifest as webaccountsManifest } from "./webaccounts/manifest";
+import { manifest as quickMemoryManifest } from "./quickmemory/manifest";
 
 export interface BuiltinPlugin {
   manifest: BuiltinManifest;
@@ -35,6 +36,7 @@ export const BUILTIN_REGISTRY: BuiltinPlugin[] = [
   { manifest: screenshotAiManifest, App: lazy(() => import("./screenshotai/App").then(m => ({ default: m.ScreenshotAiApp }))) },
   { manifest: screenshotManifest,   App: lazy(() => import("./screenshot/App").then(m => ({ default: m.ScreenshotApp }))) },
   { manifest: webaccountsManifest,  App: lazy(() => import("./webaccounts/App").then(m => ({ default: m.WebAccountsApp }))) },
+  { manifest: quickMemoryManifest,  App: lazy(() => import("./quickmemory/App").then(m => ({ default: m.QuickMemoryApp }))) },
 ];
 
 /** 按 id 查找插件 */

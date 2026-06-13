@@ -6,3 +6,4 @@ pub mod screenshotai;
 pub mod terminal;
 pub mod totp;
 pub mod webaccounts;
+pub mod quickmemory;

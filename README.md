@@ -1,141 +1,173 @@
 # DevLauncher
 
-> 开发者效率启动器 — 把常用操作绑定到虚拟键盘，一键直达。
+Developer productivity launcher for Windows. DevLauncher binds frequent development actions to a virtual keyboard and ships several built-in utility panels for everyday engineering work.
 
 ![version](https://img.shields.io/badge/version-0.2.0-blue)
 ![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
 ![tauri](https://img.shields.io/badge/Tauri-2.x-orange)
 
-## 截图工作流命名
+## Current Status
 
-- `截图`：负责快速截图、选区、在截图模式中添加编号、方框、文字、马赛克等可视标注，并保存到剪贴板或截图列表。
-- `截图问题报告`：原“AI 截图标注”，负责从截图列表中选择图片，维护编号说明和问题上下文，并生成面向 AI 或协作者的问题报告与 Prompt。
-- 内部插件 id 仍保留 `screenshotai`，仅调整展示名称，避免影响现有窗口、路由和本地存储。
+The main desktop app lives in `app/`. The standalone website lives in `website/` and is intentionally separate from the Tauri application.
 
-## 功能特性
+Recent app work focused on built-in tools and plugin-style feature registration:
 
-| 功能 | 说明 |
-|------|------|
-| **虚拟键盘** | 4 行按键布局，每键独立绑定动作 |
-| **多页面** | 支持多个键盘页（开发/运维等），Tab 键切换 |
-| **页面管理** | 双击改名、右键删除、+ 新增页面 |
-| **全局快捷键** | `Alt + 键` 全局触发，窗口隐藏时同样有效 |
-| **系统托盘** | 关闭按钮隐藏到托盘，左键切换显示/隐藏，右键退出 |
-| **内置剪切板** | 自动记录最近 30 条剪切板历史，搜索过滤，一键复制 |
-| **主题系统** | 内置 5 套预设，支持自定义背景色/透明度/模糊强度/边框色 |
-| **多动作类型** | App / 文件夹 / 文件 / URL / SSH / 脚本 / 系统命令 / 内置功能 |
+- Rust backend commands were split into modules under `app/src-tauri/src/`.
+- Built-in windows are routed through `?view=<id>` and registered in `app/src/builtins/_registry.ts`.
+- The app now includes a `quickmemory` built-in panel for beginner-friendly command and shortcut recall.
+- Verification baseline: `npm run build` in `app/` and `cargo check` in `app/src-tauri/`.
 
-## 快捷键
+## Features
 
-| 快捷键 | 功能 |
-|--------|------|
-| `Alt + Space` | 显示 / 隐藏主窗口 |
-| `Alt + [Q/W/E/...]` | 执行当前页面对应键的绑定动作 |
-| `Ctrl + Shift + V` | 打开剪切板历史面板 |
-| `Tab` / `Shift+Tab` | 切换键盘页面（窗口有焦点时） |
+| Feature | Description |
+| --- | --- |
+| Virtual keyboard launcher | Bind actions to keyboard-like keys and trigger them from the main panel. |
+| Multiple pages | Organize bindings across pages and switch pages with `Tab` / `Shift+Tab`. |
+| Global shortcuts | `Alt+Space` toggles the main window; `Alt+<key>` triggers the active page binding. |
+| Tray behavior | Main window can hide to tray and be shown again from the tray/menu. |
+| Action bindings | Supports app, folder, file, URL, SSH, script, system command, and built-in actions. |
+| Theme settings | Glass-style panel with configurable background, blur, border, and key opacity. |
+| Folder open-with | Folder bindings can open in Explorer, VS Code, Cursor, or a custom opener. |
+| Built-in panels | Clipboard, JSON, TOTP, remote desk, terminal, screenshot, screenshot report, web accounts, and quick memory. |
 
-## 技术栈
+## Built-In Panels
 
-- **Tauri 2** — 桌面框架（Rust 后端）
-- **React 19 + TypeScript** — 前端
-- **Zustand** — 状态管理
-- **Vite + Tailwind CSS v4** — 构建与样式
-- **serde_yaml** — YAML 配置持久化
-- **arboard** — 剪切板访问
+| ID | Panel | Notes |
+| --- | --- | --- |
+| `clipboard` | Clipboard history | Recent clipboard history, favorites, and quick restore. |
+| `json` | JSON helper | JSON formatting and developer utility window. |
+| `totp` | TOTP | Local token management panel. |
+| `remotedesk` | Remote desk | RDP profiles and remote host/tunnel helpers. |
+| `terminal` | Terminal | Built-in PTY terminal window and staged command execution. |
+| `screenshot` | Screenshot | Capture, annotate, and save screenshots. |
+| `screenshotai` | Screenshot report | Issue-report workflow for screenshots and AI/collaboration prompts. |
+| `webaccounts` | Web accounts | Chrome extension and web account binding support. |
+| `quickmemory` | Quick memory | Beginner-friendly command/shortcut memory panel with search, copy counts, and drag-to-swap ordering. |
 
-## 项目结构
+## Quick Memory
 
-```
+The Quick Memory panel is designed for developers who are still building command-line and editor muscle memory.
+
+Current categories:
+
+- Linux / Shell
+- Git
+- VS Code
+- Docker
+- Node / Package
+
+Behavior:
+
+- Click any card to copy its command or shortcut.
+- Copy counts are stored locally and shown on each card.
+- Drag one card onto another card to swap their order.
+- Ordering is stored per category in `localStorage`.
+- Search filters by title, command, shortcut, description, kind, and tags.
+
+## Shortcuts
+
+| Shortcut | Behavior |
+| --- | --- |
+| `Alt+Space` | Show or hide the main DevLauncher window. |
+| `Alt+<key>` | Trigger the binding for a key on the active page. |
+| `Ctrl+Shift+V` | Open clipboard history. |
+| `Tab` / `Shift+Tab` | Switch launcher pages while the main window is focused. |
+| `Esc` | Hide most built-in utility windows. |
+
+## Project Layout
+
+```text
 dev-launcher/
-├── app/
-│   ├── src/
-│   │   ├── App.tsx                 # 主组件（全局快捷键、Tab 切换）
-│   │   ├── main.tsx                # 入口路由（从 registry 自动派发内置功能）
-│   │   ├── types/actions.ts        # Action 类型系统（BuiltinFeature 自动从 manifest 派生）
-│   │   ├── store/useKeyboardStore.ts  # Zustand store
-│   │   ├── api/config.ts           # 配置 CRUD
-│   │   ├── builtins/               # ★ 内置功能插件目录
-│   │   │   ├── types.ts            #   BuiltinManifest 接口
-│   │   │   ├── _registry.ts        #   插件注册表（新增功能只改这里）
-│   │   │   ├── clipboard/manifest.ts
-│   │   │   ├── json/manifest.ts
-│   │   │   ├── totp/manifest.ts
-│   │   │   └── remotedesk/manifest.ts
-│   │   ├── components/
-│   │   │   ├── KeyCell.tsx         # 单键渲染
-│   │   │   ├── KeyboardPanel.tsx   # 键盘布局
-│   │   │   ├── BindingModal.tsx    # 绑定弹窗
-│   │   │   ├── SettingsPanel.tsx   # 主题设置
-│   │   │   ├── ClipboardPanel.tsx  # 剪切板历史
-│   │   │   └── ActionIcon.tsx      # 类型图标
-│   │   ├── ClipboardApp.tsx        # 剪切板历史独立窗口
-│   │   ├── JsonHelperApp.tsx       # JSON 助手独立窗口
-│   │   ├── TotpApp.tsx             # TOTP 令牌独立窗口
-│   │   └── RemoteDeskApp.tsx       # 远程桌面独立窗口
-│   └── src-tauri/
-│       └── src/lib.rs              # Rust 命令、托盘、剪切板轮询
-└── README.md
++-- app/                  # Main Tauri desktop app
+|   +-- src/              # React + TypeScript frontend
+|   |   +-- App.tsx       # Main launcher window
+|   |   +-- main.tsx      # Routes built-in windows by ?view=<id>
+|   |   +-- builtins/     # Built-in panel UIs and manifests
+|   |   +-- components/   # Shared UI components
+|   |   +-- store/        # Zustand state
+|   |   `-- types/        # Action and config types
+|   `-- src-tauri/        # Rust backend, Tauri config, capabilities
++-- website/              # Separate static website project
++-- PROJECT_STRUCTURE.md  # Codebase map and migration notes
+`-- README.md
 ```
 
-## 配置文件
+## Built-In Registration Chain
 
-配置自动保存于：  
-`%APPDATA%\com.yisheng.app\keyboard.yaml`
+When adding or auditing a built-in panel, check these files together:
 
-```yaml
-pages:
-  - name: 开发
-    keys:
-      Q:
-        type: app
-        name: VSCode
-        target: "C:\\Program Files\\Microsoft VS Code\\Code.exe"
-      B:
-        type: builtin
-        name: 剪切板历史
-        feature: clipboard
+```text
+app/src/builtins/<id>/manifest.ts
+app/src/builtins/<id>/App.tsx
+app/src/builtins/_registry.ts
+app/src/types/actions.ts
+app/src/components/BuiltinIcon.tsx
+app/src-tauri/tauri.conf.json
+app/src-tauri/capabilities/default.json
+app/src-tauri/src/builtins/<id>.rs
+app/src-tauri/src/builtins/mod.rs
+app/src-tauri/src/lib.rs
 ```
 
-## 开发
+## Development
 
-**环境要求：** Rust 1.70+、Node.js 18+、Windows（WebView2）
+Requirements:
+
+- Windows with WebView2
+- Node.js 18+
+- Rust stable
+
+Install and run:
 
 ```powershell
 cd app
 npm install
-npm run tauri dev      # 启动开发服务器（首次编译 ~2min）
-npm run tauri build
-app\src-tauri\target\release\bundle\
-├── nsis\DevLauncher_0.2.0_x64-setup.exe   ← 安装包（推荐发给别人）
-└── msi\DevLauncher_0.2.0_x64_en-US.msi    ← MSI 安装包
+npm run tauri dev
 ```
 
-**TypeScript 检查：**
+Build frontend:
+
 ```powershell
-npx tsc --noEmit
+cd app
+npm run build
 ```
 
-## 版本历史
+Check Rust backend:
 
-### v0.3.0
-- 内置功能插件化架构（`src/builtins/` 目录）
-- 新增远程桌面内置功能（RDP 管理 + WebSocket 屏幕共享 + ngrok 穿透）
-- 键盘按键文字放大，移除空白键 `+` 占位符
-- Tooltip 换成玻璃态悬浮提示（替代浏览器原生 title）
+```powershell
+cd app/src-tauri
+cargo check
+```
 
-### v0.2.0
-- 多页面 Tab 管理（双击改名 / 右键删除 / + 新增）
-- 内置功能：剪切板历史（全局 `Ctrl+Shift+V` 唤起）
-- 主题系统（5 预设 + 自定义）
-- 全局快捷键（`Alt+Space` 切换窗口 + `Alt+键` 触发绑定）
-- 系统托盘（隐藏/显示/退出）
-- 文件/文件夹路径浏览器选择
+Create desktop bundle:
 
-### v0.1.0
-- 基础虚拟键盘布局
-- App / 文件夹 / URL / SSH / 脚本 / 系统命令绑定
-- YAML 配置持久化
-- 玻璃态透明 UI
+```powershell
+cd app
+npm run tauri build
+```
+
+## Configuration
+
+The keyboard configuration is saved under the app data directory for the Tauri identifier `com.yisheng.app`.
+
+Example binding:
+
+```yaml
+pages:
+  - name: Dev
+    keys:
+      Q:
+        action:
+          type: builtin
+          name: Quick Memory
+          feature: quickmemory
+```
+
+## Website
+
+The `website/` project is separate from the desktop app. Use it for the product website and public presentation work, not as evidence for desktop runtime behavior.
+
+Common website scripts are defined in `website/package.json`.
 
 ## License
 

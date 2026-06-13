@@ -80,6 +80,7 @@ pub fn run() {
             builtins::screenshot::get_pending_screenshot,
             builtins::screenshot::screenshot_write_file,
             builtins::webaccounts::toggle_webaccounts_window,
+            builtins::quickmemory::toggle_quickmemory_window,
             utils::icon::extract_app_icons,
             utils::favicon::get_cached_favicons,
             utils::favicon::refresh_favicons,
