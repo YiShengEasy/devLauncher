@@ -1,19 +1,23 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+﻿import { useEffect, useRef, useState, useCallback } from "react";
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactElement } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { addScreenshot } from "../screenshotStore";
+import type { StoredScreenshotAnnotation } from "../screenshotStore";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// 鈹€鈹€ Types 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 type Phase = "init" | "selecting" | "annotating";
-type Tool = "rect" | "ellipse" | "arrow" | "pencil" | "text" | "mosaic";
+type Tool = "move" | "marker" | "boxCallout" | "rect" | "ellipse" | "arrow" | "pencil" | "text" | "mosaic";
 
 interface Pt { x: number; y: number }
 interface Rect { x: number; y: number; w: number; h: number }
+type TextInputState = { pos: Pt; val: string; target?: { kind: "ann-note"; annIndex: number } };
 
 type Ann =
+  | { t: "marker";  pos: Pt; label: number; color: string; note?: string }
+  | { t: "boxCallout"; rect: Rect; label: number; labelPos: Pt; color: string; lw: number; note?: string }
   | { t: "rect";    rect: Rect; color: string; lw: number }
   | { t: "ellipse"; rect: Rect; color: string; lw: number }
   | { t: "arrow";   p1: Pt; p2: Pt; color: string; lw: number }
@@ -21,7 +25,7 @@ type Ann =
   | { t: "text";    pos: Pt; text: string; color: string; fs: number }
   | { t: "mosaic";  rect: Rect };
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const PRESET_COLORS = [
   "#ffffff", "#ff3b30", "#ff9500", "#ffcc00",
   "#34c759", "#007aff", "#af52de", "#1c1c1e",
@@ -29,8 +33,10 @@ const PRESET_COLORS = [
 const LINE_WIDTHS = [2, 4, 6];
 const HANDLE_R = 5;
 const SEL_COLOR = "rgba(78, 186, 255, 0.9)";
+const BADGE_R = 13;
+const CALLOUT_GAP = 30;
 
-// ── Rect helpers ──────────────────────────────────────────────────────────────
+// 鈹€鈹€ Rect helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function norm(r: Rect): Rect {
   return {
     x: Math.min(r.x, r.x + r.w),
@@ -76,7 +82,25 @@ function resizeRect(base: Rect, hi: number, start: Pt, cur: Pt): Rect {
   return { x, y, w: Math.max(4, w), h: Math.max(4, h) };
 }
 
-// ── Canvas drawing helpers ────────────────────────────────────────────────────
+function nextCalloutLabel(anns: Ann[]): number {
+  return anns.reduce((max, ann) => {
+    if (ann.t !== "marker" && ann.t !== "boxCallout") return max;
+    return Math.max(max, ann.label);
+  }, 0) + 1;
+}
+
+function calloutLabelPos(rect: Rect, bounds?: Rect | null): Pt {
+  const n = norm(rect);
+  const below = { x: n.x + n.w / 2, y: n.y + n.h + CALLOUT_GAP };
+  const bottomLimit = bounds ? norm(bounds).y + norm(bounds).h : window.innerHeight;
+  if (below.y + BADGE_R + 6 <= bottomLimit) return below;
+  return {
+    x: n.x + n.w / 2,
+    y: Math.max(BADGE_R + 6, n.y - CALLOUT_GAP),
+  };
+}
+
+// 鈹€鈹€ Canvas drawing helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function drawArrow(ctx: CanvasRenderingContext2D, p1: Pt, p2: Pt) {
   const ARROW_LEN = 14;
   const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
@@ -92,11 +116,184 @@ function drawArrow(ctx: CanvasRenderingContext2D, p1: Pt, p2: Pt) {
   ctx.fill();
 }
 
+function drawCalloutBadge(ctx: CanvasRenderingContext2D, pos: Pt, label: number, color: string) {
+  const text = String(label);
+  const r = Math.max(BADGE_R, 9 + text.length * 4);
+  ctx.save();
+  ctx.shadowColor = "rgba(0,0,0,0.28)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(255,255,255,0.92)";
+  ctx.stroke();
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(0,0,0,0.18)";
+  ctx.stroke();
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "700 13px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = "rgba(0,0,0,0.32)";
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetY = 1;
+  ctx.fillText(text, pos.x, pos.y + 0.5);
+  ctx.restore();
+}
+
+function calloutTextPos(pos: Pt, label: number): Pt {
+  const r = Math.max(BADGE_R, 9 + String(label).length * 4);
+  const x = Math.min(window.innerWidth - 190, Math.max(8, pos.x + r + 10));
+  const y = Math.min(window.innerHeight - 44, Math.max(8, pos.y - 12));
+  return { x, y };
+}
+
+function drawCalloutNote(ctx: CanvasRenderingContext2D, pos: Pt, label: number, note: string | undefined) {
+  const text = note?.trim();
+  if (!text) return;
+  const p = calloutTextPos(pos, label);
+  ctx.save();
+  ctx.font = "600 13px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
+  ctx.textBaseline = "middle";
+  const padX = 8;
+  const w = ctx.measureText(text).width + padX * 2;
+  const h = 24;
+  ctx.shadowColor = "rgba(0,0,0,0.22)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = "rgba(28,28,30,0.78)";
+  ctx.beginPath();
+  if ((ctx as any).roundRect) {
+    (ctx as any).roundRect(p.x, p.y, w, h, 8);
+  } else {
+    ctx.rect(p.x, p.y, w, h);
+  }
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255,255,255,0.16)";
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.fillText(text, p.x + padX, p.y + h / 2 + 0.5);
+  ctx.restore();
+}
+
+function boxCalloutTarget(rect: Rect, labelPos: Pt): Pt {
+  const n = norm(rect);
+  const cx = n.x + n.w / 2;
+  const cy = n.y + n.h / 2;
+  const dx = labelPos.x - cx;
+  const dy = labelPos.y - cy;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return { x: dx >= 0 ? n.x + n.w : n.x, y: cy };
+  }
+  return { x: cx, y: dy >= 0 ? n.y + n.h : n.y };
+}
+
+function hitAnnotation(pt: Pt, anns: Ann[]): number {
+  for (let i = anns.length - 1; i >= 0; i--) {
+    const ann = anns[i];
+    if (ann.t === "marker") {
+      const nearBadge = Math.hypot(pt.x - ann.pos.x, pt.y - ann.pos.y) <= BADGE_R + 6;
+      const notePos = calloutTextPos(ann.pos, ann.label);
+      const nearNote = Boolean(ann.note?.trim()) && inRect(pt, { x: notePos.x, y: notePos.y, w: Math.max(80, ann.note!.length * 10 + 20), h: 28 });
+      if (nearBadge || nearNote) return i;
+    }
+    if (ann.t === "boxCallout") {
+      const n = norm(ann.rect);
+      const nearLabel = Math.hypot(pt.x - ann.labelPos.x, pt.y - ann.labelPos.y) <= BADGE_R + 6;
+      const notePos = calloutTextPos(ann.labelPos, ann.label);
+      const nearNote = Boolean(ann.note?.trim()) && inRect(pt, { x: notePos.x, y: notePos.y, w: Math.max(80, ann.note!.length * 10 + 20), h: 28 });
+      const nearRect =
+        pt.x >= n.x - 8 && pt.x <= n.x + n.w + 8 &&
+        pt.y >= n.y - 8 && pt.y <= n.y + n.h + 8 &&
+        (Math.abs(pt.x - n.x) <= 8 || Math.abs(pt.x - (n.x + n.w)) <= 8 ||
+         Math.abs(pt.y - n.y) <= 8 || Math.abs(pt.y - (n.y + n.h)) <= 8 || inRect(pt, n));
+      if (nearLabel || nearNote || nearRect) return i;
+    }
+  }
+  return -1;
+}
+
+function moveAnnotation(ann: Ann, dx: number, dy: number): Ann {
+  switch (ann.t) {
+    case "marker":
+      return { ...ann, pos: { x: ann.pos.x + dx, y: ann.pos.y + dy } };
+    case "boxCallout":
+      return {
+        ...ann,
+        rect: { x: ann.rect.x + dx, y: ann.rect.y + dy, w: ann.rect.w, h: ann.rect.h },
+        labelPos: { x: ann.labelPos.x + dx, y: ann.labelPos.y + dy },
+      };
+    case "rect":
+    case "ellipse":
+    case "mosaic":
+      return { ...ann, rect: { x: ann.rect.x + dx, y: ann.rect.y + dy, w: ann.rect.w, h: ann.rect.h } };
+    case "arrow":
+      return { ...ann, p1: { x: ann.p1.x + dx, y: ann.p1.y + dy }, p2: { x: ann.p2.x + dx, y: ann.p2.y + dy } };
+    case "pencil":
+      return { ...ann, pts: ann.pts.map(p => ({ x: p.x + dx, y: p.y + dy })) };
+    case "text":
+      return { ...ann, pos: { x: ann.pos.x + dx, y: ann.pos.y + dy } };
+  }
+}
+
+function renderAnnotationSelection(ctx: CanvasRenderingContext2D, ann: Ann) {
+  ctx.save();
+  ctx.setLineDash([5, 4]);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = 3;
+  if (ann.t === "marker") {
+    ctx.beginPath();
+    ctx.arc(ann.pos.x, ann.pos.y, BADGE_R + 7, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (ann.t === "boxCallout" || ann.t === "rect" || ann.t === "ellipse" || ann.t === "mosaic") {
+    const n = norm(ann.rect);
+    ctx.strokeRect(n.x - 5, n.y - 5, n.w + 10, n.h + 10);
+  }
+  ctx.restore();
+}
+
 function renderAnnotation(ctx: CanvasRenderingContext2D, ann: Ann, bgImg?: HTMLImageElement) {
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   switch (ann.t) {
+    case "marker": {
+      drawCalloutBadge(ctx, ann.pos, ann.label, ann.color);
+      drawCalloutNote(ctx, ann.pos, ann.label, ann.note);
+      break;
+    }
+    case "boxCallout": {
+      const { x, y, w, h } = norm(ann.rect);
+      ctx.strokeStyle = ann.color;
+      ctx.fillStyle = ann.color;
+      ctx.lineWidth = ann.lw;
+      ctx.shadowColor = "rgba(0,0,0,0.22)";
+      ctx.shadowBlur = 8;
+      ctx.shadowOffsetY = 3;
+      if ((ctx as any).roundRect) {
+        ctx.beginPath();
+        (ctx as any).roundRect(x, y, w, h, 6);
+        ctx.stroke();
+      } else {
+        ctx.strokeRect(x, y, w, h);
+      }
+      ctx.shadowColor = "transparent";
+      ctx.globalAlpha = 0.08;
+      ctx.fillRect(x, y, w, h);
+      ctx.globalAlpha = 1;
+      drawArrow(ctx, ann.labelPos, boxCalloutTarget(ann.rect, ann.labelPos));
+      drawCalloutBadge(ctx, ann.labelPos, ann.label, ann.color);
+      drawCalloutNote(ctx, ann.labelPos, ann.label, ann.note);
+      break;
+    }
     case "rect": {
       const { x, y, w, h } = norm(ann.rect);
       ctx.strokeStyle = ann.color;
@@ -168,6 +365,7 @@ function renderFrame(
   sel: Rect | null,
   anns: Ann[],
   curAnn: Ann | null,
+  selectedAnnIndex: number | null = null,
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -183,7 +381,7 @@ function renderFrame(
 
   if (phase === "selecting" || phase === "annotating") {
     // Dark overlay
-    ctx.fillStyle = "rgba(0, 0, 0, 0.48)";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
     ctx.fillRect(0, 0, W, H);
 
     if (sel) {
@@ -195,8 +393,9 @@ function renderFrame(
       // Annotations on top of the revealed area
       for (const ann of anns) renderAnnotation(ctx, ann, bgImg ?? undefined);
       if (curAnn) renderAnnotation(ctx, curAnn, bgImg ?? undefined);
+      if (selectedAnnIndex !== null && anns[selectedAnnIndex]) renderAnnotationSelection(ctx, anns[selectedAnnIndex]);
 
-      // Selection border — two-tone for visibility on any bg
+      // Selection border 鈥?two-tone for visibility on any bg
       ctx.lineWidth = 1;
       ctx.strokeStyle = "rgba(0,0,0,0.4)";
       ctx.strokeRect(n.x - 1, n.y - 1, n.w + 2, n.h + 2);
@@ -216,7 +415,7 @@ function renderFrame(
       }
 
       // Dimension label
-      const label = `${Math.round(n.w)} × ${Math.round(n.h)}`;
+      const label = `${Math.round(n.w)} x ${Math.round(n.h)}`;
       ctx.font = "bold 12px -apple-system, monospace";
       const tw = ctx.measureText(label).width;
       const LH = 20;
@@ -240,7 +439,7 @@ function renderFrame(
   }
 }
 
-// ── ArrayBuffer → base64 (chunked, avoids stack overflow) ────────────────────
+// 鈹€鈹€ ArrayBuffer 鈫?base64 (chunked, avoids stack overflow) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function toBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
   let binary = "";
@@ -250,7 +449,7 @@ function toBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
-// ── Tool icon components (pure SVG) ──────────────────────────────────────────
+// 鈹€鈹€ Tool icon components (pure SVG) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function IconRect() {
   return (
     <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
@@ -297,6 +496,34 @@ function IconMosaic() {
     </svg>
   );
 }
+function IconMarker() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="8" fill="currentColor" opacity="0.18" />
+      <circle cx="12" cy="12" r="7" stroke="currentColor" strokeWidth={2} />
+      <text x="12" y="16" textAnchor="middle" fontSize="10" fontFamily="sans-serif" fontWeight="bold" fill="currentColor">1</text>
+    </svg>
+  );
+}
+function IconMove() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <path d="M12 3v18M3 12h18" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+      <path d="M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconBoxCallout() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <rect x="3" y="7" width="11" height="10" rx="1.5" stroke="currentColor" strokeWidth={2} />
+      <line x1="16.5" y1="7.5" x2="13.5" y2="10" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+      <polyline points="14,7.5 16.5,7.5 16.5,10" stroke="currentColor" strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="18" cy="6" r="4" fill="currentColor" />
+      <text x="18" y="8.8" textAnchor="middle" fontSize="6.5" fontFamily="sans-serif" fontWeight="bold" fill="#111827">1</text>
+    </svg>
+  );
+}
 function IconUndo() {
   return (
     <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
@@ -330,9 +557,11 @@ function IconPin() {
     </svg>
   );
 }
-
-// ── Toolbar ───────────────────────────────────────────────────────────────────
+// 鈹€鈹€ Toolbar 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const TOOLS: { key: Tool; icon: () => ReactElement; title: string }[] = [
+  { key: "move",       icon: IconMove,       title: "拖拽编辑痕迹 (V)" },
+  { key: "marker",     icon: IconMarker,     title: "标注+说明 (N，可留空)" },
+  { key: "boxCallout", icon: IconBoxCallout, title: "方框拖拽标注 (B)" },
   { key: "rect",    icon: IconRect,    title: "矩形 (R)" },
   { key: "ellipse", icon: IconEllipse, title: "椭圆 (E)" },
   { key: "arrow",   icon: IconArrow,   title: "箭头 (A)" },
@@ -484,13 +713,13 @@ function Toolbar({
       <button title="复制到剪贴板" onClick={onCopy} style={baseBtn}>
         <IconCopy />
       </button>
-      <button title="存入截图库" onClick={onPin} style={baseBtn}>
+      <button title="存入 AI 截图标注" onClick={onPin} style={baseBtn}>
         <IconPin />
       </button>
 
       <div style={sep} />
 
-      {/* Cancel — red Mac button */}
+      {/* Cancel 鈥?red Mac button */}
       <button
         title="取消 (Esc)"
         onClick={onCancel}
@@ -505,12 +734,12 @@ function Toolbar({
           fontWeight: "bold",
         }}
       >
-        ✕
+        x
       </button>
 
-      {/* Confirm — green Mac button */}
+      {/* Confirm 鈥?green Mac button */}
       <button
-        title="完成复制 (Enter)"
+        title="完成保存 (Enter)"
         onClick={onConfirm}
         style={{
           ...baseBtn,
@@ -529,20 +758,24 @@ function Toolbar({
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
+// 鈹€鈹€ Main component 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 export function ScreenshotApp() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgImgRef  = useRef<HTMLImageElement | null>(null);
 
-  // ── React state (drives JSX) ─────────────────────────────────────────────
+  // 鈹€鈹€ React state (drives JSX) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const [phase,       setPhaseState]  = useState<Phase>("init");
   const [selection,   setSelState]    = useState<Rect | null>(null);
   const [activeTool,  setToolState]   = useState<Tool | null>(null);
   const [activeColor, setColorState]  = useState("#ff3b30");
   const [activeLw,    setLwState]     = useState(2);
-  const [textInput,   setTextInput]   = useState<{ pos: Pt; val: string } | null>(null);
+  const [textInput,   setTextInput]   = useState<TextInputState | null>(null);
+  const [toast,       setToast]       = useState<string | null>(null);
+  const [cursorPos,   setCursorPos]   = useState<Pt | null>(null);
+  const [selectedAnnIndex, setSelectedAnnIndexState] = useState<number | null>(null);
+  const [, setAnnEditVersion] = useState(0);
 
-  // ── Refs (fast access in canvas callbacks without stale closures) ─────────
+  // 鈹€鈹€ Refs (fast access in canvas callbacks without stale closures) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const phaseRef  = useRef<Phase>("init");
   const selRef    = useRef<Rect | null>(null);
   const annsRef   = useRef<Ann[]>([]);
@@ -551,28 +784,71 @@ export function ScreenshotApp() {
   const colorRef  = useRef("#ff3b30");
   const lwRef     = useRef(2);
   const curAnnRef = useRef<Ann | null>(null);
+  const selectedAnnIndexRef = useRef<number | null>(null);
   const dragRef   = useRef<{
-    mode: "sel-new" | "sel-move" | "sel-resize" | "ann";
+    mode: "sel-new" | "sel-move" | "sel-resize" | "ann" | "ann-move";
     startMouse: Pt;
     initSel?: Rect;
+    initAnns?: Ann[];
+    annIndex?: number;
     handleIdx?: number;
   } | null>(null);
 
   // Synced setters
   const setPhase = (p: Phase)           => { phaseRef.current = p;  setPhaseState(p); };
   const setSel   = (r: Rect | null)     => { selRef.current = r;    setSelState(r); };
-  const setTool  = (t: Tool | null)     => { toolRef.current = t;   setToolState(t); };
-  const setColor = (c: string)          => { colorRef.current = c;  setColorState(c); };
-  const setLw    = (lw: number)         => { lwRef.current = lw;    setLwState(lw); };
+  const showToast = (msg: string) => {
+    setToast(msg);
+    window.setTimeout(() => setToast(null), 1500);
+  };
+  const setTool  = (t: Tool | null)     => {
+    toolRef.current = t;
+    setToolState(t);
+    if (t) setSelectedAnnIndex(null);
+  };
+  const setSelectedAnnIndex = (idx: number | null) => { selectedAnnIndexRef.current = idx; setSelectedAnnIndexState(idx); };
+  const setColor = (c: string)          => {
+    colorRef.current = c;
+    setColorState(c);
+    const idx = selectedAnnIndexRef.current;
+    if (idx !== null && annsRef.current[idx] && "color" in annsRef.current[idx]) {
+      undoRef.current.push([...annsRef.current]);
+      annsRef.current = annsRef.current.map((ann, i) => i === idx && "color" in ann ? { ...ann, color: c } : ann);
+      doRender();
+    }
+  };
+  const setLw    = (lw: number)         => {
+    lwRef.current = lw;
+    setLwState(lw);
+    const idx = selectedAnnIndexRef.current;
+    if (idx !== null && annsRef.current[idx] && "lw" in annsRef.current[idx]) {
+      undoRef.current.push([...annsRef.current]);
+      annsRef.current = annsRef.current.map((ann, i) => i === idx && "lw" in ann ? { ...ann, lw } : ann);
+      doRender();
+    }
+  };
+  const updateSelectedAnnNote = (value: string) => {
+    const idx = selectedAnnIndexRef.current;
+    if (idx === null) return;
+    const ann = annsRef.current[idx];
+    if (!ann || (ann.t !== "marker" && ann.t !== "boxCallout")) return;
+    annsRef.current = annsRef.current.map((item, i) => (
+      i === idx && (item.t === "marker" || item.t === "boxCallout")
+        ? { ...item, note: value }
+        : item
+    ));
+    setAnnEditVersion((version) => version + 1);
+    doRender();
+  };
 
-  // ── Canvas render ─────────────────────────────────────────────────────────
+  // 鈹€鈹€ Canvas render 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const doRender = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    renderFrame(canvas, bgImgRef.current, phaseRef.current, selRef.current, annsRef.current, curAnnRef.current);
+    renderFrame(canvas, bgImgRef.current, phaseRef.current, selRef.current, annsRef.current, curAnnRef.current, selectedAnnIndexRef.current);
   }, []);
 
-  // ── Resize canvas to current window dimensions and restore DPR scale ──────
+  // 鈹€鈹€ Resize canvas to current window dimensions and restore DPR scale 鈹€鈹€鈹€鈹€鈹€鈹€
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -583,12 +859,12 @@ export function ScreenshotApp() {
     canvas.height = H * dpr;
     canvas.style.width  = W + "px";
     canvas.style.height = H + "px";
-    // Setting canvas.width resets the context — must re-apply scale
+    // Setting canvas.width resets the context 鈥?must re-apply scale
     const ctx = canvas.getContext("2d");
     if (ctx) ctx.scale(dpr, dpr);
   }, []);
 
-  // ── Load a base64 PNG as the background and enter selecting phase ─────────
+  // 鈹€鈹€ Load a base64 PNG as the background and enter selecting phase 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const loadScreenshotData = useCallback((data: string) => {
     // Reset all editing state before loading new screenshot
     selRef.current      = null;
@@ -596,8 +872,10 @@ export function ScreenshotApp() {
     curAnnRef.current   = null;
     undoRef.current     = [];
     dragRef.current     = null;
+    selectedAnnIndexRef.current = null;
     bgImgRef.current    = null;
     setSelState(null);
+    setSelectedAnnIndexState(null);
     setTextInput(null);
     setToolState(null);
     toolRef.current = null;
@@ -618,19 +896,29 @@ export function ScreenshotApp() {
         selRef.current,
         annsRef.current,
         curAnnRef.current,
+        selectedAnnIndexRef.current,
       );
     };
     img.src = "data:image/png;base64," + data;
   }, [resizeCanvas]);
 
-  // ── Init: size canvas, set up keyboard + screenshot-ready listener ────────
+  // 鈹€鈹€ Init: size canvas, set up keyboard + screenshot-ready listener 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   useEffect(() => {
     resizeCanvas();
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape")                                        handleCancel();
+      const target = e.target as HTMLElement | null;
+      const isTyping =
+        target?.tagName === "INPUT" ||
+        target?.tagName === "TEXTAREA" ||
+        target?.isContentEditable;
+      if (isTyping) return;
+      if (e.key === "Escape")                                        handleEscape();
       if (e.key === "Enter" && phaseRef.current === "annotating")   void handleConfirm();
       if ((e.metaKey || e.ctrlKey) && e.key === "z")                handleUndo();
+      if (e.key === "v" || e.key === "V")  setTool("move");
+      if (e.key === "n" || e.key === "N")  setTool("marker");
+      if (e.key === "b" || e.key === "B")  setTool("boxCallout");
       if (e.key === "r" || e.key === "R")  setTool("rect");
       if (e.key === "e" || e.key === "E")  setTool("ellipse");
       if (e.key === "a" || e.key === "A")  setTool("arrow");
@@ -641,7 +929,7 @@ export function ScreenshotApp() {
     window.addEventListener("keydown", onKey);
 
     // Rust emits this event every time a new screenshot is ready.
-    // Payload IS the base64 JPEG string — no second IPC call needed.
+    // Payload IS the base64 JPEG string 鈥?no second IPC call needed.
     const unlistenPromise = listen<string>("screenshot-ready", (event) => {
       if (event.payload) loadScreenshotData(event.payload);
     });
@@ -652,16 +940,17 @@ export function ScreenshotApp() {
     };
   }, [resizeCanvas, loadScreenshotData]);
 
-  // ── Mouse position helper ─────────────────────────────────────────────────
+  // 鈹€鈹€ Mouse position helper 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const getPos = (e: RMouseEvent<HTMLCanvasElement>): Pt => {
     const r = canvasRef.current!.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
   };
 
-  // ── Mouse Down ────────────────────────────────────────────────────────────
+  // 鈹€鈹€ Mouse Down 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const onMouseDown = (e: RMouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0 || textInput) return;
     const pos  = getPos(e);
+    setCursorPos(pos);
     const ph   = phaseRef.current;
     const sel  = selRef.current;
     const tool = toolRef.current;
@@ -683,6 +972,13 @@ export function ScreenshotApp() {
 
     } else if (ph === "annotating") {
       if (!tool) {
+        const annIdx = hitAnnotation(pos, annsRef.current);
+        if (annIdx >= 0) {
+          setSelectedAnnIndex(annIdx);
+          dragRef.current = { mode: "ann-move", startMouse: pos, initAnns: annsRef.current.map(ann => ({ ...ann })), annIndex: annIdx };
+          return;
+        }
+        setSelectedAnnIndex(null);
         if (sel) {
           const hi = hitHandle(pos, sel);
           if (hi >= 0) {
@@ -697,14 +993,43 @@ export function ScreenshotApp() {
         return;
       }
 
+      if (tool === "move") {
+        const annIdx = hitAnnotation(pos, annsRef.current);
+        if (annIdx >= 0) {
+          setSelectedAnnIndex(annIdx);
+          dragRef.current = { mode: "ann-move", startMouse: pos, initAnns: annsRef.current.map(ann => ({ ...ann })), annIndex: annIdx };
+        } else {
+          setSelectedAnnIndex(null);
+        }
+        return;
+      }
+
       if (tool === "text") {
+        setSelectedAnnIndex(null);
         setTextInput({ pos, val: "" });
+        return;
+      }
+      if (tool === "marker") {
+        setSelectedAnnIndex(null);
+        undoRef.current.push([...annsRef.current]);
+        const label = nextCalloutLabel(annsRef.current);
+        const annIndex = annsRef.current.length;
+        annsRef.current = [
+          ...annsRef.current,
+          { t: "marker", pos, label, color: colorRef.current },
+        ];
+        setSelectedAnnIndex(annIndex);
+        doRender();
         return;
       }
 
       const color = colorRef.current;
       const lw    = lwRef.current;
       let initAnn: Ann | undefined;
+      if (tool === "boxCallout") {
+        const rect = { x: pos.x, y: pos.y, w: 0, h: 0 };
+        initAnn = { t: "boxCallout", rect, label: nextCalloutLabel(annsRef.current), labelPos: calloutLabelPos(rect, selRef.current), color, lw };
+      }
       if (tool === "rect")    initAnn = { t: "rect",    rect: { x: pos.x, y: pos.y, w: 0, h: 0 }, color, lw };
       if (tool === "ellipse") initAnn = { t: "ellipse", rect: { x: pos.x, y: pos.y, w: 0, h: 0 }, color, lw };
       if (tool === "arrow")   initAnn = { t: "arrow",   p1: pos, p2: pos, color, lw };
@@ -712,15 +1037,17 @@ export function ScreenshotApp() {
       if (tool === "mosaic")  initAnn = { t: "mosaic",  rect: { x: pos.x, y: pos.y, w: 0, h: 0 } };
 
       if (initAnn) {
+        setSelectedAnnIndex(null);
         curAnnRef.current = initAnn;
         dragRef.current = { mode: "ann", startMouse: pos };
       }
     }
   };
 
-  // ── Mouse Move ────────────────────────────────────────────────────────────
+  // 鈹€鈹€ Mouse Move 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const onMouseMove = (e: RMouseEvent<HTMLCanvasElement>) => {
     const pos = getPos(e);
+    setCursorPos(pos);
     const dr  = dragRef.current;
     if (!dr) return;
 
@@ -733,13 +1060,20 @@ export function ScreenshotApp() {
       selRef.current = { x: s.x + dx, y: s.y + dy, w: s.w, h: s.h };
     } else if (dr.mode === "sel-resize") {
       selRef.current = resizeRect(dr.initSel!, dr.handleIdx!, dr.startMouse, pos);
+    } else if (dr.mode === "ann-move") {
+      const dx = pos.x - dr.startMouse.x;
+      const dy = pos.y - dr.startMouse.y;
+      const idx = dr.annIndex!;
+      const initAnns = dr.initAnns!;
+      annsRef.current = initAnns.map((ann, i) => i === idx ? moveAnnotation(ann, dx, dy) : ann);
     } else if (dr.mode === "ann" && curAnnRef.current) {
       const ann = curAnnRef.current;
-      if (ann.t === "rect" || ann.t === "ellipse" || ann.t === "mosaic") {
+      if (ann.t === "rect" || ann.t === "ellipse" || ann.t === "mosaic" || ann.t === "boxCallout") {
         (ann as Ann & { rect: Rect }).rect = {
           x: dr.startMouse.x, y: dr.startMouse.y,
           w: pos.x - dr.startMouse.x, h: pos.y - dr.startMouse.y,
         };
+        if (ann.t === "boxCallout") ann.labelPos = calloutLabelPos(ann.rect, selRef.current);
       } else if (ann.t === "arrow") {
         ann.p2 = pos;
       } else if (ann.t === "pencil") {
@@ -749,7 +1083,7 @@ export function ScreenshotApp() {
     doRender();
   };
 
-  // ── Mouse Up ──────────────────────────────────────────────────────────────
+  // 鈹€鈹€ Mouse Up 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const onMouseUp = (_e: RMouseEvent<HTMLCanvasElement>) => {
     const dr = dragRef.current;
     dragRef.current = null;
@@ -771,29 +1105,44 @@ export function ScreenshotApp() {
       }
       doRender();
 
+    } else if (dr.mode === "ann-move") {
+      const moved = Math.hypot((_e.clientX - (canvasRef.current?.getBoundingClientRect().left ?? 0)) - dr.startMouse.x, (_e.clientY - (canvasRef.current?.getBoundingClientRect().top ?? 0)) - dr.startMouse.y);
+      const ann = annsRef.current[dr.annIndex!];
+      if (moved < 3 && ann && (ann.t === "marker" || ann.t === "boxCallout")) {
+        setSelectedAnnIndex(dr.annIndex!);
+      } else {
+        undoRef.current.push(dr.initAnns!);
+      }
+      doRender();
+
     } else if (dr.mode === "ann") {
       const ann = curAnnRef.current;
       curAnnRef.current = null;
       if (ann) {
         let valid = true;
-        if ((ann.t === "rect" || ann.t === "ellipse" || ann.t === "mosaic") &&
+        if ((ann.t === "rect" || ann.t === "ellipse" || ann.t === "mosaic" || ann.t === "boxCallout") &&
             (Math.abs(ann.rect.w) < 3 || Math.abs(ann.rect.h) < 3)) valid = false;
         if (ann.t === "arrow" && Math.hypot(ann.p2.x - ann.p1.x, ann.p2.y - ann.p1.y) < 5) valid = false;
         if (ann.t === "pencil" && ann.pts.length < 2) valid = false;
 
         if (valid) {
           undoRef.current.push([...annsRef.current]);
+          const annIndex = annsRef.current.length;
           annsRef.current = [...annsRef.current, ann];
+          if (ann.t === "boxCallout") {
+            setSelectedAnnIndex(annIndex);
+          }
         }
       }
       doRender();
     }
   };
 
-  // ── Actions ───────────────────────────────────────────────────────────────
+  // 鈹€鈹€ Actions 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const handleUndo = () => {
     if (undoRef.current.length > 0) {
       annsRef.current = undoRef.current.pop()!;
+      if (selectedAnnIndexRef.current !== null && !annsRef.current[selectedAnnIndexRef.current]) setSelectedAnnIndex(null);
       doRender();
     }
   };
@@ -813,24 +1162,132 @@ export function ScreenshotApp() {
     return out;
   };
 
-  const handleCopy = async () => {
+  /** Build selected area without annotations for AI module overlay editing */
+  const buildBaseResult = (): HTMLCanvasElement | null => {
+    const sel  = selRef.current ? norm(selRef.current) : null;
+    const bgImg = bgImgRef.current;
+    if (!sel || !bgImg) return null;
+    const out = document.createElement("canvas");
+    out.width  = Math.max(1, Math.round(sel.w));
+    out.height = Math.max(1, Math.round(sel.h));
+    const ctx = out.getContext("2d")!;
+    ctx.drawImage(bgImg, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
+    return out;
+  };
+
+  const buildStoredAnnotations = (): StoredScreenshotAnnotation[] => {
+    const sel = selRef.current ? norm(selRef.current) : null;
+    if (!sel) return [];
+    const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
+    return annsRef.current.flatMap((ann): StoredScreenshotAnnotation[] => {
+      if (ann.t === "marker") {
+        return [{
+          id: ann.label,
+          label: ann.note?.trim() ?? "",
+          tone: "problem",
+          x: clamp01((ann.pos.x - sel.x) / sel.w),
+          y: clamp01((ann.pos.y - sel.y) / sel.h),
+          kind: "marker",
+          color: ann.color,
+          burnedIn: false,
+        }];
+      }
+      if (ann.t === "boxCallout") {
+        return [{
+          id: ann.label,
+          label: ann.note?.trim() ?? "",
+          tone: "problem",
+          x: clamp01((ann.labelPos.x - sel.x) / sel.w),
+          y: clamp01((ann.labelPos.y - sel.y) / sel.h),
+          kind: "boxCallout",
+          color: ann.color,
+          burnedIn: false,
+        }];
+      }
+      return [];
+    }).sort((a, b) => a.id - b.id);
+  };
+
+  const saveToScreenshotAiLibrary = async (out: HTMLCanvasElement): Promise<boolean> => {
+    return await new Promise<boolean>(resolve => {
+      out.toBlob(blob => {
+        if (!blob) { resolve(false); return; }
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const base64 = dataUrl.split(",")[1];
+          addScreenshot({
+            data: base64,
+            width: out.width,
+            height: out.height,
+            annotations: buildStoredAnnotations(),
+          });
+          resolve(true);
+        };
+        reader.onerror = () => resolve(false);
+        reader.readAsDataURL(blob);
+      }, "image/jpeg", 0.92);
+    });
+  };
+
+  const handleCopy = async (): Promise<boolean> => {
     const out = buildResult();
-    if (!out) return;
+    if (!out) {
+      showToast("没有可复制内容");
+      return false;
+    }
+    let ok = false;
     await new Promise<void>(resolve => {
       out.toBlob(async blob => {
         if (!blob) { resolve(); return; }
         try {
           const base64 = toBase64(await blob.arrayBuffer());
           await invoke("set_clipboard_image", { data: base64 });
+          ok = true;
         } catch (err) {
           console.error("copy failed", err);
         }
         resolve();
       }, "image/png");
     });
+    showToast(ok ? "已复制，可继续编辑" : "复制失败");
+    return ok;
+  };
+
+  const commitTextInput = (input = textInput) => {
+    if (!input) return;
+    const trimmed = input.val.trim();
+    if (input.target?.kind === "ann-note") {
+      const idx = input.target.annIndex;
+      if (annsRef.current[idx] && (annsRef.current[idx].t === "marker" || annsRef.current[idx].t === "boxCallout")) {
+        undoRef.current.push([...annsRef.current]);
+        annsRef.current = annsRef.current.map((ann, i) => {
+          if (i !== idx || (ann.t !== "marker" && ann.t !== "boxCallout")) return ann;
+          return { ...ann, note: trimmed };
+        });
+        setSelectedAnnIndex(idx);
+        doRender();
+      }
+      setTextInput(null);
+      return;
+    }
+    if (trimmed) {
+      undoRef.current.push([...annsRef.current]);
+      const ann: Ann = {
+        t: "text",
+        pos: input.pos,
+        text: trimmed,
+        color: colorRef.current,
+        fs: 18,
+      };
+      annsRef.current = [...annsRef.current, ann];
+      doRender();
+    }
+    setTextInput(null);
   };
 
   const handleSave = async () => {
+    commitTextInput();
     const out = buildResult();
     if (!out) return;
     out.toBlob(async blob => {
@@ -843,32 +1300,32 @@ export function ScreenshotApp() {
         if (!path) return;
         const base64 = toBase64(await blob.arrayBuffer());
         await invoke("screenshot_write_file", { path, data: base64 });
+        showToast("已保存，可继续编辑");
+        handleCancel();
       } catch (err) {
         console.error("save failed", err);
+        showToast("保存失败");
       }
     }, "image/png");
   };
 
   /** Save to screenshot library (for screenshotai plugin) and close */
   const handlePin = () => {
-    const out = buildResult();
+    commitTextInput();
+    const out = buildBaseResult();
     if (!out) return;
-    out.toBlob(blob => {
-      if (!blob) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        const base64  = dataUrl.split(",")[1];
-        addScreenshot({ data: base64, width: out.width, height: out.height });
-      };
-      reader.readAsDataURL(blob);
-    }, "image/jpeg", 0.92);
-    handleCancel();
+    void saveToScreenshotAiLibrary(out).then((ok) => ok ? handleCancel() : showToast("存入失败"));
+    return;
   };
 
   const handleConfirm = async () => {
+    commitTextInput();
+    const out = buildBaseResult();
+    if (!out) return;
     await handleCopy();
-    handleCancel();
+    const saved = await saveToScreenshotAiLibrary(out);
+    if (saved) handleCancel();
+    else showToast("保存失败");
   };
 
   const handleCancel = () => {
@@ -877,47 +1334,69 @@ export function ScreenshotApp() {
     curAnnRef.current = null;
     undoRef.current  = [];
     dragRef.current  = null;
+    selectedAnnIndexRef.current = null;
     setPhase("init");
     setSel(null);
+    setSelectedAnnIndexState(null);
     setTextInput(null);
     doRender();
     getCurrentWindow().hide();
   };
 
   const handleTextConfirm = () => {
-    if (!textInput) return;
-    const trimmed = textInput.val.trim();
-    if (trimmed) {
-      undoRef.current.push([...annsRef.current]);
-      const ann: Ann = {
-        t: "text",
-        pos: textInput.pos,
-        text: trimmed,
-        color: colorRef.current,
-        fs: 18,
-      };
-      annsRef.current = [...annsRef.current, ann];
-      doRender();
-    }
-    setTextInput(null);
+    commitTextInput();
   };
 
-  // ── Cursor ────────────────────────────────────────────────────────────────
+  const handleEscape = () => {
+    if (textInput) {
+      setTextInput(null);
+      return;
+    }
+    if (selectedAnnIndexRef.current !== null) {
+      setSelectedAnnIndex(null);
+      return;
+    }
+    if (curAnnRef.current || dragRef.current?.mode === "ann") {
+      curAnnRef.current = null;
+      dragRef.current = null;
+      doRender();
+      return;
+    }
+    if (undoRef.current.length > 0) {
+      handleUndo();
+      return;
+    }
+    if (toolRef.current) {
+      setTool(null);
+      return;
+    }
+    if (phaseRef.current === "selecting" && selRef.current) {
+      setSel(null);
+      doRender();
+    }
+  };
+
   const getCursor = () => {
     if (phase === "init")       return "default";
-    if (phase === "selecting")  return "crosshair";
+    if (phase === "selecting")  return "none";
+    if (activeTool === "move")  return "none";
     if (activeTool === "text")  return "text";
-    if (activeTool)             return "crosshair";
+    if (activeTool)             return "none";
     return "default";
   };
 
-  // ── Toolbar position (below or above selection) ───────────────────────────
+  const showCustomCursor =
+    Boolean(cursorPos) &&
+    !textInput &&
+    (phase === "selecting" || (phase === "annotating" && activeTool !== null && activeTool !== "text"));
+
+  // Toolbar position (below or above selection)
   const getToolbarStyle = (): CSSProperties | null => {
     if (!selection) return null;
     const n    = norm(selection);
     const winW = window.innerWidth;
     const winH = window.innerHeight;
-    const TB_W = 548;
+    const TB_W = 620;
     const TB_H = 52;
     const GAP  = 12;
 
@@ -931,10 +1410,21 @@ export function ScreenshotApp() {
   };
 
   const tbStyle = getToolbarStyle();
+  const selectedAnn = selectedAnnIndex !== null ? annsRef.current[selectedAnnIndex] : null;
+  const selectedCalloutAnn = selectedAnn && (selectedAnn.t === "marker" || selectedAnn.t === "boxCallout") ? selectedAnn : null;
+  const selectedCalloutPos = selectedCalloutAnn
+    ? calloutTextPos(selectedCalloutAnn.t === "marker" ? selectedCalloutAnn.pos : selectedCalloutAnn.labelPos, selectedCalloutAnn.label)
+    : null;
 
-  // ── JSX ───────────────────────────────────────────────────────────────────
+  // 鈹€鈹€ JSX 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   return (
-    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", userSelect: "none", background: "transparent" }}>
+    <div
+      style={{ width: "100vw", height: "100vh", overflow: "hidden", userSelect: "none", background: "transparent" }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        handleCancel();
+      }}
+    >
       {/* Full-screen canvas */}
       <canvas
         ref={canvasRef}
@@ -942,7 +1432,52 @@ export function ScreenshotApp() {
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
+        onMouseLeave={() => setCursorPos(null)}
       />
+
+      {showCustomCursor && cursorPos && (
+        <div style={{
+          position: "absolute",
+          left: cursorPos.x,
+          top: cursorPos.y,
+          width: 34,
+          height: 34,
+          transform: "translate(-50%, -50%)",
+          pointerEvents: "none",
+          zIndex: 10002,
+          filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.95)) drop-shadow(0 0 5px rgba(0,122,255,0.75))",
+        }}>
+          <div style={{
+            position: "absolute",
+            left: 16,
+            top: 2,
+            width: 2,
+            height: 30,
+            borderRadius: 1,
+            background: "rgba(255,255,255,0.98)",
+          }} />
+          <div style={{
+            position: "absolute",
+            left: 2,
+            top: 16,
+            width: 30,
+            height: 2,
+            borderRadius: 1,
+            background: "rgba(255,255,255,0.98)",
+          }} />
+          <div style={{
+            position: "absolute",
+            left: 11,
+            top: 11,
+            width: 12,
+            height: 12,
+            borderRadius: "50%",
+            border: "2px solid #007aff",
+            background: "rgba(0,0,0,0.34)",
+            boxSizing: "border-box",
+          }} />
+        </div>
+      )}
 
       {/* Loading indicator */}
       {phase === "init" && (
@@ -991,11 +1526,71 @@ export function ScreenshotApp() {
         />
       )}
 
+      {toast && (
+        <div style={{
+          position: "absolute",
+          left: "50%",
+          bottom: 92,
+          transform: "translateX(-50%)",
+          color: "rgba(255,255,255,0.92)",
+          fontSize: 13,
+          fontWeight: 600,
+          background: "rgba(28,28,30,0.78)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
+          border: "1px solid rgba(255,255,255,0.14)",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          borderRadius: 12,
+          padding: "8px 14px",
+          pointerEvents: "none",
+          zIndex: 10001,
+        }}>
+          {toast}
+        </div>
+      )}
+
+      {selectedCalloutAnn && selectedCalloutPos && !textInput && (
+        <input
+          autoFocus
+          value={selectedCalloutAnn.note ?? ""}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
+          onFocus={e => e.currentTarget.select()}
+          onChange={e => updateSelectedAnnNote(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === "Escape") setSelectedAnnIndex(null);
+            e.stopPropagation();
+          }}
+          placeholder="输入说明，可留空"
+          style={{
+            position: "absolute",
+            left: selectedCalloutPos.x,
+            top: selectedCalloutPos.y,
+            width: 180,
+            boxSizing: "border-box",
+            background: "rgba(28,28,30,0.88)",
+            border: "1px solid rgba(255,255,255,0.22)",
+            color: "rgba(255,255,255,0.94)",
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+            outline: "none",
+            padding: "6px 9px",
+            borderRadius: 8,
+            boxShadow: "0 10px 28px rgba(0,0,0,0.34)",
+            zIndex: 10003,
+          }}
+        />
+      )}
+
       {/* Floating text input */}
       {textInput && (
         <input
           autoFocus
           value={textInput.val}
+          onFocus={e => {
+            if (textInput.target) e.currentTarget.select();
+          }}
           onChange={e => setTextInput({ ...textInput, val: e.target.value })}
           onKeyDown={e => {
             if (e.key === "Enter") { e.preventDefault(); handleTextConfirm(); }
@@ -1003,22 +1598,23 @@ export function ScreenshotApp() {
             e.stopPropagation();
           }}
           onBlur={handleTextConfirm}
-          placeholder="输入文字..."
+          placeholder={textInput.target ? "输入说明..." : "输入文字..."}
           style={{
             position: "absolute",
             left: textInput.pos.x,
             top: textInput.pos.y,
-            background: "rgba(0,0,0,0.55)",
-            border: "none",
-            borderBottom: `2.5px solid ${activeColor}`,
-            color: activeColor,
-            fontSize: 20,
-            fontWeight: "bold",
+            background: textInput.target ? "rgba(28,28,30,0.82)" : "rgba(0,0,0,0.55)",
+            border: textInput.target ? "1px solid rgba(255,255,255,0.18)" : "none",
+            borderBottom: textInput.target ? "1px solid rgba(255,255,255,0.22)" : `2.5px solid ${activeColor}`,
+            color: textInput.target ? "rgba(255,255,255,0.94)" : activeColor,
+            fontSize: textInput.target ? 13 : 20,
+            fontWeight: textInput.target ? 600 : "bold",
             fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
             outline: "none",
-            minWidth: 130,
-            padding: "3px 4px",
-            borderRadius: "4px 4px 0 0",
+            minWidth: textInput.target ? 150 : 130,
+            padding: textInput.target ? "6px 8px" : "3px 4px",
+            borderRadius: textInput.target ? 8 : "4px 4px 0 0",
+            boxShadow: textInput.target ? "0 8px 24px rgba(0,0,0,0.28)" : "none",
             zIndex: 10000,
           }}
         />
