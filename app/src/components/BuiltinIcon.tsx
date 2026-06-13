@@ -125,5 +125,19 @@ export function BuiltinIcon({ feature, size = 20 }: BuiltinIconProps) {
           <path d="M9.5 13.5l2-2 1.5 1.5 1.5-1.5 2 2.5" stroke="url(#screenshot-grad)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.75" />
         </svg>
       );
+    case "webaccounts":
+      return (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
+          <defs>
+            <linearGradient id="webaccounts-grad" x1="3" y1="4" x2="21" y2="20" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#34d399" />
+              <stop offset="1" stopColor="#60a5fa" />
+            </linearGradient>
+          </defs>
+          <circle cx="12" cy="12" r="8.5" stroke="url(#webaccounts-grad)" strokeWidth="1.8" />
+          <path d="M4.5 12h15M12 3.5c2.2 2.4 3.2 5.2 3.2 8.5s-1 6.1-3.2 8.5M12 3.5C9.8 5.9 8.8 8.7 8.8 12s1 6.1 3.2 8.5" stroke="url(#webaccounts-grad)" strokeWidth="1.5" strokeLinecap="round" />
+          <path d="M14.7 13.8h2.2v3.6h-5.4v-3.6h1.1v-1.2a2.1 2.1 0 014.2 0v1.2h-1.2v-1.2a.9.9 0 10-1.8 0v1.2h.9Z" fill="url(#webaccounts-grad)" opacity="0.82" />
+        </svg>
+      );
   }
 }

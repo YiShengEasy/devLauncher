@@ -4,7 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
-import { addScreenshot } from "../screenshotStore";
+import { addScreenshot, takePendingScreenshotEdit, updateScreenshot } from "../screenshotStore";
 import type { StoredScreenshotAnnotation } from "../screenshotStore";
 
 // 鈹€鈹€ Types 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -98,6 +98,13 @@ function calloutLabelPos(rect: Rect, bounds?: Rect | null): Pt {
     x: n.x + n.w / 2,
     y: Math.max(BADGE_R + 6, n.y - CALLOUT_GAP),
   };
+}
+
+function toneFromColor(color: string): StoredScreenshotAnnotation["tone"] {
+  const normalized = color.toLowerCase();
+  if (normalized === "#34c759") return "expected";
+  if (normalized === "#ffcc00" || normalized === "#ffd60a") return "focus";
+  return "problem";
 }
 
 // 鈹€鈹€ Canvas drawing helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -260,7 +267,7 @@ function renderAnnotationSelection(ctx: CanvasRenderingContext2D, ann: Ann) {
   ctx.restore();
 }
 
-function renderAnnotation(ctx: CanvasRenderingContext2D, ann: Ann, bgImg?: HTMLImageElement) {
+function renderAnnotation(ctx: CanvasRenderingContext2D, ann: Ann, bgImg?: HTMLImageElement, bgRect?: Rect | null) {
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
@@ -348,7 +355,10 @@ function renderAnnotation(ctx: CanvasRenderingContext2D, ann: Ann, bgImg?: HTMLI
       offscreen.width = sw;
       offscreen.height = sh;
       const oc = offscreen.getContext("2d", { willReadFrequently: true })!;
-      oc.drawImage(bgImg, x, y, w, h, 0, 0, sw, sh);
+      const sourceScale = bgRect ? bgImg.width / bgRect.w : 1;
+      const sx = bgRect ? (x - bgRect.x) * sourceScale : x;
+      const sy = bgRect ? (y - bgRect.y) * sourceScale : y;
+      oc.drawImage(bgImg, sx, sy, w * sourceScale, h * sourceScale, 0, 0, sw, sh);
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(offscreen, 0, 0, sw, sh, x, y, w, h);
       ctx.imageSmoothingEnabled = true;
@@ -366,6 +376,8 @@ function renderFrame(
   anns: Ann[],
   curAnn: Ann | null,
   selectedAnnIndex: number | null = null,
+  bgRect: Rect | null = null,
+  editMode = false,
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -376,65 +388,89 @@ function renderFrame(
   ctx.clearRect(0, 0, W, H);
 
   if (bgImg) {
-    ctx.drawImage(bgImg, 0, 0, W, H);
+    if (bgRect) {
+      ctx.drawImage(bgImg, bgRect.x, bgRect.y, bgRect.w, bgRect.h);
+    } else {
+      ctx.drawImage(bgImg, 0, 0, W, H);
+    }
   }
 
   if (phase === "selecting" || phase === "annotating") {
-    // Dark overlay
-    ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
-    ctx.fillRect(0, 0, W, H);
+    if (!editMode) {
+      // Dark overlay
+      ctx.fillStyle = "rgba(0, 0, 0, 0.36)";
+      ctx.fillRect(0, 0, W, H);
+    }
 
     if (sel) {
       const n = norm(sel);
 
       // Reveal selected area from background
-      if (bgImg) ctx.drawImage(bgImg, n.x, n.y, n.w, n.h, n.x, n.y, n.w, n.h);
+      if (bgImg) {
+        if (bgRect) {
+          ctx.drawImage(
+            bgImg,
+            n.x - bgRect.x,
+            n.y - bgRect.y,
+            n.w,
+            n.h,
+            n.x,
+            n.y,
+            n.w,
+            n.h,
+          );
+        } else {
+          ctx.drawImage(bgImg, n.x, n.y, n.w, n.h, n.x, n.y, n.w, n.h);
+        }
+      }
 
       // Annotations on top of the revealed area
-      for (const ann of anns) renderAnnotation(ctx, ann, bgImg ?? undefined);
-      if (curAnn) renderAnnotation(ctx, curAnn, bgImg ?? undefined);
+      for (const ann of anns) renderAnnotation(ctx, ann, bgImg ?? undefined, bgRect);
+      if (curAnn) renderAnnotation(ctx, curAnn, bgImg ?? undefined, bgRect);
       if (selectedAnnIndex !== null && anns[selectedAnnIndex]) renderAnnotationSelection(ctx, anns[selectedAnnIndex]);
 
-      // Selection border 鈥?two-tone for visibility on any bg
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "rgba(0,0,0,0.4)";
-      ctx.strokeRect(n.x - 1, n.y - 1, n.w + 2, n.h + 2);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = SEL_COLOR;
-      ctx.strokeRect(n.x, n.y, n.w, n.h);
-
-      // Corner handles
-      for (const h of getHandles(n)) {
-        ctx.beginPath();
-        ctx.arc(h.x, h.y, HANDLE_R, 0, Math.PI * 2);
-        ctx.fillStyle = "white";
-        ctx.fill();
+      if (!editMode) {
+        // Selection border 鈥?two-tone for visibility on any bg
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = "rgba(0,0,0,0.4)";
+        ctx.strokeRect(n.x - 1, n.y - 1, n.w + 2, n.h + 2);
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = SEL_COLOR;
-        ctx.stroke();
-      }
+        ctx.strokeRect(n.x, n.y, n.w, n.h);
 
-      // Dimension label
-      const label = `${Math.round(n.w)} x ${Math.round(n.h)}`;
-      ctx.font = "bold 12px -apple-system, monospace";
-      const tw = ctx.measureText(label).width;
-      const LH = 20;
-      const lx = Math.max(2, n.x);
-      const ly = n.y > LH + 6 ? n.y - LH - 4 : n.y + n.h + 4;
-      // Label background
-      ctx.fillStyle = SEL_COLOR;
-      const rx = lx - 4, ry = ly, rw = tw + 10, rh = LH;
-      ctx.beginPath();
-      if ((ctx as any).roundRect) {
-        (ctx as any).roundRect(rx, ry, rw, rh, 4);
-      } else {
-        ctx.rect(rx, ry, rw, rh);
+        // Corner handles
+        for (const h of getHandles(n)) {
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, HANDLE_R, 0, Math.PI * 2);
+          ctx.fillStyle = "white";
+          ctx.fill();
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = SEL_COLOR;
+          ctx.stroke();
+        }
+
+        // Dimension label
+        const label = `${Math.round(n.w)} x ${Math.round(n.h)}`;
+        ctx.font = "bold 12px -apple-system, monospace";
+        const tw = ctx.measureText(label).width;
+        const LH = 20;
+        const lx = Math.max(2, n.x);
+        const ly = n.y > LH + 6 ? n.y - LH - 4 : n.y + n.h + 4;
+        // Label background
+        ctx.fillStyle = SEL_COLOR;
+        const rx = lx - 4, ry = ly, rw = tw + 10, rh = LH;
+        ctx.beginPath();
+        if ((ctx as any).roundRect) {
+          (ctx as any).roundRect(rx, ry, rw, rh, 4);
+        } else {
+          ctx.rect(rx, ry, rw, rh);
+        }
+        ctx.fill();
+        // Label text
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.textBaseline = "middle";
+        ctx.fillText(label, lx + 1, ly + LH / 2);
       }
-      ctx.fill();
-      // Label text
-      ctx.fillStyle = "rgba(0,0,0,0.85)";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, lx + 1, ly + LH / 2);
     }
   }
 }
@@ -549,11 +585,14 @@ function IconCopy() {
     </svg>
   );
 }
-function IconPin() {
+function IconIssueReport() {
   return (
     <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <line x1="12" y1="17" x2="12" y2="22" />
-      <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z" />
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M7 14l2.4-2.4 2 2 2.8-3.1L17 14" strokeLinejoin="round" />
+      <path d="M7 17h5M15 17h2" />
+      <circle cx="17" cy="7" r="3" fill="currentColor" stroke="none" />
+      <text x="17" y="9.2" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="bold" fill="#111827">1</text>
     </svg>
   );
 }
@@ -628,6 +667,9 @@ function Toolbar({
         alignItems: "center",
         gap: 2,
         padding: "7px 12px",
+        maxWidth: "calc(100vw - 24px)",
+        overflowX: "auto",
+        overflowY: "hidden",
         background: "rgba(20, 20, 24, 0.92)",
         backdropFilter: "blur(32px)",
         WebkitBackdropFilter: "blur(32px)",
@@ -713,8 +755,8 @@ function Toolbar({
       <button title="复制到剪贴板" onClick={onCopy} style={baseBtn}>
         <IconCopy />
       </button>
-      <button title="存入 AI 截图标注" onClick={onPin} style={baseBtn}>
-        <IconPin />
+      <button title="存入截图问题报告" onClick={onPin} style={baseBtn}>
+        <IconIssueReport />
       </button>
 
       <div style={sep} />
@@ -762,6 +804,9 @@ function Toolbar({
 export function ScreenshotApp() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const bgImgRef  = useRef<HTMLImageElement | null>(null);
+  const bgRectRef = useRef<Rect | null>(null);
+  const editScaleRef = useRef(1);
+  const editingScreenshotIdRef = useRef<string | null>(null);
 
   // 鈹€鈹€ React state (drives JSX) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const [phase,       setPhaseState]  = useState<Phase>("init");
@@ -845,7 +890,17 @@ export function ScreenshotApp() {
   const doRender = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    renderFrame(canvas, bgImgRef.current, phaseRef.current, selRef.current, annsRef.current, curAnnRef.current, selectedAnnIndexRef.current);
+    renderFrame(
+      canvas,
+      bgImgRef.current,
+      phaseRef.current,
+      selRef.current,
+      annsRef.current,
+      curAnnRef.current,
+      selectedAnnIndexRef.current,
+      bgRectRef.current,
+      Boolean(editingScreenshotIdRef.current),
+    );
   }, []);
 
   // 鈹€鈹€ Resize canvas to current window dimensions and restore DPR scale 鈹€鈹€鈹€鈹€鈹€鈹€
@@ -864,9 +919,41 @@ export function ScreenshotApp() {
     if (ctx) ctx.scale(dpr, dpr);
   }, []);
 
+  const toEditorAnnotations = (annotations: StoredScreenshotAnnotation[] | undefined, width: number, height: number, origin: Pt = { x: 0, y: 0 }, scale = 1): Ann[] => {
+    if (!annotations?.length) return [];
+    return annotations.map((annotation) => {
+      const color = annotation.color ?? "#ff3b30";
+      const label = annotation.id;
+      const note = annotation.label;
+      const pos = { x: origin.x + annotation.x * width * scale, y: origin.y + annotation.y * height * scale };
+      if (annotation.kind === "boxCallout") {
+        return {
+          t: "boxCallout",
+          rect: { x: Math.max(0, pos.x - 70), y: Math.max(0, pos.y - 44), w: 140, h: 88 },
+          label,
+          labelPos: pos,
+          color,
+          lw: 2,
+          note,
+        };
+      }
+      return { t: "marker", pos, label, color, note };
+    });
+  };
+
   // 鈹€鈹€ Load a base64 PNG as the background and enter selecting phase 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
-  const loadScreenshotData = useCallback((data: string) => {
+  const loadScreenshotData = useCallback((
+    data: string,
+    options?: {
+      fullImageSelection?: boolean;
+      editId?: string;
+      width?: number;
+      height?: number;
+      annotations?: StoredScreenshotAnnotation[];
+    },
+  ) => {
     // Reset all editing state before loading new screenshot
+    editingScreenshotIdRef.current = options?.editId ?? null;
     selRef.current      = null;
     annsRef.current     = [];
     curAnnRef.current   = null;
@@ -874,6 +961,8 @@ export function ScreenshotApp() {
     dragRef.current     = null;
     selectedAnnIndexRef.current = null;
     bgImgRef.current    = null;
+    bgRectRef.current   = null;
+    editScaleRef.current = 1;
     setSelState(null);
     setSelectedAnnIndexState(null);
     setTextInput(null);
@@ -887,8 +976,28 @@ export function ScreenshotApp() {
     const img = new Image();
     img.onload = () => {
       bgImgRef.current = img;
-      phaseRef.current = "selecting";
-      setPhaseState("selecting");
+      if (options?.fullImageSelection) {
+        const w = options.width ?? img.width;
+        const h = options.height ?? img.height;
+        const toolbarReserve = 96;
+        const maxW = Math.max(1, window.innerWidth - 48);
+        const maxH = Math.max(1, window.innerHeight - toolbarReserve - 48);
+        const displayScale = Math.max(1, Math.min(maxW / w, maxH / h));
+        const displayW = Math.round(w * displayScale);
+        const displayH = Math.round(h * displayScale);
+        const x = Math.max(24, Math.round((window.innerWidth - displayW) / 2));
+        const y = Math.max(18, Math.round((window.innerHeight - toolbarReserve - displayH) / 2));
+        editScaleRef.current = displayScale;
+        bgRectRef.current = { x, y, w: displayW, h: displayH };
+        selRef.current = { x, y, w: displayW, h: displayH };
+        annsRef.current = toEditorAnnotations(options.annotations, w, h, { x, y }, displayScale);
+        setSelState(selRef.current);
+        phaseRef.current = "annotating";
+        setPhaseState("annotating");
+      } else {
+        phaseRef.current = "selecting";
+        setPhaseState("selecting");
+      }
       renderFrame(
         canvasRef.current!,
         bgImgRef.current,
@@ -897,14 +1006,29 @@ export function ScreenshotApp() {
         annsRef.current,
         curAnnRef.current,
         selectedAnnIndexRef.current,
+        bgRectRef.current,
+        Boolean(editingScreenshotIdRef.current),
       );
     };
     img.src = "data:image/png;base64," + data;
   }, [resizeCanvas]);
 
+  const loadPendingEdit = useCallback(() => {
+    const pending = takePendingScreenshotEdit();
+    if (!pending) return;
+    loadScreenshotData(pending.data, {
+      fullImageSelection: true,
+      editId: pending.id,
+      width: pending.width,
+      height: pending.height,
+      annotations: pending.annotations,
+    });
+  }, [loadScreenshotData]);
+
   // 鈹€鈹€ Init: size canvas, set up keyboard + screenshot-ready listener 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   useEffect(() => {
     resizeCanvas();
+    loadPendingEdit();
 
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -933,12 +1057,16 @@ export function ScreenshotApp() {
     const unlistenPromise = listen<string>("screenshot-ready", (event) => {
       if (event.payload) loadScreenshotData(event.payload);
     });
+    window.addEventListener("storage", loadPendingEdit);
+    window.addEventListener("devlauncher-pending-screenshot-edit", loadPendingEdit);
 
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("storage", loadPendingEdit);
+      window.removeEventListener("devlauncher-pending-screenshot-edit", loadPendingEdit);
       unlistenPromise.then(fn => fn());
     };
-  }, [resizeCanvas, loadScreenshotData]);
+  }, [resizeCanvas, loadScreenshotData, loadPendingEdit]);
 
   // 鈹€鈹€ Mouse position helper 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const getPos = (e: RMouseEvent<HTMLCanvasElement>): Pt => {
@@ -979,6 +1107,7 @@ export function ScreenshotApp() {
           return;
         }
         setSelectedAnnIndex(null);
+        if (editingScreenshotIdRef.current) return;
         if (sel) {
           const hi = hitHandle(pos, sel);
           if (hi >= 0) {
@@ -1152,13 +1281,20 @@ export function ScreenshotApp() {
     const sel  = selRef.current ? norm(selRef.current) : null;
     const bgImg = bgImgRef.current;
     if (!sel || !bgImg) return null;
+    const bgRect = bgRectRef.current;
+    const editScale = editingScreenshotIdRef.current ? editScaleRef.current : 1;
     const out = document.createElement("canvas");
-    out.width  = Math.max(1, Math.round(sel.w));
-    out.height = Math.max(1, Math.round(sel.h));
+    out.width  = Math.max(1, Math.round(sel.w / editScale));
+    out.height = Math.max(1, Math.round(sel.h / editScale));
     const ctx = out.getContext("2d")!;
-    ctx.drawImage(bgImg, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
+    if (bgRect) {
+      ctx.drawImage(bgImg, (sel.x - bgRect.x) / editScale, (sel.y - bgRect.y) / editScale, sel.w / editScale, sel.h / editScale, 0, 0, out.width, out.height);
+    } else {
+      ctx.drawImage(bgImg, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
+    }
+    if (editScale !== 1) ctx.scale(1 / editScale, 1 / editScale);
     ctx.translate(-sel.x, -sel.y);
-    for (const ann of annsRef.current) renderAnnotation(ctx, ann, bgImg);
+    for (const ann of annsRef.current) renderAnnotation(ctx, ann, bgImg, bgRect);
     return out;
   };
 
@@ -1167,26 +1303,33 @@ export function ScreenshotApp() {
     const sel  = selRef.current ? norm(selRef.current) : null;
     const bgImg = bgImgRef.current;
     if (!sel || !bgImg) return null;
+    const bgRect = bgRectRef.current;
+    const editScale = editingScreenshotIdRef.current ? editScaleRef.current : 1;
     const out = document.createElement("canvas");
-    out.width  = Math.max(1, Math.round(sel.w));
-    out.height = Math.max(1, Math.round(sel.h));
+    out.width  = Math.max(1, Math.round(sel.w / editScale));
+    out.height = Math.max(1, Math.round(sel.h / editScale));
     const ctx = out.getContext("2d")!;
-    ctx.drawImage(bgImg, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
+    if (bgRect) {
+      ctx.drawImage(bgImg, (sel.x - bgRect.x) / editScale, (sel.y - bgRect.y) / editScale, sel.w / editScale, sel.h / editScale, 0, 0, out.width, out.height);
+    } else {
+      ctx.drawImage(bgImg, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
+    }
     return out;
   };
 
   const buildStoredAnnotations = (): StoredScreenshotAnnotation[] => {
     const sel = selRef.current ? norm(selRef.current) : null;
     if (!sel) return [];
+    const editScale = editingScreenshotIdRef.current ? editScaleRef.current : 1;
     const clamp01 = (n: number) => Math.max(0, Math.min(1, n));
     return annsRef.current.flatMap((ann): StoredScreenshotAnnotation[] => {
       if (ann.t === "marker") {
         return [{
           id: ann.label,
           label: ann.note?.trim() ?? "",
-          tone: "problem",
-          x: clamp01((ann.pos.x - sel.x) / sel.w),
-          y: clamp01((ann.pos.y - sel.y) / sel.h),
+          tone: toneFromColor(ann.color),
+          x: clamp01(((ann.pos.x - sel.x) / editScale) / (sel.w / editScale)),
+          y: clamp01(((ann.pos.y - sel.y) / editScale) / (sel.h / editScale)),
           kind: "marker",
           color: ann.color,
           burnedIn: false,
@@ -1196,9 +1339,9 @@ export function ScreenshotApp() {
         return [{
           id: ann.label,
           label: ann.note?.trim() ?? "",
-          tone: "problem",
-          x: clamp01((ann.labelPos.x - sel.x) / sel.w),
-          y: clamp01((ann.labelPos.y - sel.y) / sel.h),
+          tone: toneFromColor(ann.color),
+          x: clamp01(((ann.labelPos.x - sel.x) / editScale) / (sel.w / editScale)),
+          y: clamp01(((ann.labelPos.y - sel.y) / editScale) / (sel.h / editScale)),
           kind: "boxCallout",
           color: ann.color,
           burnedIn: false,
@@ -1216,18 +1359,36 @@ export function ScreenshotApp() {
         reader.onload = () => {
           const dataUrl = reader.result as string;
           const base64 = dataUrl.split(",")[1];
-          addScreenshot({
-            data: base64,
-            width: out.width,
-            height: out.height,
-            annotations: buildStoredAnnotations(),
-          });
+          const annotations = buildStoredAnnotations();
+          if (editingScreenshotIdRef.current) {
+            updateScreenshot(editingScreenshotIdRef.current, {
+              data: base64,
+              width: out.width,
+              height: out.height,
+              annotations,
+            });
+          } else {
+            addScreenshot({
+              data: base64,
+              width: out.width,
+              height: out.height,
+              annotations,
+            });
+          }
           resolve(true);
         };
         reader.onerror = () => resolve(false);
         reader.readAsDataURL(blob);
       }, "image/jpeg", 0.92);
     });
+  };
+
+  const openScreenshotIssueReport = async () => {
+    try {
+      await invoke("show_screenshotai_window");
+    } catch (err) {
+      console.error("open screenshot issue report failed", err);
+    }
   };
 
   const handleCopy = async (): Promise<boolean> => {
@@ -1310,11 +1471,17 @@ export function ScreenshotApp() {
   };
 
   /** Save to screenshot library (for screenshotai plugin) and close */
-  const handlePin = () => {
+  const handlePin = async () => {
     commitTextInput();
     const out = buildBaseResult();
     if (!out) return;
-    void saveToScreenshotAiLibrary(out).then((ok) => ok ? handleCancel() : showToast("存入失败"));
+    const saved = await saveToScreenshotAiLibrary(out);
+    if (!saved) {
+      showToast("存入失败");
+      return;
+    }
+    await openScreenshotIssueReport();
+    handleCancel();
     return;
   };
 
@@ -1324,12 +1491,19 @@ export function ScreenshotApp() {
     if (!out) return;
     await handleCopy();
     const saved = await saveToScreenshotAiLibrary(out);
-    if (saved) handleCancel();
-    else showToast("保存失败");
+    if (saved) {
+      await openScreenshotIssueReport();
+      handleCancel();
+    } else {
+      showToast("保存失败");
+    }
   };
 
   const handleCancel = () => {
+    editingScreenshotIdRef.current = null;
     selRef.current   = null;
+    bgRectRef.current = null;
+    editScaleRef.current = 1;
     annsRef.current  = [];
     curAnnRef.current = null;
     undoRef.current  = [];
@@ -1396,9 +1570,9 @@ export function ScreenshotApp() {
     const n    = norm(selection);
     const winW = window.innerWidth;
     const winH = window.innerHeight;
-    const TB_W = 620;
     const TB_H = 52;
     const GAP  = 12;
+    const TB_W = Math.min(820, winW - GAP * 2);
 
     let top: number;
     if (n.y + n.h + TB_H + GAP < winH)       top = n.y + n.h + GAP;

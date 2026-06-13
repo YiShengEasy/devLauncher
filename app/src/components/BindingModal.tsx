@@ -50,12 +50,29 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
+function getUrlOrigin(value: string): string | null {
+  try {
+    return new URL(value.trim()).origin;
+  } catch {
+    return null;
+  }
+}
+
 export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }: BindingModalProps) {
   const [activeType, setActiveType] = useState<ActionType>(initialAction?.type ?? "app");
+  const [saveError, setSaveError] = useState("");
 
   // Form state for each type
   const [name, setName]       = useState(initialAction?.name ?? "");
   const [target, setTarget]   = useState((initialAction as AppAction | FolderAction | FileAction | UrlAction)?.target ?? "");
+  const initialUrlAction = initialAction?.type === "url" ? initialAction as UrlAction : null;
+  const [webUsername, setWebUsername] = useState(initialUrlAction?.username ?? "");
+  const [webPassword, setWebPassword] = useState("");
+  const [webHasPassword, setWebHasPassword] = useState(initialUrlAction?.hasPassword ?? false);
+  const [webAutofill, setWebAutofill] = useState(initialUrlAction?.autofill ?? false);
+  const [webAutoSubmit, setWebAutoSubmit] = useState(initialUrlAction?.autoSubmit ?? false);
+  const [webUsernameSelector, setWebUsernameSelector] = useState(initialUrlAction?.usernameSelector ?? "");
+  const [webPasswordSelector, setWebPasswordSelector] = useState(initialUrlAction?.passwordSelector ?? "");
   const [folderOpenWith, setFolderOpenWith] = useState<FolderOpenWith>(
     (initialAction as FolderAction)?.openWith ?? "explorer"
   );
@@ -114,6 +131,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
   };
 
   const handleSave = async () => {
+    setSaveError("");
     let action: Action | null = null;
     switch (activeType) {
       case "app":
@@ -140,7 +158,25 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
         break;
       case "url":
         if (!target.trim()) return;
-        action = { type: "url", name: name || target, target: target.trim() };
+        {
+          const willHavePassword = webHasPassword || webPassword.length > 0;
+          const username = webUsername.trim();
+          if (webAutofill && willHavePassword && !username) {
+            setSaveError("网页账号需要填写账号名。");
+            return;
+          }
+          action = {
+            type: "url",
+            name: name || target,
+            target: target.trim(),
+            ...(username ? { username } : {}),
+            ...(willHavePassword ? { hasPassword: true } : {}),
+            ...(webAutofill ? { autofill: true } : {}),
+            ...(webAutoSubmit ? { autoSubmit: true } : {}),
+            ...(webUsernameSelector.trim() ? { usernameSelector: webUsernameSelector.trim() } : {}),
+            ...(webPasswordSelector.trim() ? { passwordSelector: webPasswordSelector.trim() } : {}),
+          };
+        }
         break;
       case "ssh":
         if (!host.trim() || !user.trim()) return;
@@ -168,6 +204,21 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
       if (activeType === "ssh" && sshPassword.length > 0) {
         const credKey = `ssh:${(action as SshAction).user}@${(action as SshAction).host}:${(action as SshAction).port ?? 22}`;
         await invoke("save_ssh_password", { key: credKey, password: sshPassword }).catch(console.error);
+      }
+      if (activeType === "url" && webPassword.length > 0) {
+        const a = action as UrlAction;
+        const origin = getUrlOrigin(a.target);
+        if (!origin || !a.username) {
+          setSaveError("请输入有效的网址和账号。");
+          return;
+        }
+        try {
+          await invoke("save_web_password", { origin, username: a.username, password: webPassword });
+        } catch (error) {
+          console.error(error);
+          setSaveError(String(error));
+          return;
+        }
       }
       onSave(action);
     }
@@ -332,14 +383,107 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
 
           {/* URL */}
           {activeType === "url" && (
-            <Field label="网址 *">
-              <input
-                style={INPUT_STYLE}
-                placeholder="https://example.com"
-                value={target}
-                onChange={e => setTarget(e.target.value)}
-              />
-            </Field>
+            <>
+              <Field label="网址 *">
+                <input
+                  style={INPUT_STYLE}
+                  placeholder="https://example.com"
+                  value={target}
+                  onChange={e => setTarget(e.target.value)}
+                />
+              </Field>
+              <div style={{
+                marginBottom: 12,
+                padding: 10,
+                borderRadius: 9,
+                border: "1px solid rgba(52,211,153,0.18)",
+                background: "rgba(5,120,80,0.10)",
+              }}>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer", color: "rgba(255,255,255,0.82)", fontSize: 12, fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={webAutofill}
+                    onChange={e => setWebAutofill(e.target.checked)}
+                  />
+                  Chrome 登录页自动填入
+                </label>
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.38)", marginTop: 5, display: "block", lineHeight: 1.5 }}>
+                  密码存入系统凭据库；外置 Chrome 需要安装 DevLauncher 扩展和 Native Messaging Host。
+                </span>
+              </div>
+              {webAutofill && (
+                <>
+                  <Field label="账号">
+                    <input
+                      style={INPUT_STYLE}
+                      placeholder="name@example.com"
+                      value={webUsername}
+                      onChange={e => setWebUsername(e.target.value)}
+                      autoComplete="username"
+                    />
+                  </Field>
+                  <Field label="密码（可选）">
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <input
+                        style={INPUT_STYLE}
+                        type="password"
+                        placeholder={webHasPassword ? "已保存，留空保持不变" : "输入密码存入系统凭据"}
+                        value={webPassword}
+                        onChange={e => setWebPassword(e.target.value)}
+                        autoComplete="new-password"
+                      />
+                      {webHasPassword && (
+                        <button
+                          type="button"
+                          title="清除已保存的网页密码"
+                          onClick={async () => {
+                            const origin = getUrlOrigin(target);
+                            if (origin && webUsername.trim()) {
+                              await invoke("delete_web_password", { origin, username: webUsername.trim() }).catch(console.error);
+                            }
+                            setWebHasPassword(false);
+                            setWebPassword("");
+                          }}
+                          style={{
+                            flexShrink: 0, padding: "7px 10px", cursor: "pointer",
+                            background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.3)",
+                            borderRadius: 7, color: "rgba(239,68,68,0.8)", fontSize: 11, whiteSpace: "nowrap",
+                          }}
+                        >
+                          清除密码
+                        </button>
+                      )}
+                    </div>
+                  </Field>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    <Field label="账号选择器（可选）">
+                      <input
+                        style={INPUT_STYLE}
+                        placeholder="input[name=email]"
+                        value={webUsernameSelector}
+                        onChange={e => setWebUsernameSelector(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="密码选择器（可选）">
+                      <input
+                        style={INPUT_STYLE}
+                        placeholder="input[type=password]"
+                        value={webPasswordSelector}
+                        onChange={e => setWebPasswordSelector(e.target.value)}
+                      />
+                    </Field>
+                  </div>
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer", color: "rgba(255,255,255,0.68)", fontSize: 12, marginBottom: 12 }}>
+                    <input
+                      type="checkbox"
+                      checked={webAutoSubmit}
+                      onChange={e => setWebAutoSubmit(e.target.checked)}
+                    />
+                    填入后自动提交（默认关闭）
+                  </label>
+                </>
+              )}
+            </>
           )}
 
           {/* SSH */}
@@ -512,6 +656,16 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                       key: `ssh:${a.user}@${a.host}:${a.port ?? 22}`,
                     }).catch(console.error);
                   }
+                  if (initialAction.type === "url" && (initialAction as UrlAction).hasPassword) {
+                    const a = initialAction as UrlAction;
+                    const origin = getUrlOrigin(a.target);
+                    if (origin && a.username) {
+                      await invoke("delete_web_password", {
+                        origin,
+                        username: a.username,
+                      }).catch(console.error);
+                    }
+                  }
                   onClear();
                 }}
                 style={{
@@ -522,6 +676,11 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
               >
                 清除绑定
               </button>
+            )}
+            {saveError && (
+              <span style={{ marginLeft: 10, color: "rgba(248,113,113,0.88)", fontSize: 11 }}>
+                {saveError}
+              </span>
             )}
           </div>
           <div style={{ display: "flex", gap: 8 }}>

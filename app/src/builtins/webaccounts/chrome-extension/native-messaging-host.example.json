@@ -1,0 +1,9 @@
+{
+  "name": "com.devlauncher.webaccounts",
+  "description": "DevLauncher Web Accounts native host",
+  "path": "D:\\goworkspace\\src\\aidk\\dev-launcher\\app\\src-tauri\\target\\debug\\devlauncher_native_host.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_WITH_UNPACKED_EXTENSION_ID/"
+  ]
+}

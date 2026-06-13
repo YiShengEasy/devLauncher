@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
-import { loadScreenshots, saveScreenshots, type StoredScreenshot, type StoredScreenshotAnnotation } from "../screenshotStore";
+import {
+  clearScreenshots,
+  deleteScreenshot,
+  loadScreenshots,
+  saveScreenshots,
+  setPendingScreenshotEdit,
+  type StoredScreenshot,
+  type StoredScreenshotAnnotation,
+} from "../screenshotStore";
 
 type MarkerTone = "problem" | "expected" | "focus";
 
@@ -12,6 +20,7 @@ type Annotation = {
   id: number;
   label: string;
   tone: MarkerTone;
+  color?: string;
   x: number;
   y: number;
   burnedIn?: boolean;
@@ -20,25 +29,26 @@ type Annotation = {
 const DRAFT_KEY = "screenshotai_annotation_draft";
 
 const toneMeta: Record<MarkerTone, { label: string; color: string }> = {
-  problem: { label: "问题", color: "#ff6b7a" },
+  problem: { label: "问题", color: "#ff3b30" },
   expected: { label: "期望", color: "#34c759" },
-  focus: { label: "关注", color: "#ffd60a" },
+  focus: { label: "关注", color: "#ffcc00" },
 };
 
 const panelStyle: CSSProperties = {
-  border: "1px solid rgba(255,255,255,0.09)",
+  border: "1px solid rgba(255,255,255,0.1)",
   borderRadius: 10,
   background: "rgba(255,255,255,0.045)",
+  boxShadow: "0 1px 0 rgba(255,255,255,0.05) inset",
 };
 
 const inputStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",
-  border: "1px solid rgba(255,255,255,0.12)",
+  border: "1px solid rgba(255,255,255,0.13)",
   borderRadius: 8,
-  background: "rgba(255,255,255,0.07)",
+  background: "rgba(255,255,255,0.065)",
   color: "rgba(255,255,255,0.88)",
-  padding: "8px 10px",
+  padding: "9px 10px",
   fontSize: 13,
   outline: "none",
 };
@@ -50,8 +60,58 @@ const btnStyle: CSSProperties = {
   color: "rgba(255,255,255,0.78)",
   cursor: "pointer",
   fontSize: 12,
-  padding: "7px 11px",
+  padding: "7px 10px",
+  lineHeight: 1,
 };
+
+const dangerBtnStyle: CSSProperties = {
+  ...btnStyle,
+  color: "rgba(255,255,255,0.9)",
+  background: "rgba(255,59,48,0.16)",
+  border: "1px solid rgba(255,59,48,0.35)",
+};
+
+function annotationColor(annotation: Annotation) {
+  return annotation.color || toneMeta[annotation.tone].color;
+}
+
+function toneFromColor(color: string | undefined, fallback: MarkerTone = "problem"): MarkerTone {
+  const normalized = color?.toLowerCase();
+  if (normalized === "#34c759") return "expected";
+  if (normalized === "#ffcc00" || normalized === "#ffd60a") return "focus";
+  if (normalized === "#ff3b30" || normalized === "#ff6b7a") return "problem";
+  return fallback;
+}
+
+const titleStyle: CSSProperties = {
+  fontSize: 12,
+  fontWeight: 700,
+  color: "rgba(255,255,255,0.9)",
+};
+
+const mutedStyle: CSSProperties = {
+  fontSize: 11,
+  color: "rgba(255,255,255,0.44)",
+};
+
+const toolbarStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+  minHeight: 30,
+};
+
+function SectionHeader({ title, meta, action }: { title: string; meta?: string; action?: ReactNode }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, minHeight: 30 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, minWidth: 0 }}>
+        <div style={titleStyle}>{title}</div>
+        {meta && <div style={mutedStyle}>{meta}</div>}
+      </div>
+      {action && <div style={toolbarStyle}>{action}</div>}
+    </div>
+  );
+}
 
 function buildPrompt(appName: string, page: string, operation: string, expected: string, annotations: Annotation[]) {
   const lines = annotations
@@ -79,14 +139,6 @@ ${expected || "待补充"}
 - 如果是在当前项目中，请先搜索相关代码，再给出实现路径`;
 }
 
-function getPointInImage(event: MouseEvent<HTMLDivElement>, image: HTMLImageElement) {
-  const rect = image.getBoundingClientRect();
-  const x = (event.clientX - rect.left) / rect.width;
-  const y = (event.clientY - rect.top) / rect.height;
-  if (x < 0 || x > 1 || y < 0 || y > 1) return null;
-  return { x, y };
-}
-
 function toStoredAnnotations(annotations: Annotation[]): StoredScreenshotAnnotation[] {
   return annotations.map((annotation) => ({
     id: annotation.id,
@@ -96,6 +148,7 @@ function toStoredAnnotations(annotations: Annotation[]): StoredScreenshotAnnotat
     y: annotation.y,
     burnedIn: annotation.burnedIn ?? false,
     kind: "marker",
+    color: annotationColor(annotation),
   }));
 }
 
@@ -112,7 +165,7 @@ function drawNumberAnnotation(
   ctx.shadowColor = "rgba(0,0,0,0.28)";
   ctx.shadowBlur = 10;
   ctx.shadowOffsetY = 4;
-  ctx.fillStyle = toneMeta[annotation.tone].color;
+  ctx.fillStyle = annotationColor(annotation);
   ctx.beginPath();
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
@@ -157,7 +210,6 @@ async function decodeImage(item: StoredScreenshot) {
 }
 
 export function ScreenshotAiApp() {
-  const imageRef = useRef<HTMLImageElement>(null);
   const [items, setItems] = useState<StoredScreenshot[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [appName, setAppName] = useState("");
@@ -184,6 +236,8 @@ export function ScreenshotAiApp() {
     const unlistenScreenshots = listen("screenshots-updated", refresh);
     window.addEventListener("storage", refresh);
     window.addEventListener("devlauncher-screenshots-updated", refresh);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
 
     const raw = localStorage.getItem(DRAFT_KEY);
     if (raw) {
@@ -205,6 +259,8 @@ export function ScreenshotAiApp() {
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("devlauncher-screenshots-updated", refresh);
+      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("keydown", onKey);
       unlistenScreenshots.then((fn) => fn());
     };
@@ -222,12 +278,13 @@ export function ScreenshotAiApp() {
     setAnnotations(selected.annotations.map((annotation) => ({
       id: annotation.id,
       label: annotation.label,
-      tone: annotation.tone ?? "problem",
+      tone: toneFromColor(annotation.color, annotation.tone ?? "problem"),
+      color: annotation.color,
       x: annotation.x,
       y: annotation.y,
       burnedIn: annotation.burnedIn,
     })));
-  }, [selected?.id]);
+  }, [selected?.id, selected?.annotations]);
 
   const prompt = useMemo(
     () => buildPrompt(appName, page, operation, expected, annotations),
@@ -244,22 +301,46 @@ export function ScreenshotAiApp() {
     saveScreenshots(nextItems);
   }
 
-  function addPoint(event: MouseEvent<HTMLDivElement>) {
-    if (!selected) return;
-    const image = imageRef.current;
-    if (!image) return;
-    const point = getPointInImage(event, image);
-    if (!point) return;
-    const id = annotations.reduce((max, annotation) => Math.max(max, annotation.id), 0) + 1;
-    setAnnotationsAndPersist([...annotations, { id, label: "", tone: "problem", x: point.x, y: point.y }]);
-  }
-
   function updateAnnotation(id: number, patch: Partial<Annotation>) {
     setAnnotationsAndPersist(annotations.map((annotation) => annotation.id === id ? { ...annotation, ...patch } : annotation));
   }
 
+  function updateAnnotationTone(id: number, tone: MarkerTone) {
+    updateAnnotation(id, { tone, color: toneMeta[tone].color });
+  }
+
   function deleteAnnotation(id: number) {
     setAnnotationsAndPersist(annotations.filter((annotation) => annotation.id !== id));
+  }
+
+  function deleteItem(id: string) {
+    const next = deleteScreenshot(id);
+    setItems(next);
+    setSelectedId((current) => {
+      if (current !== id) return current;
+      return next[0]?.id ?? null;
+    });
+  }
+
+  function clearItems() {
+    if (items.length === 0) return;
+    if (!window.confirm("清空所有截图？")) return;
+    clearScreenshots();
+    setItems([]);
+    setSelectedId(null);
+    setAnnotations([]);
+  }
+
+  async function editSelectedScreenshot() {
+    if (!selected) return;
+    setPendingScreenshotEdit({
+      id: selected.id,
+      data: selected.data,
+      width: selected.width,
+      height: selected.height,
+      annotations: toStoredAnnotations(annotations),
+    });
+    await invoke("show_screenshot_editor_window", { width: selected.width, height: selected.height });
   }
 
   async function copyPrompt() {
@@ -293,114 +374,160 @@ export function ScreenshotAiApp() {
   }
 
   const scale = zoom / 100;
+  const visibleAnnotations = annotations.filter((item) => !item.burnedIn);
+  const selectedIndex = selected ? items.findIndex((item) => item.id === selected.id) + 1 : 0;
 
   return (
     <div className="glass" style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 14, color: "rgba(255,255,255,0.88)" }}>
-      <div data-tauri-drag-region style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
-        <div data-tauri-drag-region>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>AI 截图标注</div>
-          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)" }}>从截图插件保存的截图列表中选择，默认预览最新截图</div>
+      <div data-tauri-drag-region style={{ height: 54, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 14px 0 16px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
+        <div data-tauri-drag-region style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 750, letterSpacing: 0 }}>截图问题报告</div>
+          <div style={{ ...mutedStyle, marginTop: 3 }}>{items.length} 张截图 · {annotations.length} 条标注</div>
         </div>
-        <button onClick={() => getCurrentWindow().hide().catch(() => {})} style={{ ...btnStyle, width: 28, height: 28, padding: 0 }}>x</button>
+        <button onClick={() => getCurrentWindow().hide().catch(() => {})} style={{ ...btnStyle, width: 28, height: 28, padding: 0, borderRadius: "50%", background: "rgba(255,255,255,0.08)" }}>x</button>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "240px minmax(420px, 1fr) 340px", gap: 12, padding: 14, overflow: "hidden" }}>
-        <section style={{ ...panelStyle, padding: 10, overflow: "auto" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10 }}>截图列表</div>
-          {items.length === 0 && (
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.42)", lineHeight: 1.6 }}>暂无截图。先打开“截图”插件，确认保存一个截图。</div>
-          )}
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {items.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => setSelectedId(item.id)}
-                style={{
-                  padding: 7,
-                  borderRadius: 8,
-                  border: item.id === selected?.id ? "1px solid rgba(56,189,248,0.55)" : "1px solid rgba(255,255,255,0.08)",
-                  background: item.id === selected?.id ? "rgba(56,189,248,0.14)" : "rgba(255,255,255,0.04)",
-                  cursor: "pointer",
-                  color: "rgba(255,255,255,0.8)",
-                  textAlign: "left",
-                }}
-              >
-                <img src={`data:image/jpeg;base64,${item.data}`} alt="" style={{ width: "100%", height: 78, objectFit: "cover", borderRadius: 6, display: "block", marginBottom: 6 }} />
-                <div style={{ fontSize: 11, fontWeight: 700 }}>{item.width} x {item.height}</div>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.42)" }}>{item.title}</div>
-              </button>
-            ))}
+      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "228px minmax(430px, 1fr) 360px", gridTemplateRows: "minmax(260px, 1fr) minmax(220px, 36vh)", gap: 12, padding: 12, overflow: "hidden" }}>
+        <section style={{ ...panelStyle, gridRow: "1 / span 2", minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: "10px 10px 8px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+            <SectionHeader
+              title="截图列表"
+              meta={selected ? `${selectedIndex}/${items.length}` : undefined}
+              action={<button onClick={clearItems} disabled={items.length === 0} style={{ ...dangerBtnStyle, padding: "6px 8px", opacity: items.length === 0 ? 0.45 : 1 }}>清空</button>}
+            />
           </div>
-        </section>
-
-        <section style={{ ...panelStyle, padding: 12, minHeight: 0, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 12, fontWeight: 700 }}>截图预览</div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)" }}>{zoom}%</span>
-              <input type="range" min={50} max={220} step={10} value={zoom} onChange={(event) => setZoom(Number(event.target.value))} style={{ width: 100 }} />
-              <button onClick={copyAnnotatedImage} style={btnStyle}>{copied === "image" ? "已复制" : "复制标注图"}</button>
-            </div>
-          </div>
-          <div onClick={addPoint} style={{ flex: 1, minHeight: 0, overflow: "auto", background: "rgba(0,0,0,0.24)", borderRadius: 8, border: "1px solid rgba(255,255,255,0.07)", cursor: selected ? "crosshair" : "default" }}>
-            {selected ? (
-              <div style={{ position: "relative", width: selected.width * scale, height: selected.height * scale, margin: 12 }}>
-                <img ref={imageRef} src={`data:image/jpeg;base64,${selected.data}`} alt="selected screenshot" draggable={false} style={{ display: "block", width: selected.width * scale, height: selected.height * scale, userSelect: "none" }} />
-                {annotations.filter((item) => !item.burnedIn).map((annotation) => (
-                  <div key={annotation.id} style={{ position: "absolute", left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, transform: "translate(-50%, -50%)", display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
-                    <div style={{ width: 24, height: 24, borderRadius: "50%", background: toneMeta[annotation.tone].color, border: "2px solid rgba(255,255,255,0.92)", color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.35)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 16px rgba(0,0,0,0.25)" }}>
-                      {annotation.id}
-                    </div>
-                    {annotation.label.trim() && (
-                      <div style={{ borderRadius: 8, background: "rgba(28,28,30,0.78)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 12, fontWeight: 600, padding: "5px 8px", boxShadow: "0 6px 16px rgba(0,0,0,0.22)", whiteSpace: "nowrap" }}>
-                        {annotation.label}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.35)", fontSize: 12 }}>暂无截图</div>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 8 }}>
+            {items.length === 0 && (
+              <div style={{ ...mutedStyle, lineHeight: 1.7, padding: 10 }}>暂无截图</div>
             )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {items.map((item) => {
+                const active = item.id === selected?.id;
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: 6,
+                      borderRadius: 8,
+                      border: active ? "1px solid rgba(78,186,255,0.72)" : "1px solid rgba(255,255,255,0.075)",
+                      background: active ? "rgba(78,186,255,0.14)" : "rgba(255,255,255,0.035)",
+                      color: "rgba(255,255,255,0.84)",
+                      textAlign: "left",
+                      position: "relative",
+                    }}
+                  >
+                    <button
+                      onClick={() => setSelectedId(item.id)}
+                      style={{ all: "unset", display: "grid", gridTemplateColumns: "72px 1fr", gap: 8, width: "100%", cursor: "pointer", alignItems: "center" }}
+                    >
+                      <img src={`data:image/jpeg;base64,${item.data}`} alt="" style={{ width: 72, height: 54, objectFit: "cover", borderRadius: 6, display: "block", border: "1px solid rgba(255,255,255,0.1)" }} />
+                      <div style={{ minWidth: 0, paddingRight: 28 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.88)" }}>{item.width} x {item.height}</div>
+                        <div style={{ ...mutedStyle, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.title}</div>
+                      </div>
+                    </button>
+                    <button
+                      title="删除截图"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        deleteItem(item.id);
+                      }}
+                      style={{ ...dangerBtnStyle, position: "absolute", right: 7, top: 22, width: 24, height: 24, padding: 0, borderRadius: 7 }}
+                    >
+                      -
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </section>
 
-        <section style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 0, overflow: "auto" }}>
-          <div style={{ ...panelStyle, padding: 12, display: "flex", flexDirection: "column", gap: 9 }}>
-            <div style={{ fontSize: 12, fontWeight: 700 }}>问题上下文</div>
-            <input style={inputStyle} value={appName} onChange={(event) => setAppName(event.target.value)} placeholder="应用，例如 DevLauncher" />
-            <input style={inputStyle} value={page} onChange={(event) => setPage(event.target.value)} placeholder="页面/窗口" />
-            <textarea style={{ ...inputStyle, minHeight: 68, resize: "vertical" }} value={operation} onChange={(event) => setOperation(event.target.value)} placeholder="当前操作" />
-            <textarea style={{ ...inputStyle, minHeight: 68, resize: "vertical" }} value={expected} onChange={(event) => setExpected(event.target.value)} placeholder="期望效果" />
+        <section style={{ ...panelStyle, gridColumn: 2, gridRow: 1, minHeight: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "10px 12px 8px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+              <SectionHeader
+                title="截图预览"
+                meta={selected ? `${selected.width} x ${selected.height} · ${visibleAnnotations.length} 个编号` : undefined}
+                action={
+                  <>
+                    <span style={mutedStyle}>{zoom}%</span>
+                    <input type="range" min={50} max={220} step={10} value={zoom} onChange={(event) => setZoom(Number(event.target.value))} style={{ width: 104 }} />
+                    <button onClick={editSelectedScreenshot} disabled={!selected} style={{ ...btnStyle, opacity: selected ? 1 : 0.45 }}>编辑</button>
+                    <button onClick={copyAnnotatedImage} disabled={!selected} style={{ ...btnStyle, opacity: selected ? 1 : 0.45 }}>{copied === "image" ? "已复制" : "复制图"}</button>
+                  </>
+                }
+              />
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: "auto", background: "rgba(0,0,0,0.28)" }}>
+              {selected ? (
+                <div style={{ position: "relative", width: selected.width * scale, height: selected.height * scale, margin: 14, boxShadow: "0 16px 50px rgba(0,0,0,0.32)" }}>
+                  <img src={`data:image/jpeg;base64,${selected.data}`} alt="selected screenshot" draggable={false} style={{ display: "block", width: selected.width * scale, height: selected.height * scale, userSelect: "none", borderRadius: 4 }} />
+                  {visibleAnnotations.map((annotation) => (
+                    <div key={annotation.id} style={{ position: "absolute", left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, transform: "translate(-50%, -50%)", display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: annotationColor(annotation), border: "2px solid rgba(255,255,255,0.92)", color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.35)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 16px rgba(0,0,0,0.25)" }}>
+                        {annotation.id}
+                      </div>
+                      {annotation.label.trim() && (
+                        <div style={{ borderRadius: 8, background: "rgba(28,28,30,0.82)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 12, fontWeight: 600, padding: "5px 8px", boxShadow: "0 6px 16px rgba(0,0,0,0.22)", whiteSpace: "nowrap" }}>
+                          {annotation.label}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.35)", fontSize: 12 }}>暂无截图</div>
+              )}
+            </div>
+        </section>
+
+        <section style={{ gridColumn: 2, gridRow: 2, display: "grid", gridTemplateColumns: "minmax(240px, 0.9fr) minmax(300px, 1.1fr)", gap: 12, minHeight: 0, overflow: "hidden" }}>
+          <div style={{ ...panelStyle, padding: 12, display: "flex", flexDirection: "column", gap: 9, overflow: "hidden" }}>
+            <SectionHeader title="问题上下文" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <input style={inputStyle} value={appName} onChange={(event) => setAppName(event.target.value)} placeholder="应用" />
+              <input style={inputStyle} value={page} onChange={(event) => setPage(event.target.value)} placeholder="页面/窗口" />
+            </div>
+            <textarea style={{ ...inputStyle, minHeight: 62, resize: "vertical" }} value={operation} onChange={(event) => setOperation(event.target.value)} placeholder="当前操作" />
+            <textarea style={{ ...inputStyle, minHeight: 62, resize: "vertical" }} value={expected} onChange={(event) => setExpected(event.target.value)} placeholder="期望效果" />
           </div>
 
-          <div style={{ ...panelStyle, padding: 12, display: "flex", flexDirection: "column", gap: 9 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>编号标注</div>
-              <button onClick={() => setAnnotationsAndPersist([])} style={btnStyle}>清空</button>
+          <div style={{ ...panelStyle, padding: 12, display: "flex", flexDirection: "column", gap: 8, minHeight: 0, overflow: "hidden" }}>
+            <SectionHeader
+              title="编号备注"
+              meta={`${annotations.length} 条`}
+              action={<button onClick={() => setAnnotationsAndPersist([])} disabled={annotations.length === 0} style={{ ...btnStyle, opacity: annotations.length === 0 ? 0.45 : 1 }}>清空</button>}
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, overflow: "auto", paddingRight: 2 }}>
+              {annotations.length === 0 && <div style={{ ...mutedStyle, padding: "6px 2px" }}>暂无编号</div>}
+              {annotations.map((annotation) => (
+                <div key={annotation.id} style={{ display: "grid", gridTemplateColumns: "28px 78px 1fr 28px", gap: 6, alignItems: "center" }}>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: annotationColor(annotation), color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.35)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{annotation.id}</div>
+                  <select
+                    value={annotation.tone}
+                    onChange={(event) => updateAnnotationTone(annotation.id, event.target.value as MarkerTone)}
+                    style={{ ...inputStyle, padding: "7px 6px", height: 34, background: "rgba(28,28,30,0.96)", color: "rgba(255,255,255,0.92)", borderColor: annotationColor(annotation), colorScheme: "dark" }}
+                  >
+                    <option value="problem" style={{ background: "#1c1c1e", color: "#fff" }}>问题</option>
+                    <option value="expected" style={{ background: "#1c1c1e", color: "#fff" }}>期望</option>
+                    <option value="focus" style={{ background: "#1c1c1e", color: "#fff" }}>关注</option>
+                  </select>
+                  <input style={{ ...inputStyle, height: 34 }} value={annotation.label} onChange={(event) => updateAnnotation(annotation.id, { label: event.target.value })} placeholder="说明" />
+                  <button onClick={() => deleteAnnotation(annotation.id)} style={{ ...btnStyle, width: 28, height: 28, padding: 0 }}>-</button>
+                </div>
+              ))}
             </div>
-            {annotations.map((annotation) => (
-              <div key={annotation.id} style={{ display: "grid", gridTemplateColumns: "30px 74px 1fr 26px", gap: 6, alignItems: "center" }}>
-                <div style={{ width: 24, height: 24, borderRadius: "50%", background: toneMeta[annotation.tone].color, color: "#111827", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{annotation.id}</div>
-                <select value={annotation.tone} onChange={(event) => updateAnnotation(annotation.id, { tone: event.target.value as MarkerTone })} style={{ ...inputStyle, padding: "7px 6px" }}>
-                  <option value="problem">问题</option>
-                  <option value="expected">期望</option>
-                  <option value="focus">关注</option>
-                </select>
-                <input style={inputStyle} value={annotation.label} onChange={(event) => updateAnnotation(annotation.id, { label: event.target.value })} placeholder="说明" />
-                <button onClick={() => deleteAnnotation(annotation.id)} style={{ ...btnStyle, width: 26, height: 26, padding: 0 }}>-</button>
-              </div>
-            ))}
           </div>
+        </section>
 
-          <div style={{ ...panelStyle, padding: 12, flex: 1, minHeight: 220, display: "flex", flexDirection: "column", gap: 9 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>AI Prompt</div>
-              <button onClick={copyPrompt} style={btnStyle}>{copied === "prompt" ? "已复制" : "复制 Prompt"}</button>
-            </div>
-            <pre style={{ flex: 1, margin: 0, overflow: "auto", whiteSpace: "pre-wrap", borderRadius: 8, background: "rgba(0,0,0,0.24)", border: "1px solid rgba(255,255,255,0.07)", padding: 12, fontSize: 12, lineHeight: 1.65, color: "rgba(255,255,255,0.78)", fontFamily: "Consolas, 'Cascadia Code', monospace" }}>{prompt}</pre>
-            {status && <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>{status}</div>}
-          </div>
+        <section style={{ ...panelStyle, gridColumn: 3, gridRow: "1 / span 2", padding: 12, minHeight: 0, display: "flex", flexDirection: "column", gap: 9, overflow: "hidden" }}>
+          <SectionHeader
+            title="AI Prompt"
+            meta={`${prompt.length} 字符`}
+            action={<button onClick={copyPrompt} style={btnStyle}>{copied === "prompt" ? "已复制" : "复制 Prompt"}</button>}
+          />
+          <pre style={{ flex: 1, minHeight: 0, margin: 0, overflow: "auto", whiteSpace: "pre-wrap", borderRadius: 8, background: "rgba(0,0,0,0.26)", border: "1px solid rgba(255,255,255,0.07)", padding: 12, fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.78)", fontFamily: "Consolas, 'Cascadia Code', monospace" }}>{prompt}</pre>
+          {status && <div style={{ ...mutedStyle, color: "rgba(255,255,255,0.58)" }}>{status}</div>}
         </section>
       </div>
     </div>

@@ -1,3 +1,5 @@
+import { emit } from "@tauri-apps/api/event";
+
 export type StoredScreenshot = {
   id: string;
   data: string;
@@ -20,6 +22,9 @@ export type StoredScreenshotAnnotation = {
 };
 
 export const SCREENSHOT_STORE_KEY = "devlauncher_screenshots";
+export const PENDING_SCREENSHOT_EDIT_KEY = "devlauncher_pending_screenshot_edit";
+
+export type PendingScreenshotEdit = Pick<StoredScreenshot, "id" | "data" | "width" | "height" | "annotations">;
 
 export function loadScreenshots(): StoredScreenshot[] {
   try {
@@ -35,6 +40,40 @@ export function loadScreenshots(): StoredScreenshot[] {
 export function saveScreenshots(items: StoredScreenshot[]) {
   localStorage.setItem(SCREENSHOT_STORE_KEY, JSON.stringify(items.slice(0, 40)));
   window.dispatchEvent(new Event("devlauncher-screenshots-updated"));
+  void emit("screenshots-updated").catch(() => {});
+}
+
+export function updateScreenshot(id: string, patch: Partial<Omit<StoredScreenshot, "id" | "createdAt">>) {
+  const next = loadScreenshots().map((item) => item.id === id ? { ...item, ...patch } : item);
+  saveScreenshots(next);
+  return next.find((item) => item.id === id) ?? null;
+}
+
+export function deleteScreenshot(id: string) {
+  const next = loadScreenshots().filter((item) => item.id !== id);
+  saveScreenshots(next);
+  return next;
+}
+
+export function clearScreenshots() {
+  saveScreenshots([]);
+}
+
+export function setPendingScreenshotEdit(item: PendingScreenshotEdit) {
+  localStorage.setItem(PENDING_SCREENSHOT_EDIT_KEY, JSON.stringify(item));
+  window.dispatchEvent(new Event("devlauncher-pending-screenshot-edit"));
+}
+
+export function takePendingScreenshotEdit(): PendingScreenshotEdit | null {
+  try {
+    const raw = localStorage.getItem(PENDING_SCREENSHOT_EDIT_KEY);
+    if (!raw) return null;
+    localStorage.removeItem(PENDING_SCREENSHOT_EDIT_KEY);
+    return JSON.parse(raw) as PendingScreenshotEdit;
+  } catch {
+    localStorage.removeItem(PENDING_SCREENSHOT_EDIT_KEY);
+    return null;
+  }
 }
 
 export function addScreenshot(item: Omit<StoredScreenshot, "id" | "createdAt" | "title"> & { title?: string }) {

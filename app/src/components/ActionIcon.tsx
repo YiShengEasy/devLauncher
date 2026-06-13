@@ -1,4 +1,5 @@
-import type { Action, ActionType, AppAction, BuiltinAction, BuiltinFeature } from "@/types/actions";
+import { useState } from "react";
+import type { Action, ActionType, AppAction, BuiltinAction, BuiltinFeature, UrlAction } from "@/types/actions";
 import { ACTION_TYPE_META } from "@/types/actions";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
@@ -48,6 +49,63 @@ function IconUrl() {
       <ellipse cx="10" cy="10" rx="4" ry="8" fill="none" stroke="currentColor" strokeWidth="1.5"/>
       <line x1="2" y1="10" x2="18" y2="10" stroke="currentColor" strokeWidth="1.5"/>
     </svg>
+  );
+}
+
+function websiteOrigin(target: string): string | null {
+  try {
+    const url = new URL(target.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function UrlFavicon({ action, size, fallback }: { action: UrlAction; size: number; fallback: React.ReactNode }) {
+  const favicons = useKeyboardStore(state => state.favicons);
+  const origin = websiteOrigin(action.target);
+  const cachedSrc = origin ? favicons[origin] : null;
+  const faviconUrl = origin ? `${origin}/favicon.ico` : null;
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const [failedCachedSrc, setFailedCachedSrc] = useState<string | null>(null);
+
+  if (cachedSrc && failedCachedSrc !== cachedSrc) {
+    return (
+      <img
+        src={cachedSrc}
+        width={size}
+        height={size}
+        style={{
+          borderRadius: size * 0.22,
+          objectFit: "cover",
+          background: "rgba(255,255,255,0.92)",
+        }}
+        referrerPolicy="no-referrer"
+        onError={() => setFailedCachedSrc(cachedSrc)}
+        alt={action.name}
+      />
+    );
+  }
+
+  if (!faviconUrl || failedUrl === faviconUrl) {
+    return <>{fallback}</>;
+  }
+
+  return (
+    <img
+      src={faviconUrl}
+      width={size}
+      height={size}
+      style={{
+        borderRadius: size * 0.22,
+        objectFit: "cover",
+        background: "rgba(255,255,255,0.92)",
+      }}
+      referrerPolicy="no-referrer"
+      onError={() => setFailedUrl(faviconUrl)}
+      alt={action.name}
+    />
   );
 }
 function IconSsh({ size = 16 }: { size?: number }) {
@@ -186,6 +244,23 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
         <BuiltinIcon feature={feature} size={size * 0.78} />
       </div>
     );
+  }
+
+  if (action.type === "url") {
+    const fallback = (
+      <div
+        style={{
+          width: size, height: size,
+          borderRadius: size * 0.22,
+          background: meta.bg,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          color: "white",
+        }}
+      >
+        <Icon />
+      </div>
+    );
+    return <UrlFavicon action={action as UrlAction} size={size} fallback={fallback} />;
   }
 
   // Folder: always show folder SVG icon

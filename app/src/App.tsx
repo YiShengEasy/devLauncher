@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { register as registerShortcut, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { loadConfig, saveConfig } from "@/api/config";
@@ -26,6 +27,16 @@ function hexToRgba(hex: string, alpha: number): string {
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function getUrlOrigin(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
 }
 
 // Debounce guard: ignore repeated triggers within 400ms
@@ -77,6 +88,32 @@ export default function App() {
     }
   }, []);
 
+  const loadFavicons = useCallback(async (cfg: KeyboardConfig) => {
+    const origins = new Set<string>();
+    for (const page of cfg.pages) {
+      for (const binding of Object.values(page.keys)) {
+        const action = (binding as { action: Action | null })?.action;
+        if (action?.type === "url" && (action as { target: string }).target) {
+          const origin = getUrlOrigin((action as { target: string }).target);
+          if (origin) origins.add(origin);
+        }
+      }
+    }
+    if (origins.size === 0) return;
+    const requests = Array.from(origins).map((origin) => ({ origin }));
+    try {
+      const cachedFavicons = await invoke<Record<string, string>>("get_cached_favicons", {
+        requests,
+      });
+      useKeyboardStore.getState().setFavicons(cachedFavicons);
+      invoke<Record<string, string>>("refresh_favicons", { requests })
+        .then((favicons) => useKeyboardStore.getState().setFavicons(favicons))
+        .catch((e) => console.warn("[DevLauncher] refresh_favicons failed:", e));
+    } catch (e) {
+      console.warn("[DevLauncher] get_cached_favicons failed:", e);
+    }
+  }, []);
+
   // Load config on mount
   useEffect(() => {
     async function init() {
@@ -84,9 +121,6 @@ export default function App() {
       try {
         const cfg = await loadConfig();
         setConfig(cfg);
-        // Extract app icons in background
-        // Note: also triggered by config-watcher effect below
-        extractAllAppIcons(cfg);
       } catch (e) {
         setError(String(e));
       } finally {
@@ -100,8 +134,12 @@ export default function App() {
   // initial extraction ran before icons were available or failed silently)
   useEffect(() => {
     if (!config) return;
-    extractAllAppIcons(config);
-  }, [config]);
+    const timer = window.setTimeout(() => {
+      extractAllAppIcons(config);
+      loadFavicons(config);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [config, extractAllAppIcons, loadFavicons]);
 
   // Inject theme as CSS custom properties so any panel can read them
   useEffect(() => {
@@ -111,6 +149,18 @@ export default function App() {
     r.setProperty("--theme-border", theme.borderColor);
     r.setProperty("--theme-bg-solid", theme.bgColor);
   }, [theme]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen("open-settings", () => {
+      setShowSettings(true);
+    }).then((fn) => {
+      unlisten = fn;
+    }).catch(console.error);
+    return () => {
+      unlisten?.();
+    };
+  }, [setShowSettings]);
   // Extract app icons from .exe files — MOVED above, before first useEffect
 
   // Execute action on key click
@@ -328,7 +378,7 @@ export default function App() {
                 color: showSettings ? "rgba(96,165,250,0.9)" : "rgba(255,255,255,0.4)",
                 transition: "all 0.12s",
               }}
-              title="主题设置"
+              title="设置"
             >
               <svg width="12" height="12" viewBox="0 0 20 20" fill="none">
                 <path d="M10 13a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" strokeWidth="1.5" />
@@ -528,7 +578,7 @@ export default function App() {
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: 340, maxHeight: "90vh",
+              width: 760, maxWidth: "92vw", height: 640, maxHeight: "90vh",
               borderRadius: 14,
               background: hexToRgba(theme.bgColor, Math.min(theme.bgOpacity + 0.1, 1)),
               backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
