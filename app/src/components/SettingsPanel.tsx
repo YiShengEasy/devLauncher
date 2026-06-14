@@ -55,7 +55,7 @@ const THEME_PRESETS: { name: string; theme: ThemeConfig }[] = [
   },
 ];
 
-type SettingsSection = "appearance" | "webaccounts";
+type SettingsSection = "appearance" | "webaccounts" | "entries";
 
 interface WebAccountEntry {
   id: string;
@@ -112,6 +112,12 @@ const BUTTON: CSSProperties = {
   cursor: "pointer",
   fontSize: 12,
   fontWeight: 600,
+};
+
+const panelStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.1)",
+  borderRadius: 10,
+  background: "rgba(255,255,255,0.045)",
 };
 
 function getUrlOrigin(value: string): string | null {
@@ -362,6 +368,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         {[
           ["appearance", "外观"],
           ["webaccounts", "密码本"],
+          ["entries", "Entries"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -396,7 +403,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           borderBottom: "1px solid rgba(255,255,255,0.08)",
         }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.84)" }}>
-            {activeSection === "appearance" ? "外观设置" : "URL 与账号密码本"}
+            {activeSection === "appearance" ? "外观设置" : activeSection === "entries" ? "Entries" : "URL 与账号密码本"}
           </div>
           <button onClick={onClose} style={{ ...BUTTON, width: 28, height: 28, padding: 0 }}>×</button>
         </header>
@@ -475,6 +482,28 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", width: 34, textAlign: "right", fontFamily: "monospace" }}>{Math.round(theme.keyBgOpacity * 100)}%</span>
               </div>
             </>
+          ) : activeSection === "entries" ? (
+            <section style={{ padding: 2, overflow: "auto" }}>
+              <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>Entries</h2>
+              <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Search</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
+                  Shortcut: Ctrl+Space. Searches keyboard bindings, built-ins, and recent actions.
+                </div>
+              </div>
+              <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>OCR</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
+                  Shortcut: Ctrl+Shift+O. Recognized text can be copied, searched, or sent to screenshot report.
+                </div>
+              </div>
+              <div style={{ ...panelStyle, padding: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
+                  Shortcut: Ctrl+Shift+P. Disabled by default in packaged UX until a persistent preference is added.
+                </div>
+              </div>
+            </section>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 0.9fr) minmax(280px, 1.1fr)", gap: 12 }}>
               <section style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, overflow: "hidden" }}>
