@@ -301,13 +301,13 @@ export default function App() {
         }
       }
 
-      // ── Register Ctrl+Shift+V for clipboard window (always active) ──
+      // ── Register Ctrl+Shift+V to show/focus clipboard window (always active) ──
       if (!cancelled) {
         try {
           await registerShortcut(
             "Ctrl+Shift+V",
             makeDebounced(async () => {
-              invoke("toggle_clipboard_window").catch(console.error);
+              invoke("show_clipboard_window").catch(console.error);
             })
           );
         } catch (err) {

@@ -494,7 +494,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <div style={{ ...panelStyle, padding: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  Shortcut: Ctrl+Shift+P. Opens quick actions for search, screenshot report, clipboard, and hide.
+                  Shortcut: Ctrl+Shift+P. Opens quick actions for search, screenshot report, clipboard, keyboard mode, and hide. Drag to reposition; the pet position is saved.
                 </div>
               </div>
             </section>
