@@ -32,11 +32,6 @@ pub fn show_search_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn toggle_ocr_window(app: tauri::AppHandle) -> Result<(), String> {
-    toggle_window(app, "ocr")
-}
-
-#[tauri::command]
 pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<(), String> {
     toggle_window(app, "pet")
 }

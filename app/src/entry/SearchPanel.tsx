@@ -85,8 +85,8 @@ export function SearchPanel({
           setSelectedIndex(0);
         }}
         onKeyDown={handleKeyDown}
-        aria-label="Search actions, tools, OCR text"
-        placeholder="Search actions, tools, OCR text"
+        aria-label="Search actions and tools"
+        placeholder="Search actions and tools"
         style={inputStyle}
       />
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>

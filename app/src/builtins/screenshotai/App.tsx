@@ -4,7 +4,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
-import { OCR_REPORT_TEXT_EVENT, type OcrReportTextPayload } from "@/entry/entryEvents";
 import {
   clearScreenshots,
   deleteScreenshot,
@@ -221,6 +220,7 @@ export function ScreenshotAiApp() {
   const [zoom, setZoom] = useState(100);
   const [copied, setCopied] = useState<"none" | "prompt" | "image">("none");
   const [status, setStatus] = useState("");
+  const [recognizingText, setRecognizingText] = useState(false);
 
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
 
@@ -256,22 +256,13 @@ export function ScreenshotAiApp() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") getCurrentWindow().hide().catch(() => {});
     };
-    const onOcrReportText = (event: Event) => {
-      const detail = (event as CustomEvent<OcrReportTextPayload>).detail;
-      const text = detail?.text?.trim();
-      if (!text) return;
-      setOperation((current) => current ? `${current}\n\nOCR:\n${text}` : `OCR:\n${text}`);
-      setStatus("OCR text attached");
-    };
     window.addEventListener("keydown", onKey);
-    window.addEventListener(OCR_REPORT_TEXT_EVENT, onOcrReportText);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("devlauncher-screenshots-updated", refresh);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener(OCR_REPORT_TEXT_EVENT, onOcrReportText);
       unlistenScreenshots.then((fn) => fn());
     };
   }, []);
@@ -383,6 +374,30 @@ export function ScreenshotAiApp() {
     window.setTimeout(() => setCopied("none"), 1400);
   }
 
+  async function recognizeSelectedScreenshotText() {
+    if (!selected) {
+      setStatus("没有可识别的截图");
+      return;
+    }
+
+    setRecognizingText(true);
+    setStatus("正在识别截图文字...");
+    try {
+      const text = (await invoke<string>("ocr_recognize_image", { data: selected.data })).trim();
+      if (!text) {
+        setStatus("未识别到文字");
+        return;
+      }
+
+      setOperation((current) => current ? `${current}\n\nOCR:\n${text}` : `OCR:\n${text}`);
+      setStatus("已识别截图文字并附加到当前操作");
+    } catch (error) {
+      setStatus(String(error));
+    } finally {
+      setRecognizingText(false);
+    }
+  }
+
   const scale = zoom / 100;
   const visibleAnnotations = annotations.filter((item) => !item.burnedIn);
   const selectedIndex = selected ? items.findIndex((item) => item.id === selected.id) + 1 : 0;
@@ -463,7 +478,6 @@ export function ScreenshotAiApp() {
                     <span style={mutedStyle}>{zoom}%</span>
                     <input type="range" min={50} max={220} step={10} value={zoom} onChange={(event) => setZoom(Number(event.target.value))} style={{ width: 104 }} />
                     <button onClick={editSelectedScreenshot} disabled={!selected} style={{ ...btnStyle, opacity: selected ? 1 : 0.45 }}>编辑</button>
-                    <button onClick={copyAnnotatedImage} disabled={!selected} style={{ ...btnStyle, opacity: selected ? 1 : 0.45 }}>{copied === "image" ? "已复制" : "复制图"}</button>
                   </>
                 }
               />
@@ -488,6 +502,10 @@ export function ScreenshotAiApp() {
               ) : (
                 <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "rgba(255,255,255,0.35)", fontSize: 12 }}>暂无截图</div>
               )}
+            </div>
+            <div style={{ minHeight: 46, padding: "8px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, background: "rgba(12,16,24,0.72)" }}>
+              <button onClick={copyAnnotatedImage} disabled={!selected} style={{ ...btnStyle, opacity: selected ? 1 : 0.45 }}>{copied === "image" ? "已组合" : "组合标注"}</button>
+              <button onClick={recognizeSelectedScreenshotText} disabled={!selected || recognizingText} style={{ ...btnStyle, opacity: selected && !recognizingText ? 1 : 0.45 }}>{recognizingText ? "识别中" : "识别截图文字"}</button>
             </div>
         </section>
 

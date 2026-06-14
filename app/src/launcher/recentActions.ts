@@ -12,11 +12,9 @@ function serializableRecord(record: LauncherActionRecord): LauncherActionRecord 
     actionKind: record.actionKind,
     action: record.action,
     builtinFeature: record.builtinFeature,
-    frontendCommand: record.frontendCommand,
     keywords: record.keywords,
     pageName: record.pageName,
     keyId: record.keyId,
-    payload: record.payload,
     lastUsedAt: record.lastUsedAt,
   };
 }

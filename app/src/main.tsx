@@ -3,7 +3,6 @@ import { Suspense } from "react";
 import App from "./App";
 import { BUILTIN_REGISTRY } from "./builtins/_registry";
 import { SearchEntryApp } from "./entry/SearchEntryApp";
-import { OcrEntryApp } from "./entry/OcrEntryApp";
 import { PetEntryApp } from "./entry/PetEntryApp";
 import "./index.css";
 
@@ -14,7 +13,6 @@ const plugin = view ? BUILTIN_REGISTRY.find((item) => item.manifest.id === view)
 
 function RoutedApp() {
   if (entry === "search") return <SearchEntryApp />;
-  if (entry === "ocr") return <OcrEntryApp />;
   if (entry === "pet") return <PetEntryApp />;
 
   if (plugin) {
