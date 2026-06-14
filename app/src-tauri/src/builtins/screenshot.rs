@@ -71,7 +71,11 @@ pub fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn show_screenshot_editor_window(app: tauri::AppHandle, width: u32, height: u32) -> Result<(), String> {
+pub fn show_screenshot_editor_window(
+    app: tauri::AppHandle,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("screenshot") {
         let editor_width = width.saturating_add(120).max(940);
         let editor_height = height.saturating_add(150).max(460);

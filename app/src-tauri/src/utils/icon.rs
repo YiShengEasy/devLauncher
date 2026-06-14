@@ -31,7 +31,10 @@ pub async fn extract_app_icons(
 
             match extract_icon_from_exe(&target) {
                 Some(icon_b64) => {
-                    cache.lock().unwrap().insert(target.clone(), icon_b64.clone());
+                    cache
+                        .lock()
+                        .unwrap()
+                        .insert(target.clone(), icon_b64.clone());
                     result.insert(target, icon_b64);
                 }
                 None => {

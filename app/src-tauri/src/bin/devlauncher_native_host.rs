@@ -53,7 +53,9 @@ fn read_native_message() -> Result<Option<NativeRequest>, String> {
     std::io::stdin()
         .read_exact(&mut buf)
         .map_err(|e| e.to_string())?;
-    serde_json::from_slice(&buf).map(Some).map_err(|e| e.to_string())
+    serde_json::from_slice(&buf)
+        .map(Some)
+        .map_err(|e| e.to_string())
 }
 
 fn write_native_message(value: &serde_json::Value) -> Result<(), String> {
@@ -71,8 +73,16 @@ fn config_candidates() -> Vec<PathBuf> {
         paths.push(PathBuf::from(path));
     }
     if let Ok(appdata) = std::env::var("APPDATA") {
-        paths.push(PathBuf::from(&appdata).join("com.yisheng.app").join("keyboard.yaml"));
-        paths.push(PathBuf::from(&appdata).join("DevLauncher").join("keyboard.yaml"));
+        paths.push(
+            PathBuf::from(&appdata)
+                .join("com.yisheng.app")
+                .join("keyboard.yaml"),
+        );
+        paths.push(
+            PathBuf::from(&appdata)
+                .join("DevLauncher")
+                .join("keyboard.yaml"),
+        );
     }
     paths
 }
@@ -100,7 +110,11 @@ fn extract_origin(url: &str) -> Option<String> {
     if host.is_empty() {
         return None;
     }
-    Some(format!("{}://{}", scheme, host).trim_end_matches('/').to_string())
+    Some(
+        format!("{}://{}", scheme, host)
+            .trim_end_matches('/')
+            .to_string(),
+    )
 }
 
 fn is_allowed_web_origin(origin: &str) -> bool {
@@ -195,7 +209,9 @@ fn handle_request(request: NativeRequest) -> serde_json::Value {
             credentials,
             error: None,
         })
-        .unwrap_or_else(|_| json!({ "ok": false, "credentials": [], "error": "serialization failed" })),
+        .unwrap_or_else(
+            |_| json!({ "ok": false, "credentials": [], "error": "serialization failed" }),
+        ),
         Err(error) => json!({ "ok": false, "credentials": [], "error": error }),
     }
 }
