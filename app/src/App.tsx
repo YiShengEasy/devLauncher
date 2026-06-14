@@ -286,10 +286,13 @@ export default function App() {
             makeDebounced(async () => {
               const win = getCurrentWindow();
               if (await win.isVisible()) {
+                const position = await win.outerPosition();
+                setStoredEntryPosition("main", { x: position.x, y: position.y });
                 win.hide().catch(() => {});
               } else {
-                win.show().catch(() => {});
-                win.setFocus().catch(() => {});
+                invoke("show_keyboard_window", {
+                  position: getStoredEntryPosition("main"),
+                }).catch(console.error);
               }
             })
           );
@@ -317,7 +320,7 @@ export default function App() {
           await registerShortcut(
             "Ctrl+Space",
             makeDebounced(async () => {
-              invoke("toggle_search_window").catch(console.error);
+              invoke("show_search_window").catch(console.error);
             })
           );
         } catch (err) {
@@ -330,7 +333,9 @@ export default function App() {
           await registerShortcut(
             "Ctrl+Shift+P",
             makeDebounced(async () => {
-              invoke("toggle_pet_window").catch(console.error);
+              invoke("show_pet_window", {
+                position: getStoredEntryPosition("pet"),
+              }).catch(console.error);
             })
           );
         } catch (err) {

@@ -271,6 +271,17 @@ pub fn toggle_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn show_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("clipboard") {
+        win.show().map_err(|e| e.to_string())?;
+        win.unminimize().map_err(|e| e.to_string())?;
+        win.set_focus().map_err(|e| e.to_string())?;
+        let _ = app.emit_to("clipboard", "clipboard-refresh", ());
+    }
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_clipboard_favorites(
     state: tauri::State<'_, ClipboardFavoritesState>,
 ) -> Vec<ClipboardEntry> {

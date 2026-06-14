@@ -44,6 +44,7 @@ pub fn run() {
             builtins::clipboard::set_clipboard_image,
             builtins::clipboard::clear_clipboard_history,
             builtins::clipboard::toggle_clipboard_window,
+            builtins::clipboard::show_clipboard_window,
             builtins::clipboard::get_clipboard_favorites,
             builtins::clipboard::add_favorite,
             builtins::clipboard::remove_favorite,
