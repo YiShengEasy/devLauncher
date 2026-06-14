@@ -266,6 +266,32 @@ export default function App() {
           console.warn("Ctrl+Shift+V shortcut unavailable:", err);
         }
       }
+
+      if (!cancelled) {
+        try {
+          await registerShortcut(
+            "Ctrl+Space",
+            makeDebounced(async () => {
+              invoke("toggle_search_window").catch(console.error);
+            })
+          );
+        } catch (err) {
+          console.warn("Ctrl+Space search shortcut unavailable:", err);
+        }
+      }
+
+      if (!cancelled) {
+        try {
+          await registerShortcut(
+            "Ctrl+Shift+O",
+            makeDebounced(async () => {
+              invoke("toggle_ocr_window").catch(console.error);
+            })
+          );
+        } catch (err) {
+          console.warn("Ctrl+Shift+O OCR shortcut unavailable:", err);
+        }
+      }
     };
 
     setup();

@@ -1,14 +1,14 @@
 mod actions;
 mod builtins;
 mod config;
+mod entries;
 mod types;
 mod utils;
 
 use tauri::{
-    Emitter,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
+    Emitter, Manager,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -81,6 +81,10 @@ pub fn run() {
             builtins::screenshot::screenshot_write_file,
             builtins::webaccounts::toggle_webaccounts_window,
             builtins::quickmemory::toggle_quickmemory_window,
+            entries::toggle_search_window,
+            entries::show_search_window,
+            entries::toggle_ocr_window,
+            entries::toggle_pet_window,
             utils::icon::extract_app_icons,
             utils::favicon::get_cached_favicons,
             utils::favicon::refresh_favicons,
