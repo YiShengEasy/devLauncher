@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
+import { OCR_REPORT_TEXT_EVENT, type OcrReportTextPayload } from "@/entry/entryEvents";
 import {
   clearScreenshots,
   deleteScreenshot,
@@ -255,13 +256,22 @@ export function ScreenshotAiApp() {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") getCurrentWindow().hide().catch(() => {});
     };
+    const onOcrReportText = (event: Event) => {
+      const detail = (event as CustomEvent<OcrReportTextPayload>).detail;
+      const text = detail?.text?.trim();
+      if (!text) return;
+      setOperation((current) => current ? `${current}\n\nOCR:\n${text}` : `OCR:\n${text}`);
+      setStatus("OCR text attached");
+    };
     window.addEventListener("keydown", onKey);
+    window.addEventListener(OCR_REPORT_TEXT_EVENT, onOcrReportText);
     return () => {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("devlauncher-screenshots-updated", refresh);
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OCR_REPORT_TEXT_EVENT, onOcrReportText);
       unlistenScreenshots.then((fn) => fn());
     };
   }, []);
