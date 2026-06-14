@@ -4,7 +4,6 @@ import type { KeyboardConfig } from "@/types/actions";
 import {
   buildBuiltinActionRecords,
   buildKeyboardActionRecords,
-  buildOcrActionRecords,
   searchActionRecords,
 } from "./actionIndex";
 
@@ -87,16 +86,5 @@ describe("actionIndex", () => {
       "keyboard:0:Q",
       "builtin:terminal",
     ]);
-  });
-
-  it("builds OCR result actions for non-empty text", () => {
-    const records = buildOcrActionRecords("npm run build failed");
-
-    expect(records.map((record) => record.id)).toEqual([
-      "ocr:copy",
-      "ocr:search",
-      "ocr:report",
-    ]);
-    expect(records[0].title).toBe("Copy OCR text");
   });
 });

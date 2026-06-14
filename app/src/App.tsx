@@ -283,19 +283,6 @@ export default function App() {
       if (!cancelled) {
         try {
           await registerShortcut(
-            "Ctrl+Shift+O",
-            makeDebounced(async () => {
-              invoke("toggle_ocr_window").catch(console.error);
-            })
-          );
-        } catch (err) {
-          console.warn("Ctrl+Shift+O OCR shortcut unavailable:", err);
-        }
-      }
-
-      if (!cancelled) {
-        try {
-          await registerShortcut(
             "Ctrl+Shift+P",
             makeDebounced(async () => {
               invoke("toggle_pet_window").catch(console.error);

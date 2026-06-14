@@ -50,9 +50,6 @@ export function SearchEntryApp() {
   async function execute(record: LauncherActionRecord) {
     await executeLauncherAction(record, {
       invoke,
-      openSearchWithText: async (text) => {
-        window.dispatchEvent(new CustomEvent(SEARCH_PREFILL_EVENT, { detail: { text } }));
-      },
     });
     recordRecentAction(record);
     setRecent(loadRecentActions());

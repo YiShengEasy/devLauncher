@@ -491,16 +491,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                   Shortcut: Ctrl+Space. Searches keyboard bindings, built-ins, and recent actions.
                 </div>
               </div>
-              <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>OCR</div>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  Shortcut: Ctrl+Shift+O. Recognized text can be copied, searched, or sent to screenshot report.
-                </div>
-              </div>
               <div style={{ ...panelStyle, padding: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  Shortcut: Ctrl+Shift+P. Disabled by default in packaged UX until a persistent preference is added.
+                  Shortcut: Ctrl+Shift+P. Opens quick actions for search, screenshot report, clipboard, and hide.
                 </div>
               </div>
             </section>

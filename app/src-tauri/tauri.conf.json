@@ -174,21 +174,6 @@
         "visible": false
       },
       {
-        "label": "ocr",
-        "url": "index.html?entry=ocr",
-        "title": "DevLauncher OCR",
-        "width": 720,
-        "height": 420,
-        "resizable": false,
-        "decorations": false,
-        "transparent": true,
-        "shadow": false,
-        "alwaysOnTop": true,
-        "center": true,
-        "skipTaskbar": true,
-        "visible": false
-      },
-      {
         "label": "pet",
         "url": "index.html?entry=pet",
         "title": "DevLauncher Pet",

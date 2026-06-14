@@ -34,21 +34,4 @@ describe("actionExecutor", () => {
 
     expect(invoke).toHaveBeenCalledWith("toggle_json_helper_window");
   });
-
-  it("copies OCR text through the clipboard dependency", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    const record: LauncherActionRecord = {
-      id: "ocr:copy",
-      title: "Copy OCR text",
-      source: "ocr",
-      actionKind: "frontend-command",
-      frontendCommand: "copy-ocr-text",
-      payload: { text: "error text" },
-      keywords: ["ocr"],
-    };
-
-    await executeLauncherAction(record, { invoke: vi.fn(), writeText });
-
-    expect(writeText).toHaveBeenCalledWith("error text");
-  });
 });

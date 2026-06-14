@@ -1,16 +1,12 @@
 // OCR MVP engine: Windows OCR API on Windows. Tesseract fallback is reserved for a separate implementation pass.
 
 #[tauri::command]
-pub fn ocr_recognize_selection() -> Result<String, String> {
-    recognize_current_selection()
+pub fn ocr_recognize_image(data: String) -> Result<String, String> {
+    recognize_image_data(data)
 }
 
-fn recognize_current_selection() -> Result<String, String> {
-    recognize_with_selected_engine()
-}
-
-fn recognize_with_selected_engine() -> Result<String, String> {
-    let text = recognize_windows_ocr()?;
+fn recognize_image_data(data: String) -> Result<String, String> {
+    let text = recognize_windows_ocr(data)?;
     let normalized = text
         .lines()
         .map(str::trim)
@@ -25,20 +21,17 @@ fn recognize_with_selected_engine() -> Result<String, String> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn recognize_windows_ocr() -> Result<String, String> {
+fn recognize_windows_ocr(_data: String) -> Result<String, String> {
     Err("OCR is only supported on Windows in this MVP".to_string())
 }
 
 #[cfg(target_os = "windows")]
-fn recognize_windows_ocr() -> Result<String, String> {
+fn recognize_windows_ocr(data: String) -> Result<String, String> {
     use std::fs;
 
-    // Task 9 backend limitation: there is no true region-selection bridge yet.
-    // OCR currently captures the primary screen; the future selection UI should
-    // pass a cropped image into this same Windows OCR helper.
-    let png_path = capture_primary_screen_png()?;
-    let output = run_windows_ocr_powershell(&png_path);
-    let _ = fs::remove_file(&png_path);
+    let image_path = write_image_data_to_temp_file(&data)?;
+    let output = run_windows_ocr_powershell(&image_path);
+    let _ = fs::remove_file(&image_path);
     output.map(|text| {
         text.replace("\r\n", "\n")
             .replace('\r', "\n")
@@ -51,42 +44,26 @@ fn recognize_windows_ocr() -> Result<String, String> {
 }
 
 #[cfg(target_os = "windows")]
-fn capture_primary_screen_png() -> Result<std::path::PathBuf, String> {
-    use image::{ImageFormat, RgbaImage};
-    use screenshots::Screen;
+fn write_image_data_to_temp_file(data: &str) -> Result<std::path::PathBuf, String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
     use std::{
-        env,
+        env, fs,
         path::PathBuf,
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    let screens = Screen::all().map_err(|e| format!("Failed to list screens for OCR: {e}"))?;
-    let screen = screens
-        .iter()
-        .find(|screen| screen.display_info.is_primary)
-        .or_else(|| screens.first())
-        .ok_or_else(|| "Failed to capture OCR input: no screen found".to_string())?;
-
-    let captured = screen
-        .capture()
-        .map_err(|e| format!("Failed to capture primary screen for OCR: {e}"))?;
-    let width = captured.width();
-    let height = captured.height();
-    let raw = captured.into_raw();
-    let image = RgbaImage::from_raw(width, height, raw)
-        .ok_or_else(|| "Failed to prepare OCR screenshot image".to_string())?;
-
+    let bytes = BASE64
+        .decode(data.trim())
+        .map_err(|e| format!("Failed to decode OCR image data: {e}"))?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|value| value.as_millis())
         .unwrap_or(0);
     let path: PathBuf = env::temp_dir().join(format!(
-        "devlauncher-ocr-primary-screen-{}-{stamp}.png",
+        "devlauncher-ocr-screenshot-{}-{stamp}.jpg",
         std::process::id()
     ));
-    image
-        .save_with_format(&path, ImageFormat::Png)
-        .map_err(|e| format!("Failed to write OCR screenshot PNG: {e}"))?;
+    fs::write(&path, bytes).map_err(|e| format!("Failed to write OCR screenshot image: {e}"))?;
 
     Ok(path)
 }
@@ -180,8 +157,7 @@ foreach ($line in $result.Lines) {
                 let _ = child.kill();
                 let _ = child.wait();
                 return Err(
-                    "Windows OCR invocation timed out while scanning the primary screen"
-                        .to_string(),
+                    "Windows OCR invocation timed out while scanning the screenshot".to_string(),
                 );
             }
             Err(e) => return Err(format!("Windows OCR helper failed: {e}")),
@@ -199,7 +175,7 @@ foreach ($line in $result.Lines) {
             stderr
         };
         return Err(format!(
-            "Windows OCR invocation failed while scanning the primary screen: {detail}"
+            "Windows OCR invocation failed while scanning the screenshot: {detail}"
         ));
     }
 

@@ -560,6 +560,15 @@ function IconBoxCallout() {
     </svg>
   );
 }
+function IconOcr() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth={2} />
+      <path d="M8 10h8M8 14h5" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
+      <path d="M7 2H5a3 3 0 0 0-3 3v2M17 2h2a3 3 0 0 1 3 3v2M7 22H5a3 3 0 0 1-3-3v-2M17 22h2a3 3 0 0 0 3-3v-2" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" />
+    </svg>
+  );
+}
 function IconUndo() {
   return (
     <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
@@ -618,18 +627,21 @@ interface ToolbarProps {
   onLw: (lw: number) => void;
   onUndo: () => void;
   onCopy: () => void;
+  onOcr: () => void;
   onSave: () => void;
   onPin: () => void;
   onCancel: () => void;
   onConfirm: () => void;
+  ocrBusy: boolean;
   style: CSSProperties;
 }
 
 function Toolbar({
   activeTool, activeColor, activeLw,
   onTool, onColor, onLw,
-  onUndo, onCopy, onSave, onPin,
+  onUndo, onCopy, onOcr, onSave, onPin,
   onCancel, onConfirm,
+  ocrBusy,
   style,
 }: ToolbarProps) {
   const baseBtn: CSSProperties = {
@@ -684,14 +696,29 @@ function Toolbar({
     >
       {/* Drawing tool buttons */}
       {TOOLS.map(({ key, icon: Icon, title }) => (
-        <button
-          key={key}
-          title={title}
-          onClick={() => onTool(activeTool === key ? null : key)}
-          style={{ ...baseBtn, ...(activeTool === key ? activeToolBtn : {}) }}
-        >
-          <Icon />
-        </button>
+        <span key={key} style={{ display: "contents" }}>
+          <button
+            title={title}
+            onClick={() => onTool(activeTool === key ? null : key)}
+            style={{ ...baseBtn, ...(activeTool === key ? activeToolBtn : {}) }}
+          >
+            <Icon />
+          </button>
+          {key === "boxCallout" && (
+            <button
+              title={ocrBusy ? "正在识别截图文字" : "识别截图文字"}
+              onClick={onOcr}
+              disabled={ocrBusy}
+              style={{
+                ...baseBtn,
+                opacity: ocrBusy ? 0.55 : 1,
+                cursor: ocrBusy ? "default" : "pointer",
+              }}
+            >
+              <IconOcr />
+            </button>
+          )}
+        </span>
       ))}
 
       <div style={sep} />
@@ -818,6 +845,7 @@ export function ScreenshotApp() {
   const [toast,       setToast]       = useState<string | null>(null);
   const [cursorPos,   setCursorPos]   = useState<Pt | null>(null);
   const [selectedAnnIndex, setSelectedAnnIndexState] = useState<number | null>(null);
+  const [ocrBusy, setOcrBusy] = useState(false);
   const [, setAnnEditVersion] = useState(0);
 
   // 鈹€鈹€ Refs (fast access in canvas callbacks without stale closures) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -1415,6 +1443,45 @@ export function ScreenshotApp() {
     return ok;
   };
 
+  const handleOcr = async () => {
+    if (ocrBusy) return;
+    commitTextInput();
+    const out = buildBaseResult();
+    if (!out) {
+      showToast("没有可识别截图");
+      return;
+    }
+
+    setOcrBusy(true);
+    showToast("正在识别截图文字...");
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        out.toBlob(blob => {
+          if (!blob) {
+            reject(new Error("截图图片生成失败"));
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+          reader.onerror = () => reject(new Error("截图图片读取失败"));
+          reader.readAsDataURL(blob);
+        }, "image/jpeg", 0.92);
+      });
+      const text = (await invoke<string>("ocr_recognize_image", { data: base64 })).trim();
+      if (!text) {
+        showToast("未识别到文字");
+        return;
+      }
+      await invoke("set_clipboard_text", { text });
+      showToast("已识别并复制文字");
+    } catch (err) {
+      console.error("ocr failed", err);
+      showToast(`OCR 失败：${String(err)}`);
+    } finally {
+      setOcrBusy(false);
+    }
+  };
+
   const commitTextInput = (input = textInput) => {
     if (!input) return;
     const trimmed = input.val.trim();
@@ -1692,10 +1759,12 @@ export function ScreenshotApp() {
           onLw={setLw}
           onUndo={handleUndo}
           onCopy={handleCopy}
+          onOcr={handleOcr}
           onSave={handleSave}
           onPin={handlePin}
           onCancel={handleCancel}
           onConfirm={handleConfirm}
+          ocrBusy={ocrBusy}
           style={tbStyle}
         />
       )}

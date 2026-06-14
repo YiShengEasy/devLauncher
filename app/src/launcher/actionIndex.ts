@@ -1,9 +1,8 @@
 import type { BuiltinManifest } from "@/builtins/types";
 import type { Action, BuiltinFeature, KeyboardConfig, KeyId } from "@/types/actions";
 
-export type LauncherActionSource = "keyboard" | "builtin" | "recent" | "ocr";
-export type LauncherActionKind = "execute-action" | "toggle-builtin" | "frontend-command";
-export type FrontendCommand = "copy-ocr-text" | "search-ocr-text" | "send-ocr-to-report";
+export type LauncherActionSource = "keyboard" | "builtin" | "recent";
+export type LauncherActionKind = "execute-action" | "toggle-builtin";
 
 export interface LauncherActionRecord {
   id: string;
@@ -13,11 +12,9 @@ export interface LauncherActionRecord {
   actionKind: LauncherActionKind;
   action?: Action;
   builtinFeature?: BuiltinFeature;
-  frontendCommand?: FrontendCommand;
   keywords: string[];
   pageName?: string;
   keyId?: KeyId;
-  payload?: Record<string, unknown>;
   lastUsedAt?: number;
 }
 
@@ -99,44 +96,6 @@ export function buildBuiltinActionRecords(manifests: BuiltinManifest[]): Launche
     builtinFeature: manifest.id as BuiltinFeature,
     keywords: unique([manifest.id, manifest.name, manifest.description]),
   }));
-}
-
-export function buildOcrActionRecords(text: string): LauncherActionRecord[] {
-  const value = text.trim();
-  if (!value) return [];
-
-  return [
-    {
-      id: "ocr:copy",
-      title: "Copy OCR text",
-      subtitle: value,
-      source: "ocr",
-      actionKind: "frontend-command",
-      frontendCommand: "copy-ocr-text",
-      payload: { text: value },
-      keywords: unique(["ocr", "copy", value]),
-    },
-    {
-      id: "ocr:search",
-      title: "Search OCR text",
-      subtitle: value,
-      source: "ocr",
-      actionKind: "frontend-command",
-      frontendCommand: "search-ocr-text",
-      payload: { text: value },
-      keywords: unique(["ocr", "search", value]),
-    },
-    {
-      id: "ocr:report",
-      title: "Send OCR text to screenshot report",
-      subtitle: value,
-      source: "ocr",
-      actionKind: "frontend-command",
-      frontendCommand: "send-ocr-to-report",
-      payload: { text: value },
-      keywords: unique(["ocr", "report", "screenshot", value]),
-    },
-  ];
 }
 
 function scoreRecord(record: LauncherActionRecord, query: string): number {
