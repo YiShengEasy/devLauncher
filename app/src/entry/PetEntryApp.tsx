@@ -173,11 +173,11 @@ export function PetEntryApp() {
   }
 
   async function openScreenshotReport() {
-    await invoke("toggle_screenshotai_window");
+    await invoke("show_screenshotai_window");
   }
 
   async function openClipboard() {
-    await invoke("toggle_clipboard_window");
+    await invoke("show_clipboard_window");
   }
 
   async function switchToKeyboard() {
