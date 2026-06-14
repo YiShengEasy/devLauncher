@@ -8,6 +8,7 @@ import { loadConfig, saveConfig } from "@/api/config";
 import { KeyboardPanel } from "@/components/KeyboardPanel";
 import { BindingModal } from "@/components/BindingModal";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { getStoredEntryPosition, setStoredEntryPosition } from "@/entry/windowPosition";
 import type { Action, KeyId, BuiltinAction, KeyboardConfig } from "@/types/actions";
 import "./index.css";
 
@@ -50,6 +51,49 @@ function makeDebounced<T extends unknown[]>(fn: (...args: T) => void, ms = 400) 
   };
 }
 
+function PixelCatIcon() {
+  const pixel = {
+    position: "absolute" as const,
+    width: 3,
+    height: 3,
+    borderRadius: 1,
+  };
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        position: "relative",
+        width: 18,
+        height: 18,
+        display: "block",
+        imageRendering: "pixelated",
+        transform: "translateY(1px)",
+      }}
+    >
+      <span style={{ ...pixel, left: 3, top: 1, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 12, top: 1, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 2, top: 4, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 5, top: 4, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 8, top: 4, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 11, top: 4, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 14, top: 4, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 2, top: 7, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 5, top: 7, background: "#1f2937" }} />
+      <span style={{ ...pixel, left: 8, top: 7, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 11, top: 7, background: "#1f2937" }} />
+      <span style={{ ...pixel, left: 14, top: 7, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 2, top: 10, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 5, top: 10, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 8, top: 10, background: "#ec4899" }} />
+      <span style={{ ...pixel, left: 11, top: 10, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 14, top: 10, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 5, top: 13, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 8, top: 13, background: "#f3c98b" }} />
+      <span style={{ ...pixel, left: 11, top: 13, background: "#f3c98b" }} />
+    </span>
+  );
+}
+
 export default function App() {
   const {
     config, activePageIndex,
@@ -59,6 +103,7 @@ export default function App() {
   } = useKeyboardStore();
 
   const [bindingKey, setBindingKey] = useState<KeyId | null>(null);
+  const [modeTransition, setModeTransition] = useState<"idle" | "to-pet">("idle");
 
   // Tab editing state
   const [editingTabIndex, setEditingTabIndex] = useState<number | null>(null);
@@ -346,6 +391,32 @@ export default function App() {
 
   const activePage = config?.pages[activePageIndex];
 
+  const saveCurrentWindowPosition = useCallback(async (mode: "main" | "pet") => {
+    const position = await getCurrentWindow().outerPosition();
+    setStoredEntryPosition(mode, { x: position.x, y: position.y });
+    return position;
+  }, []);
+
+  const switchToPetMode = useCallback(async () => {
+    if (modeTransition !== "idle") return;
+    setModeTransition("to-pet");
+    try {
+      const position = await saveCurrentWindowPosition("main");
+      const petPosition = getStoredEntryPosition("pet") ?? {
+        x: position.x + 640,
+        y: position.y + 80,
+      };
+      window.setTimeout(() => {
+        invoke("switch_to_pet_mode", { position: petPosition })
+          .catch(console.error)
+          .finally(() => setModeTransition("idle"));
+      }, 180);
+    } catch (error) {
+      console.error(error);
+      setModeTransition("idle");
+    }
+  }, [modeTransition, saveCurrentWindowPosition]);
+
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent" }}>
       {/* Glass panel */}
@@ -360,6 +431,9 @@ export default function App() {
           WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           border: `1px solid ${theme.borderColor}`,
           position: "relative",
+          transform: modeTransition === "to-pet" ? "scale(0.92) translateY(8px)" : "scale(1)",
+          opacity: modeTransition === "to-pet" ? 0 : 1,
+          transition: "transform 180ms ease, opacity 180ms ease",
         }}
       >
         {/* ── Title bar (drag region) ─────────────────── */}
@@ -375,18 +449,35 @@ export default function App() {
           }}
         >
           {/* Left: logo + name */}
-          <div style={{ display: "flex", alignItems: "center", gap: 7, pointerEvents: "none" }}>
-            <img
-              src="/devlauncher-icon.png"
-              alt=""
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <button
+              onClick={() => switchToPetMode().catch(console.error)}
+              title="Switch to pixel cat pet"
               style={{
-                width: 22,
-                height: 22,
-                borderRadius: 5,
-                display: "block",
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: modeTransition === "to-pet"
+                  ? "rgba(243,201,139,0.18)"
+                  : "rgba(255,255,255,0.06)",
+                boxShadow: modeTransition === "to-pet"
+                  ? "0 0 18px rgba(243,201,139,0.28)"
+                  : "inset 0 1px 0 rgba(255,255,255,0.08)",
+                cursor: modeTransition === "idle" ? "pointer" : "default",
+                padding: 0,
+                display: "grid",
+                placeItems: "center",
+                transform: modeTransition === "to-pet" ? "scale(0.86) rotate(-8deg)" : "scale(1)",
+                transition: "transform 180ms ease, background 180ms ease, box-shadow 180ms ease",
               }}
-            />
-            <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.75)", letterSpacing: "0.3px" }}>
+              type="button"
+              disabled={modeTransition !== "idle"}
+              data-tauri-drag-region="false"
+            >
+              <PixelCatIcon />
+            </button>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.75)", letterSpacing: "0.3px", pointerEvents: "none" }}>
               DevLauncher
             </span>
           </div>
