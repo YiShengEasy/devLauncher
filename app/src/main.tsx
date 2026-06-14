@@ -2,17 +2,30 @@ import ReactDOM from "react-dom/client";
 import { Suspense } from "react";
 import App from "./App";
 import { BUILTIN_REGISTRY } from "./builtins/_registry";
+import { SearchEntryApp } from "./entry/SearchEntryApp";
+import { OcrEntryApp } from "./entry/OcrEntryApp";
+import { PetEntryApp } from "./entry/PetEntryApp";
 import "./index.css";
 
-// Route based on URL param: ?view=<id> → find plugin in registry
 const params = new URLSearchParams(window.location.search);
+const entry = params.get("entry");
 const view = params.get("view");
-const plugin = view ? BUILTIN_REGISTRY.find(p => p.manifest.id === view) : null;
+const plugin = view ? BUILTIN_REGISTRY.find((item) => item.manifest.id === view) : null;
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  plugin ? (
-    <Suspense fallback={null}>
-      <plugin.App />
-    </Suspense>
-  ) : <App />
-);
+function RoutedApp() {
+  if (entry === "search") return <SearchEntryApp />;
+  if (entry === "ocr") return <OcrEntryApp />;
+  if (entry === "pet") return <PetEntryApp />;
+
+  if (plugin) {
+    return (
+      <Suspense fallback={null}>
+        <plugin.App />
+      </Suspense>
+    );
+  }
+
+  return <App />;
+}
+
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<RoutedApp />);
