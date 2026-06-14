@@ -157,6 +157,51 @@
         "center": true,
         "skipTaskbar": true,
         "visible": false
+      },
+      {
+        "label": "search",
+        "url": "index.html?entry=search",
+        "title": "DevLauncher Search",
+        "width": 860,
+        "height": 520,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "skipTaskbar": true,
+        "visible": false
+      },
+      {
+        "label": "ocr",
+        "url": "index.html?entry=ocr",
+        "title": "DevLauncher OCR",
+        "width": 720,
+        "height": 420,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "center": true,
+        "skipTaskbar": true,
+        "visible": false
+      },
+      {
+        "label": "pet",
+        "url": "index.html?entry=pet",
+        "title": "DevLauncher Pet",
+        "width": 220,
+        "height": 220,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "center": false,
+        "skipTaskbar": true,
+        "visible": false
       }
     ],
     "security": {
