@@ -41,7 +41,10 @@ fn load_cache(app: &tauri::AppHandle) -> HashMap<String, CachedFavicon> {
     serde_json::from_str(&content).unwrap_or_default()
 }
 
-fn save_cache(app: &tauri::AppHandle, cache: &HashMap<String, CachedFavicon>) -> Result<(), String> {
+fn save_cache(
+    app: &tauri::AppHandle,
+    cache: &HashMap<String, CachedFavicon>,
+) -> Result<(), String> {
     let path = cache_path(app);
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;

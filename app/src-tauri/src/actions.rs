@@ -113,7 +113,10 @@ fn open_folder_with(action: &serde_json::Value, target: &str) -> Result<(), Stri
 fn chrome_candidates() -> Vec<String> {
     let mut candidates = vec!["chrome.exe".to_string(), "chrome".to_string()];
     if let Ok(program_files) = std::env::var("ProgramFiles") {
-        candidates.push(format!(r"{}\Google\Chrome\Application\chrome.exe", program_files));
+        candidates.push(format!(
+            r"{}\Google\Chrome\Application\chrome.exe",
+            program_files
+        ));
     }
     if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
         candidates.push(format!(
