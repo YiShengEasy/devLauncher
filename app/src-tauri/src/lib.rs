@@ -86,7 +86,7 @@ pub fn run() {
             entries::show_search_window,
             entries::toggle_ocr_window,
             entries::toggle_pet_window,
-            ocr::ocr_engine_status,
+            ocr::ocr_recognize_selection,
             utils::icon::extract_app_icons,
             utils::favicon::get_cached_favicons,
             utils::favicon::refresh_favicons,
