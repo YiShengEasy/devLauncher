@@ -1,8 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { MacWindowControls } from "@/components/MacWindowControls";
+import { animateListEnter, animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 
 type JsonTab = "format" | "query" | "convert" | "diff" | "schema" | "history" | "openai";
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -333,6 +337,9 @@ function saveHistory(items: string[]) {
 }
 
 export function JsonHelperApp() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const historyListRef = useRef<HTMLDivElement>(null);
+  const openAiListRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState<JsonTab>("format");
   const [input, setInput] = useState("");
   const [output, setOutput] = useState("");
@@ -348,6 +355,7 @@ export function JsonHelperApp() {
   const [oaiParams, setOaiParams] = useState<Array<{ name: string; type: string; desc: string; required: boolean }>>([
     { name: "", type: "string", desc: "", required: true },
   ]);
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => { applyThemeFromConfig(); }, []);
   useEffect(() => {
@@ -425,15 +433,35 @@ export function JsonHelperApp() {
     { key: "openai", label: "OpenAI" },
   ];
 
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(historyListRef, () => {
+    if (activeTab !== "history" || !historyListRef.current) return;
+    animateListEnter(Array.from(historyListRef.current.children), reducedMotion);
+  }, [activeTab, history.length, reducedMotion]);
+
+  useGsapContext(openAiListRef, () => {
+    if (activeTab !== "openai" || !openAiListRef.current) return;
+    animateListEnter(Array.from(openAiListRef.current.children), reducedMotion);
+  }, [activeTab, oaiParams.length, reducedMotion]);
+
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent" }}>
-      <div className="glass" style={{ width: 720, height: 630, borderRadius: 14, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div ref={rootRef} className="glass" style={{ width: "min(720px, 100vw)", height: "min(630px, 100vh)", borderRadius: 14, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div data-tauri-drag-region style={{ height: 36, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", borderBottom: "1px solid rgba(255,255,255,0.07)", cursor: "move" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, pointerEvents: "none" }}>
             <BuiltinIcon feature="json" size={16} />
             <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.72)" }}>JSON 助手</span>
           </div>
-          <button onClick={() => getCurrentWindow().hide().catch(() => {})} style={{ width: 12, height: 12, borderRadius: "50%", background: "rgba(255,95,87,0.85)", border: "none", cursor: "pointer", padding: 0 }} title="关闭" />
+          <MacWindowControls
+            onClose={() => getCurrentWindow().hide().catch(() => {})}
+            onMinimize={() => getCurrentWindow().minimize().catch(() => getCurrentWindow().hide().catch(() => {}))}
+            closeTitle="关闭 JSON 助手"
+            minimizeTitle="最小化 JSON 助手"
+          />
         </div>
 
         <div style={{ display: "flex", gap: 2, padding: "8px 10px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -529,13 +557,18 @@ export function JsonHelperApp() {
           )}
 
           {activeTab === "history" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 104, overflowY: "auto" }}>
+            <div ref={historyListRef} className="motion-list motion-scroll-area" style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 104 }}>
               {history.length === 0 && <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>暂无历史，点击“保存历史”保存当前输入。</span>}
               {history.map((item, index) => (
                 <div key={`${item.slice(0, 24)}-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 6, alignItems: "center" }}>
                   <button style={{ ...BTN_STYLE, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} onClick={() => setInput(item)}>{previewValue(item)}</button>
                   <button style={BTN_STYLE} onClick={() => { setInput(item); setActiveTab("format"); }}>载入</button>
-                  <button style={BTN_STYLE} onClick={() => { const next = history.filter((_, i) => i !== index); setHistory(next); saveHistory(next); }}>删除</button>
+                  <button style={BTN_STYLE} onClick={() => {
+                    if (!window.confirm("删除这条 JSON 历史？")) return;
+                    const next = history.filter((_, i) => i !== index);
+                    setHistory(next);
+                    saveHistory(next);
+                  }}>删除</button>
                 </div>
               ))}
             </div>
@@ -547,7 +580,7 @@ export function JsonHelperApp() {
                 <input style={INPUT_STYLE} value={oaiName} onChange={(e) => setOaiName(e.target.value)} placeholder="函数名 get_weather" />
                 <input style={INPUT_STYLE} value={oaiDesc} onChange={(e) => setOaiDesc(e.target.value)} placeholder="函数描述" />
               </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 92, overflowY: "auto" }}>
+              <div ref={openAiListRef} className="motion-list motion-scroll-area" style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 92 }}>
                 {oaiParams.map((p, i) => (
                   <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 90px 1.3fr 54px 28px", gap: 4, alignItems: "center" }}>
                     <input style={INPUT_STYLE} value={p.name} onChange={(e) => setOaiParams(oaiParams.map((x, n) => n === i ? { ...x, name: e.target.value } : x))} placeholder="参数名" />
@@ -568,7 +601,7 @@ export function JsonHelperApp() {
           )}
 
           {error && (
-            <pre style={{ margin: 0, whiteSpace: "pre-wrap", padding: "7px 10px", borderRadius: 7, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", color: "rgba(255,145,145,0.92)", fontSize: 11, fontFamily: "Consolas, monospace", maxHeight: 72, overflow: "auto" }}>{error}</pre>
+            <pre className="motion-scroll-area" style={{ margin: 0, whiteSpace: "pre-wrap", padding: "7px 10px", borderRadius: 7, background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", color: "rgba(255,145,145,0.92)", fontSize: 11, fontFamily: "Consolas, monospace", maxHeight: 72 }}>{error}</pre>
           )}
 
           {!error && parsed !== null && (

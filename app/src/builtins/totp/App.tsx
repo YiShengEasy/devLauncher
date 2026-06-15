@@ -3,6 +3,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { applyThemeFromConfig } from "@/api/theme";
+import { MacWindowControls } from "@/components/MacWindowControls";
+import { animateListEnter, animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 
 interface TotpToken {
   id: string;
@@ -81,6 +85,8 @@ function generateId(): string {
 }
 
 export function TotpApp() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const tokenListRef = useRef<HTMLDivElement>(null);
   const [tokens, setTokens] = useState<TotpToken[]>([]);
   const [codes, setCodes] = useState<Record<string, string>>({});
   const [remaining, setRemaining] = useState(getRemainingSeconds());
@@ -91,6 +97,7 @@ export function TotpApp() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const reducedMotion = useReducedMotion();
 
   // Esc to hide window
   useEffect(() => {
@@ -187,6 +194,8 @@ export function TotpApp() {
 
   // Delete token
   const handleDelete = useCallback((id: string) => {
+    const token = tokens.find(t => t.id === id);
+    if (!window.confirm(`删除令牌「${token?.name ?? "未命名"}」？`)) return;
     const updated = tokens.filter(t => t.id !== id);
     persistTokens(updated);
   }, [tokens, persistTokens]);
@@ -211,10 +220,20 @@ export function TotpApp() {
 
   const progress = ((30 - remaining) / 30) * 100;
 
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(tokenListRef, () => {
+    if (!tokenListRef.current) return;
+    animateListEnter(Array.from(tokenListRef.current.children), reducedMotion);
+  }, [tokens.length, showForm, reducedMotion]);
+
   const BTN_STYLE: React.CSSProperties = {
     padding: "6px 14px", borderRadius: 7, cursor: "pointer",
     border: "none", fontSize: 12, fontWeight: 600,
-    transition: "all 0.12s", outline: "none",
+    transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease", outline: "none",
   };
 
   const INPUT_STYLE: React.CSSProperties = {
@@ -227,7 +246,7 @@ export function TotpApp() {
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent" }}>
-      <div className="glass" style={{ width: 370, maxHeight: 540, borderRadius: 14, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div ref={rootRef} className="glass" style={{ width: "min(370px, 100vw)", maxHeight: "min(540px, 100vh)", borderRadius: 14, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Title bar */}
         <div data-tauri-drag-region style={{
           height: 36, display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -239,10 +258,11 @@ export function TotpApp() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", fontFamily: "monospace" }}>{remaining}s</span>
-            <button
-              onClick={() => getCurrentWindow().hide().catch(() => {})}
-              style={{ width: 12, height: 12, borderRadius: "50%", background: "rgba(255,95,87,0.85)", border: "none", cursor: "pointer", padding: 0 }}
-              title="关闭"
+            <MacWindowControls
+              onClose={() => getCurrentWindow().hide().catch(() => {})}
+              onMinimize={() => getCurrentWindow().minimize().catch(() => getCurrentWindow().hide().catch(() => {}))}
+              closeTitle="关闭令牌生成器"
+              minimizeTitle="最小化令牌生成器"
             />
           </div>
         </div>
@@ -260,7 +280,7 @@ export function TotpApp() {
         </div>
 
         {/* Token list */}
-        <div style={{ flex: 1, padding: "8px 10px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 6 }}>
+        <div ref={tokenListRef} className="motion-list motion-scroll-area" style={{ flex: 1, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
           {tokens.length === 0 && !showForm && (
             <div style={{ textAlign: "center", padding: "40px 0", color: "rgba(255,255,255,0.25)", fontSize: 13 }}>
               暂无令牌<br />
@@ -374,7 +394,7 @@ export function TotpApp() {
                 width: "100%", padding: "8px 0", borderRadius: 8, cursor: "pointer",
                 border: "1px dashed rgba(255,255,255,0.18)", background: "transparent",
                 color: "rgba(255,255,255,0.45)", fontSize: 12, fontWeight: 500,
-                transition: "all 0.12s", outline: "none",
+                transition: "border-color 120ms ease, color 120ms ease, background-color 120ms ease", outline: "none",
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.4)"; e.currentTarget.style.color = "rgba(255,255,255,0.7)"; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)"; e.currentTarget.style.color = "rgba(255,255,255,0.45)"; }}

@@ -6,6 +6,8 @@ export interface ActionExecutorDeps {
 }
 
 export function builtinToggleCommand(feature: BuiltinFeature): string {
+  if (feature === "clipboard") return "show_clipboard_window";
+  if (feature === "screenshotai") return "show_screenshotai_window";
   return feature === "json" ? "toggle_json_helper_window" : `toggle_${feature}_window`;
 }
 

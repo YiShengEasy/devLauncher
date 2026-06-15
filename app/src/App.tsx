@@ -3,14 +3,34 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { register as registerShortcut, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
+import gsap from "gsap";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { loadConfig, saveConfig } from "@/api/config";
 import { KeyboardPanel } from "@/components/KeyboardPanel";
 import { BindingModal } from "@/components/BindingModal";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { MacWindowControls } from "@/components/MacWindowControls";
 import { getStoredEntryPosition, setStoredEntryPosition } from "@/entry/windowPosition";
 import type { Action, KeyId, BuiltinAction, KeyboardConfig } from "@/types/actions";
+import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon } from "@/icons";
+import { PixelPetIcon } from "@/icons/entryIcons";
+import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
+import { motionDuration, motionEase } from "@/motion/tokens";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 import "./index.css";
+
+const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
+const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
+const MAIN_WINDOW_WIDTH = 860;
+const MAIN_WINDOW_HEIGHT = 480;
+const PET_WINDOW_SIZE = 284;
+const GLOBAL_SHORTCUTS = {
+  keyboard: "Ctrl+Alt+Space",
+  clipboard: "Ctrl+Alt+V",
+  search: "Ctrl+Alt+K",
+  pet: "Ctrl+Alt+P",
+} as const;
 
 // Convert KeyId → global shortcut string (hotkey crate format)
 function keyIdToShortcut(keyId: string): string {
@@ -51,52 +71,10 @@ function makeDebounced<T extends unknown[]>(fn: (...args: T) => void, ms = 400) 
   };
 }
 
-function PixelCatIcon() {
-  const pixel = {
-    position: "absolute" as const,
-    width: 3,
-    height: 3,
-    borderRadius: 1,
-  };
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        position: "relative",
-        width: 18,
-        height: 18,
-        display: "block",
-        imageRendering: "pixelated",
-        transform: "translateY(1px)",
-      }}
-    >
-      <span style={{ ...pixel, left: 3, top: 1, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 12, top: 1, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 2, top: 4, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 5, top: 4, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 8, top: 4, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 11, top: 4, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 14, top: 4, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 2, top: 7, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 5, top: 7, background: "#1f2937" }} />
-      <span style={{ ...pixel, left: 8, top: 7, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 11, top: 7, background: "#1f2937" }} />
-      <span style={{ ...pixel, left: 14, top: 7, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 2, top: 10, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 5, top: 10, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 8, top: 10, background: "#ec4899" }} />
-      <span style={{ ...pixel, left: 11, top: 10, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 14, top: 10, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 5, top: 13, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 8, top: 13, background: "#f3c98b" }} />
-      <span style={{ ...pixel, left: 11, top: 13, background: "#f3c98b" }} />
-    </span>
-  );
-}
-
 export default function App() {
   const {
     config, activePageIndex,
+    loading, error,
     setConfig, setLoading, setError, setActivePageIndex,
     bindKey, addPage, renamePage, removePage,
     showSettings, setShowSettings, theme,
@@ -110,6 +88,98 @@ export default function App() {
   const [editingName, setEditingName] = useState("");
   const [tabMenu, setTabMenu] = useState<{ index: number; x: number; y: number } | null>(null);
   const tabMenuRef = useRef<HTMLDivElement>(null);
+  const rootPanelRef = useRef<HTMLDivElement>(null);
+  const settingsDialogRef = useRef<HTMLDivElement>(null);
+  const petModeButtonRef = useRef<HTMLButtonElement>(null);
+  const reducedMotion = useReducedMotion();
+
+  const resetKeyboardPanelVisualState = useCallback(() => {
+    const panel = rootPanelRef.current;
+    const petButton = petModeButtonRef.current;
+
+    gsap.killTweensOf([panel, petButton]);
+    if (panel) {
+      gsap.set(panel, {
+        autoAlpha: 1,
+        x: 0,
+        y: 0,
+        scale: 1,
+        borderRadius: 16,
+        filter: "none",
+      });
+    }
+    if (petButton) {
+      gsap.set(petButton, {
+        autoAlpha: 1,
+        scale: 1,
+        rotation: 0,
+        filter: "none",
+      });
+    }
+  }, []);
+
+  const playKeyboardReturnTimeline = useCallback(() => {
+    const panel = rootPanelRef.current;
+    if (!panel) return;
+
+    if (reducedMotion) {
+      animatePanelEnter(panel, reducedMotion);
+      return;
+    }
+
+    gsap.fromTo(
+      panel,
+      {
+        autoAlpha: 0,
+        y: reducedMotion ? 0 : 10,
+        scale: reducedMotion ? 1 : 0.94,
+        borderRadius: reducedMotion ? 16 : 28,
+        filter: "blur(1px) brightness(1.18) saturate(1.16)",
+      },
+      {
+        autoAlpha: 1,
+        y: 0,
+        scale: 1,
+        borderRadius: 16,
+        filter: "none",
+        duration: motionDuration.playful,
+        ease: motionEase.enter,
+        overwrite: "auto",
+      },
+    );
+  }, [reducedMotion]);
+
+  useGsapContext(rootPanelRef, () => {
+    if (!rootPanelRef.current) return;
+    animatePanelEnter(rootPanelRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      if (modeTransition === "to-pet") return;
+      const shouldAnimateReturn = window.localStorage.getItem(KEYBOARD_RETURN_ANIMATION_KEY) === "1";
+      if (shouldAnimateReturn) {
+        window.localStorage.removeItem(KEYBOARD_RETURN_ANIMATION_KEY);
+      }
+
+      resetKeyboardPanelVisualState();
+      if (shouldAnimateReturn && rootPanelRef.current) {
+        playKeyboardReturnTimeline();
+      }
+    };
+
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleWindowFocus);
+    return () => {
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleWindowFocus);
+    };
+  }, [modeTransition, playKeyboardReturnTimeline, resetKeyboardPanelVisualState]);
+
+  useGsapContext(settingsDialogRef, () => {
+    if (!showSettings || !settingsDialogRef.current) return;
+    animateDialogEnter(settingsDialogRef.current, reducedMotion);
+  }, [showSettings, reducedMotion]);
 
   // Extract app icons from .exe files — defined BEFORE the effects that call it
   const extractAllAppIcons = useCallback(async (cfg: KeyboardConfig) => {
@@ -163,6 +233,7 @@ export default function App() {
   useEffect(() => {
     async function init() {
       setLoading(true);
+      setError(null);
       try {
         const cfg = await loadConfig();
         setConfig(cfg);
@@ -245,7 +316,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // ── Global Alt+key shortcuts + Ctrl+Shift+V ──
+  // ── Global Alt+key shortcuts + low-conflict entry shortcuts ──
   useEffect(() => {
     if (!config) return;
     const page = config.pages[activePageIndex];
@@ -278,11 +349,11 @@ export default function App() {
         }
       }
 
-      // ── Register Alt+Space to toggle main window (always active) ──
+      // ── Register keyboard-window toggle shortcut (always active) ──
       if (!cancelled) {
         try {
           await registerShortcut(
-            "Alt+Space",
+            GLOBAL_SHORTCUTS.keyboard,
             makeDebounced(async () => {
               const win = getCurrentWindow();
               if (await win.isVisible()) {
@@ -297,41 +368,41 @@ export default function App() {
             })
           );
         } catch (err) {
-          console.warn("Alt+Space shortcut unavailable:", err);
+          console.warn(`${GLOBAL_SHORTCUTS.keyboard} shortcut unavailable:`, err);
         }
       }
 
-      // ── Register Ctrl+Shift+V to show/focus clipboard window (always active) ──
+      // ── Register clipboard-window shortcut (always active) ──
       if (!cancelled) {
         try {
           await registerShortcut(
-            "Ctrl+Shift+V",
+            GLOBAL_SHORTCUTS.clipboard,
             makeDebounced(async () => {
               invoke("show_clipboard_window").catch(console.error);
             })
           );
         } catch (err) {
-          console.warn("Ctrl+Shift+V shortcut unavailable:", err);
+          console.warn(`${GLOBAL_SHORTCUTS.clipboard} shortcut unavailable:`, err);
         }
       }
 
       if (!cancelled) {
         try {
           await registerShortcut(
-            "Ctrl+Space",
+            GLOBAL_SHORTCUTS.search,
             makeDebounced(async () => {
               invoke("show_search_window").catch(console.error);
             })
           );
         } catch (err) {
-          console.warn("Ctrl+Space search shortcut unavailable:", err);
+          console.warn(`${GLOBAL_SHORTCUTS.search} search shortcut unavailable:`, err);
         }
       }
 
       if (!cancelled) {
         try {
           await registerShortcut(
-            "Ctrl+Shift+P",
+            GLOBAL_SHORTCUTS.pet,
             makeDebounced(async () => {
               invoke("show_pet_window", {
                 position: getStoredEntryPosition("pet"),
@@ -339,7 +410,7 @@ export default function App() {
             })
           );
         } catch (err) {
-          console.warn("Ctrl+Shift+P pet shortcut unavailable:", err);
+          console.warn(`${GLOBAL_SHORTCUTS.pet} pet shortcut unavailable:`, err);
         }
       }
     };
@@ -402,31 +473,68 @@ export default function App() {
     return position;
   }, []);
 
+  const playSwitchToPetTimeline = useCallback(() => {
+    const panel = rootPanelRef.current;
+    const petButton = petModeButtonRef.current;
+    const duration = reducedMotion ? 0 : motionDuration.playful;
+
+    if (!panel) return duration;
+
+    gsap.timeline({ defaults: { overwrite: "auto" } })
+      .to(petButton, {
+        scale: reducedMotion ? 1 : 1.12,
+        rotation: reducedMotion ? 0 : -8,
+        filter: reducedMotion ? "none" : "brightness(1.22) saturate(1.22)",
+        duration: reducedMotion ? 0 : motionDuration.panel,
+        ease: motionEase.enter,
+      }, 0)
+      .to(panel, {
+        autoAlpha: 0,
+        y: reducedMotion ? 0 : 10,
+        scale: reducedMotion ? 1 : 0.9,
+        borderRadius: reducedMotion ? 16 : 34,
+        filter: reducedMotion ? "none" : "blur(1.4px) saturate(1.08) brightness(0.78)",
+        duration,
+        ease: reducedMotion ? motionEase.standard : motionEase.morph,
+      }, 0);
+
+    return duration;
+  }, [reducedMotion]);
+
   const switchToPetMode = useCallback(async () => {
     if (modeTransition !== "idle") return;
     setModeTransition("to-pet");
     try {
-      const position = await saveCurrentWindowPosition("main");
+      const mainPosition = await saveCurrentWindowPosition("main");
       const petPosition = getStoredEntryPosition("pet") ?? {
-        x: position.x + 640,
-        y: position.y + 80,
+        x: mainPosition.x + MAIN_WINDOW_WIDTH + 24,
+        y: mainPosition.y + Math.round((MAIN_WINDOW_HEIGHT - PET_WINDOW_SIZE) / 2),
       };
+      setStoredEntryPosition("pet", petPosition);
+      const durationMs = Math.round(playSwitchToPetTimeline() * 1000);
       window.setTimeout(() => {
+        window.localStorage.setItem(PET_RETURN_ANIMATION_KEY, "1");
         invoke("switch_to_pet_mode", { position: petPosition })
-          .catch(console.error)
+          .catch((error) => {
+            window.localStorage.removeItem(PET_RETURN_ANIMATION_KEY);
+            console.error(error);
+            resetKeyboardPanelVisualState();
+          })
           .finally(() => setModeTransition("idle"));
-      }, 180);
+      }, durationMs);
     } catch (error) {
       console.error(error);
+      resetKeyboardPanelVisualState();
       setModeTransition("idle");
     }
-  }, [modeTransition, saveCurrentWindowPosition]);
+  }, [modeTransition, playSwitchToPetTimeline, resetKeyboardPanelVisualState, saveCurrentWindowPosition]);
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent" }}>
       {/* Glass panel */}
       <div
-        className="glass"
+        ref={rootPanelRef}
+        className="glass entry-mode-shell"
         style={{
           width: 840, borderRadius: 16,
           display: "flex", flexDirection: "column",
@@ -436,9 +544,6 @@ export default function App() {
           WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           border: `1px solid ${theme.borderColor}`,
           position: "relative",
-          transform: modeTransition === "to-pet" ? "scale(0.92) translateY(8px)" : "scale(1)",
-          opacity: modeTransition === "to-pet" ? 0 : 1,
-          transition: "transform 180ms ease, opacity 180ms ease",
         }}
       >
         {/* ── Title bar (drag region) ─────────────────── */}
@@ -456,6 +561,7 @@ export default function App() {
           {/* Left: logo + name */}
           <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
             <button
+              ref={petModeButtonRef}
               onClick={() => switchToPetMode().catch(console.error)}
               title="Switch to pixel cat pet"
               style={{
@@ -473,14 +579,13 @@ export default function App() {
                 padding: 0,
                 display: "grid",
                 placeItems: "center",
-                transform: modeTransition === "to-pet" ? "scale(0.86) rotate(-8deg)" : "scale(1)",
-                transition: "transform 180ms ease, background 180ms ease, box-shadow 180ms ease",
+                transition: "background 180ms ease, box-shadow 180ms ease",
               }}
               type="button"
               disabled={modeTransition !== "idle"}
               data-tauri-drag-region="false"
             >
-              <PixelCatIcon />
+              <PixelPetIcon size={18} decorative />
             </button>
             <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.75)", letterSpacing: "0.3px", pointerEvents: "none" }}>
               DevLauncher
@@ -498,31 +603,17 @@ export default function App() {
                 cursor: "pointer", padding: 0, outline: "none",
                 display: "flex", alignItems: "center", justifyContent: "center",
                 color: showSettings ? "rgba(96,165,250,0.9)" : "rgba(255,255,255,0.4)",
-                transition: "all 0.12s",
+                transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease",
               }}
               title="设置"
             >
-              <svg width="12" height="12" viewBox="0 0 20 20" fill="none">
-                <path d="M10 13a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M10 1v3M10 16v3M1 10h3M16 10h3M3.5 3.5l2 2M14.5 14.5l2 2M14.5 5.5l2-2M3.5 16.5l2-2"
-                  stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
+              <SettingsIcon size={12} decorative />
             </button>
-            <button
-              onClick={() => getCurrentWindow().minimize()}
-              style={{
-                width: 12, height: 12, borderRadius: "50%",
-                background: "rgba(255,184,0,0.8)", border: "none", cursor: "pointer", padding: 0,
-              }}
-              title="最小化"
-            />
-            <button
-              onClick={() => getCurrentWindow().hide()}
-              style={{
-                width: 12, height: 12, borderRadius: "50%",
-                background: "rgba(255,95,87,0.85)", border: "none", cursor: "pointer", padding: 0,
-              }}
-              title="隐藏到托盘"
+            <MacWindowControls
+              onClose={() => getCurrentWindow().hide()}
+              onMinimize={() => getCurrentWindow().minimize()}
+              closeTitle="隐藏到托盘"
+              minimizeTitle="最小化"
             />
           </div>
         </div>
@@ -583,7 +674,7 @@ export default function App() {
                         background: isActive ? "rgba(255,255,255,0.10)" : "transparent",
                         color: isActive ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.38)",
                         borderBottom: isActive ? "2px solid #3b82f6" : "2px solid transparent",
-                        transition: "all 0.12s", whiteSpace: "nowrap",
+                        transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease", whiteSpace: "nowrap",
                       }}
                     >
                       {page.name}
@@ -608,11 +699,13 @@ export default function App() {
                 color: "rgba(255,255,255,0.45)", fontSize: 16, lineHeight: 1,
                 cursor: "pointer", marginBottom: 2, outline: "none",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                transition: "all 0.12s",
+                transition: "border-color 120ms ease, color 120ms ease, background-color 120ms ease",
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.5)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.75)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.22)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.45)"; }}
-            >+</button>
+            >
+              <AddIcon size={14} decorative />
+            </button>
           </div>
         )}
 
@@ -633,12 +726,18 @@ export default function App() {
           >
             {[
               {
-                label: "重命名", icon: "✏️",
+                label: "重命名", icon: <RenameIcon size={14} decorative />,
                 action: () => { setEditingTabIndex(tabMenu.index); setEditingName(config.pages[tabMenu.index].name); setTabMenu(null); }
               },
               ...(config.pages.length > 1 ? [{
-                label: "删除此页", icon: "🗑️",
-                action: () => { removePage(tabMenu.index); persistConfig(); setTabMenu(null); }, danger: true,
+                label: "删除此页", icon: <DeleteIcon size={14} decorative />,
+                action: () => {
+                  const pageName = config.pages[tabMenu.index]?.name ?? "此页面";
+                  if (!window.confirm(`删除页面「${pageName}」？此操作会移除该页所有键位绑定。`)) return;
+                  removePage(tabMenu.index);
+                  persistConfig();
+                  setTabMenu(null);
+                }, danger: true,
               }] : []),
             ].map(item => (
               <button
@@ -655,7 +754,9 @@ export default function App() {
                 onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.09)"; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
               >
-                <span>{item.icon}</span>
+                <span style={{ display: "inline-flex", width: 14, height: 14, alignItems: "center", justifyContent: "center" }}>
+                  {item.icon}
+                </span>
                 {item.label}
               </button>
             ))}
@@ -664,9 +765,21 @@ export default function App() {
 
         {/* ── Keyboard area ──────────────────────────── */}
         <div style={{ padding: "14px 16px 16px" }}>
-          {!config ? (
+          {loading ? (
             <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "40px 0", fontSize: 13 }}>
               加载中...
+            </div>
+          ) : error ? (
+            <div style={{ textAlign: "center", color: "rgba(248,113,113,0.86)", padding: "32px 24px", fontSize: 13, lineHeight: 1.7 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>加载配置失败</div>
+              <div style={{ color: "rgba(255,255,255,0.48)", wordBreak: "break-word" }}>{error}</div>
+              <div style={{ color: "rgba(255,255,255,0.34)", marginTop: 8 }}>
+                DevLauncher 主界面需要在 Tauri 桌面窗口中运行，直接打开 localhost 只能看到前端壳。
+              </div>
+            </div>
+          ) : !config ? (
+            <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "40px 0", fontSize: 13 }}>
+              暂无配置
             </div>
           ) : config.pages.length === 0 ? (
             <div style={{ textAlign: "center", padding: "40px 0" }}>
@@ -689,6 +802,7 @@ export default function App() {
       {/* ── Settings Modal ──────────────────────────── */}
       {showSettings && (
         <div
+          className="motion-dialog"
           style={{
             position: "fixed", inset: 0,
             zIndex: 1000,
@@ -698,9 +812,10 @@ export default function App() {
           onClick={() => setShowSettings(false)}
         >
           <div
+            ref={settingsDialogRef}
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: 760, maxWidth: "92vw", height: 640, maxHeight: "90vh",
+              width: 760, maxWidth: "92vw", height: "min(640px, 90vh)", maxHeight: "90vh",
               borderRadius: 14,
               background: hexToRgba(theme.bgColor, Math.min(theme.bgOpacity + 0.1, 1)),
               backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,

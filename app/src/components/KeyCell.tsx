@@ -96,7 +96,7 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
     position: "relative", overflow: "hidden",
     padding: 0, outline: "none",
     userSelect: "none",
-    transition: "all 0.1s ease",
+    transition: "background-color 100ms ease, border-color 100ms ease, color 100ms ease, box-shadow 100ms ease, transform 100ms ease",
   };
 
   // ── Bound key ──

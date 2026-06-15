@@ -46,6 +46,10 @@ export function SearchEntryApp() {
     ...buildKeyboardActionRecords(config),
     ...buildBuiltinActionRecords(BUILTIN_REGISTRY.map((item) => item.manifest)),
   ]), [config, recent]);
+  const quickActions = useMemo(() => mergeActionRecords([
+    ...buildBuiltinActionRecords(BUILTIN_REGISTRY.map((item) => item.manifest)),
+    ...buildKeyboardActionRecords(config),
+  ]).slice(0, 18), [config]);
 
   async function execute(record: LauncherActionRecord) {
     await executeLauncherAction(record, {
@@ -60,6 +64,7 @@ export function SearchEntryApp() {
     <SearchPanel
       key={initialQuery}
       records={records}
+      quickActions={quickActions}
       initialQuery={initialQuery}
       onExecute={(record) => {
         execute(record).catch(console.error);

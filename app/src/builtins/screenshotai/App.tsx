@@ -1,9 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
+import { MacWindowControls } from "@/components/MacWindowControls";
+import { animateListEnter, animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 import {
   clearScreenshots,
   deleteScreenshot,
@@ -210,6 +214,9 @@ async function decodeImage(item: StoredScreenshot) {
 }
 
 export function ScreenshotAiApp() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const screenshotListRef = useRef<HTMLDivElement>(null);
+  const annotationListRef = useRef<HTMLDivElement>(null);
   const [items, setItems] = useState<StoredScreenshot[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [appName, setAppName] = useState("");
@@ -221,8 +228,24 @@ export function ScreenshotAiApp() {
   const [copied, setCopied] = useState<"none" | "prompt" | "image">("none");
   const [status, setStatus] = useState("");
   const [recognizingText, setRecognizingText] = useState(false);
+  const reducedMotion = useReducedMotion();
 
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(screenshotListRef, () => {
+    if (!screenshotListRef.current) return;
+    animateListEnter(Array.from(screenshotListRef.current.children), reducedMotion);
+  }, [items.length, selectedId, reducedMotion]);
+
+  useGsapContext(annotationListRef, () => {
+    if (!annotationListRef.current) return;
+    animateListEnter(Array.from(annotationListRef.current.children), reducedMotion);
+  }, [annotations.length, reducedMotion]);
 
   useEffect(() => {
     applyThemeFromConfig();
@@ -315,6 +338,7 @@ export function ScreenshotAiApp() {
   }
 
   function deleteItem(id: string) {
+    if (!window.confirm("删除这张截图？")) return;
     const next = deleteScreenshot(id);
     setItems(next);
     setSelectedId((current) => {
@@ -403,13 +427,18 @@ export function ScreenshotAiApp() {
   const selectedIndex = selected ? items.findIndex((item) => item.id === selected.id) + 1 : 0;
 
   return (
-    <div className="glass" style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 14, color: "rgba(255,255,255,0.88)" }}>
+    <div ref={rootRef} className="glass" style={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 14, color: "rgba(255,255,255,0.88)" }}>
       <div data-tauri-drag-region style={{ height: 54, display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 14px 0 16px", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
         <div data-tauri-drag-region style={{ minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 750, letterSpacing: 0 }}>截图问题报告</div>
           <div style={{ ...mutedStyle, marginTop: 3 }}>{items.length} 张截图 · {annotations.length} 条标注</div>
         </div>
-        <button onClick={() => getCurrentWindow().hide().catch(() => {})} style={{ ...btnStyle, width: 28, height: 28, padding: 0, borderRadius: "50%", background: "rgba(255,255,255,0.08)" }}>x</button>
+        <MacWindowControls
+          onClose={() => getCurrentWindow().hide().catch(() => {})}
+          onMinimize={() => getCurrentWindow().minimize().catch(() => getCurrentWindow().hide().catch(() => {}))}
+          closeTitle="关闭截图报告"
+          minimizeTitle="最小化截图报告"
+        />
       </div>
 
       <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateColumns: "228px minmax(430px, 1fr) 360px", gridTemplateRows: "minmax(260px, 1fr) minmax(220px, 36vh)", gap: 12, padding: 12, overflow: "hidden" }}>
@@ -421,11 +450,11 @@ export function ScreenshotAiApp() {
               action={<button onClick={clearItems} disabled={items.length === 0} style={{ ...dangerBtnStyle, padding: "6px 8px", opacity: items.length === 0 ? 0.45 : 1 }}>清空</button>}
             />
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 8 }}>
+          <div className="motion-scroll-area" style={{ flex: 1, minHeight: 0, padding: 8 }}>
             {items.length === 0 && (
               <div style={{ ...mutedStyle, lineHeight: 1.7, padding: 10 }}>暂无截图</div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div ref={screenshotListRef} className="motion-list" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {items.map((item) => {
                 const active = item.id === selected?.id;
                 return (
@@ -482,7 +511,7 @@ export function ScreenshotAiApp() {
                 }
               />
             </div>
-            <div style={{ flex: 1, minHeight: 0, overflow: "auto", background: "rgba(0,0,0,0.28)" }}>
+            <div className="motion-scroll-area" style={{ flex: 1, minHeight: 0, background: "rgba(0,0,0,0.28)" }}>
               {selected ? (
                 <div style={{ position: "relative", width: selected.width * scale, height: selected.height * scale, margin: 14, boxShadow: "0 16px 50px rgba(0,0,0,0.32)" }}>
                   <img src={`data:image/jpeg;base64,${selected.data}`} alt="selected screenshot" draggable={false} style={{ display: "block", width: selected.width * scale, height: selected.height * scale, userSelect: "none", borderRadius: 4 }} />
@@ -526,7 +555,7 @@ export function ScreenshotAiApp() {
               meta={`${annotations.length} 条`}
               action={<button onClick={() => setAnnotationsAndPersist([])} disabled={annotations.length === 0} style={{ ...btnStyle, opacity: annotations.length === 0 ? 0.45 : 1 }}>清空</button>}
             />
-            <div style={{ display: "flex", flexDirection: "column", gap: 7, overflow: "auto", paddingRight: 2 }}>
+            <div ref={annotationListRef} className="motion-list motion-scroll-area" style={{ display: "flex", flexDirection: "column", gap: 7, paddingRight: 2 }}>
               {annotations.length === 0 && <div style={{ ...mutedStyle, padding: "6px 2px" }}>暂无编号</div>}
               {annotations.map((annotation) => (
                 <div key={annotation.id} style={{ display: "grid", gridTemplateColumns: "28px 78px 1fr 28px", gap: 6, alignItems: "center" }}>
@@ -554,7 +583,7 @@ export function ScreenshotAiApp() {
             meta={`${prompt.length} 字符`}
             action={<button onClick={copyPrompt} style={btnStyle}>{copied === "prompt" ? "已复制" : "复制 Prompt"}</button>}
           />
-          <pre style={{ flex: 1, minHeight: 0, margin: 0, overflow: "auto", whiteSpace: "pre-wrap", borderRadius: 8, background: "rgba(0,0,0,0.26)", border: "1px solid rgba(255,255,255,0.07)", padding: 12, fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.78)", fontFamily: "Consolas, 'Cascadia Code', monospace" }}>{prompt}</pre>
+          <pre className="motion-scroll-area" style={{ flex: 1, minHeight: 0, margin: 0, whiteSpace: "pre-wrap", borderRadius: 8, background: "rgba(0,0,0,0.26)", border: "1px solid rgba(255,255,255,0.07)", padding: 12, fontSize: 12, lineHeight: 1.6, color: "rgba(255,255,255,0.78)", fontFamily: "Consolas, 'Cascadia Code', monospace" }}>{prompt}</pre>
           {status && <div style={{ ...mutedStyle, color: "rgba(255,255,255,0.58)" }}>{status}</div>}
         </section>
       </div>
