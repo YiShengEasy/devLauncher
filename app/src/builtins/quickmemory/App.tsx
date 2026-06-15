@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
+import { animateListEnter, animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 
 type MemoryKind = "command" | "shortcut";
 
@@ -768,6 +771,8 @@ function getOrderedCategoryItems(category: CategoryId, orderState: OrderState): 
 }
 
 export function QuickMemoryApp() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const cardListRef = useRef<HTMLElement | null>(null);
   const [activeCategory, setActiveCategory] = useState<CategoryId>("linux");
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -779,6 +784,7 @@ export function QuickMemoryApp() {
   const suppressNextClickRef = useRef(false);
   const pointerDragRef = useRef<PointerDragState | null>(null);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     applyThemeFromConfig();
@@ -813,6 +819,17 @@ export function QuickMemoryApp() {
 
   const activeMeta = CATEGORIES.find((category) => category.id === activeCategory) ?? CATEGORIES[0];
   const categoryCount = MEMORY_ITEMS.filter((item) => item.category === activeCategory).length;
+
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(cardListRef, () => {
+    if (draggingId || !cardListRef.current) return;
+    const cards = Array.from(cardListRef.current.querySelectorAll<HTMLElement>("[data-memory-card-id]"));
+    animateListEnter(cards, reducedMotion);
+  }, [activeCategory, query, filteredItems.length, draggingId, reducedMotion]);
 
   const closeWindow = () => {
     getCurrentWindow().hide().catch((error) => {
@@ -1027,6 +1044,7 @@ export function QuickMemoryApp() {
       }}
     >
       <div
+        ref={rootRef}
         className="glass"
         style={{
           width: "calc(100vw - 20px)",
@@ -1173,6 +1191,7 @@ export function QuickMemoryApp() {
 
           <main style={{ minHeight: 0, display: "grid", gridTemplateRows: "auto 1fr" }}>
             <section
+              ref={cardListRef}
               style={{
                 padding: "10px 14px",
                 borderBottom: "1px solid rgba(255,255,255,0.08)",

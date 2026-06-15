@@ -2,6 +2,10 @@ import React, { useEffect, useState, useRef, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { applyThemeFromConfig } from "@/api/theme";
+import { MacWindowControls } from "@/components/MacWindowControls";
+import { animateListEnter, animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 
 // -----------------------------------------------
 // Types
@@ -96,12 +100,14 @@ const cardStyle: React.CSSProperties = {
 // -----------------------------------------------
 
 function RdpTab() {
+  const profileListRef = useRef<HTMLDivElement>(null);
   const [profiles, setProfiles] = useState<RemoteDeskProfile[]>([]);
   const [editing, setEditing] = useState<RemoteDeskProfile | null>(null);
   const [isNew, setIsNew] = useState(false);
   const [password, setPassword] = useState("");
   const [launching, setLaunching] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     invoke<RemoteDeskProfile[]>("load_remotedesk_profiles")
@@ -141,6 +147,7 @@ function RdpTab() {
 
   async function handleDelete(id: string) {
     const p = profiles.find(x => x.id === id);
+    if (!window.confirm(`删除远程桌面连接「${p?.name || p?.host || "未命名"}」？`)) return;
     if (p?.has_password) {
       await invoke("delete_remotedesk_password", { id }).catch(() => {});
     }
@@ -160,6 +167,11 @@ function RdpTab() {
     }
     setLaunching(null);
   }
+
+  useGsapContext(profileListRef, () => {
+    if (!profileListRef.current) return;
+    animateListEnter(Array.from(profileListRef.current.children), reducedMotion);
+  }, [profiles.length, reducedMotion]);
 
   if (editing) {
     return (
@@ -225,7 +237,8 @@ function RdpTab() {
         </div>
       )}
 
-      {profiles.map(p => (
+      <div ref={profileListRef} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {profiles.map(p => (
         <div key={p.id} style={cardStyle}>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>{p.name}</div>
@@ -246,7 +259,8 @@ function RdpTab() {
             <button onClick={() => handleDelete(p.id)} style={{ ...btnDanger, padding: "4px 10px", fontSize: 12 }}>删除</button>
           </div>
         </div>
-      ))}
+        ))}
+      </div>
 
       {msg && (
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>{msg}</div>
@@ -679,6 +693,31 @@ function ConnectTab() {
     ws.send(JSON.stringify({ type, x, y, button: e.button }));
   }
 
+  function sendKey(e: KeyboardEvent, type: "keydown" | "keyup") {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN || status !== "connected") return;
+    if (document.body.dataset.remoteDeskFullscreen && e.key === "Escape") return;
+    const target = e.target as HTMLElement | null;
+    const isTyping = target && (
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT" ||
+      target.isContentEditable
+    );
+    if (isTyping) return;
+    e.preventDefault();
+    ws.send(JSON.stringify({
+      type,
+      key: e.key,
+      code: e.code,
+      altKey: e.altKey,
+      ctrlKey: e.ctrlKey,
+      shiftKey: e.shiftKey,
+      metaKey: e.metaKey,
+      repeat: e.repeat,
+    }));
+  }
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || !document.body.dataset.remoteDeskFullscreen) return;
@@ -688,6 +727,18 @@ function ConnectTab() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
   }, []);
+
+  useEffect(() => {
+    if (status !== "connected") return;
+    const onKeyDown = (event: KeyboardEvent) => sendKey(event, "keydown");
+    const onKeyUp = (event: KeyboardEvent) => sendKey(event, "keyup");
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
+  }, [status]);
 
   useEffect(() => () => disconnect(), []);
 
@@ -765,6 +816,7 @@ function ConnectTab() {
       <canvas
         ref={canvasRef}
         style={canvasStyle}
+        tabIndex={0}
         onMouseMove={e => sendMouse(e, "mousemove")}
         onMouseDown={e => { e.preventDefault(); sendMouse(e, "mousedown"); }}
         onMouseUp={e => sendMouse(e, "mouseup")}
@@ -779,7 +831,10 @@ function ConnectTab() {
 // -----------------------------------------------
 
 export function RemoteDeskApp() {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const tabContentRef = useRef<HTMLDivElement>(null);
   const [tab, setTab] = useState<Tab>("rdp");
+  const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     applyThemeFromConfig();
@@ -805,8 +860,19 @@ export function RemoteDeskApp() {
     { id: "connect", label: "连接设备" },
   ];
 
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(tabContentRef, () => {
+    if (!tabContentRef.current) return;
+    animateListEnter(Array.from(tabContentRef.current.children), reducedMotion);
+  }, [tab, reducedMotion]);
+
   return (
     <div
+      ref={rootRef}
       className="glass"
       style={{
         width: "100vw",
@@ -829,12 +895,12 @@ export function RemoteDeskApp() {
         }}
       >
         <span style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.85)" }}>🖥️ 远程桌面</span>
-        <button
-          onClick={() => getCurrentWindow().hide()}
-          style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, lineHeight: 1 }}
-        >
-          ✕
-        </button>
+        <MacWindowControls
+          onClose={() => getCurrentWindow().hide()}
+          onMinimize={() => getCurrentWindow().minimize().catch(() => getCurrentWindow().hide())}
+          closeTitle="关闭远程桌面"
+          minimizeTitle="最小化远程桌面"
+        />
       </div>
 
       {/* Tabs */}
@@ -860,9 +926,10 @@ export function RemoteDeskApp() {
       </div>
 
       <div
+        ref={tabContentRef}
+        className="motion-list motion-scroll-area"
         style={{
           flex: 1,
-          overflowY: "auto",
           overflowX: "hidden",
           minHeight: 0,
         }}

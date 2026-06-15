@@ -4,6 +4,7 @@ import {
   ACTION_ICON_COMPONENTS,
   BUILTIN_ICON_COMPONENTS,
   CloseIcon,
+  ClipboardIcon,
   FolderIcon,
   IconBase,
   PixelPetIcon,
@@ -79,5 +80,20 @@ describe("icon categories", () => {
     expect(html).toContain('width="16"');
     expect(html).toContain('width="28"');
     expect(html).toContain('width="32"');
+  });
+
+  it("applies semantic default colors while allowing explicit overrides", () => {
+    const colored = renderToStaticMarkup(
+      <>
+        <ClipboardIcon />
+        <SearchIcon />
+        <FolderIcon color="#ffffff" />
+      </>,
+    );
+
+    expect(colored).toContain('color="#22d3ee"');
+    expect(colored).toContain('color="#93c5fd"');
+    expect(colored).toContain('color="#ffffff"');
+    expect(colored).not.toContain('color="#fbbf24"');
   });
 });

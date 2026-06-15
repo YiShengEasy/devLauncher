@@ -130,14 +130,26 @@ fn chrome_candidates() -> Vec<String> {
     candidates
 }
 
+fn normalize_url_target(target: &str) -> Result<String, String> {
+    let value = target.trim();
+    if value.is_empty() {
+        return Err("missing target".to_string());
+    }
+    if value.contains("://") {
+        return Ok(value.to_string());
+    }
+    Ok(format!("https://{}", value))
+}
+
 fn open_url_action(action: &serde_json::Value, target: &str) -> Result<(), String> {
+    let url = normalize_url_target(target)?;
     let use_chrome = action["autofill"].as_bool().unwrap_or(false);
     if use_chrome {
-        if spawn_first(&chrome_candidates(), &[target.to_string()]).is_ok() {
+        if spawn_first(&chrome_candidates(), std::slice::from_ref(&url)).is_ok() {
             return Ok(());
         }
     }
-    open::that(target).map_err(|e| e.to_string())
+    open::that(url).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

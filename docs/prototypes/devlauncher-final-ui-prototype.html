@@ -1,0 +1,984 @@
+<!doctype html>
+<!-- Self-contained final UI prototype copied from Codex image-to-code workspace on 2026-06-15. -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DevLauncher Final UI Prototype</title>
+    <style>
+:root {
+  font-family: "Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", Arial, sans-serif;
+  --font-zh-refined: "Microsoft YaHei UI Light", "Microsoft YaHei Light", "DengXian Light", "DengXian", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  color: #f4f6fb;
+  background: #050917;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+  background: #050917;
+  -webkit-font-smoothing: antialiased;
+  font-smooth: always;
+  text-rendering: geometricPrecision;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.stage {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  padding: 7px 5px;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 88% 5%, rgba(72, 58, 103, 0.22), transparent 26%),
+    radial-gradient(circle at 10% 100%, rgba(93, 37, 56, 0.42), transparent 34%),
+    linear-gradient(145deg, #060d18 0%, #111727 42%, #080d17 100%);
+}
+
+.launcher-shell {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1833px;
+  height: 862px;
+  overflow: hidden;
+  isolation: isolate;
+  transform: translate(-50%, -50%) scale(var(--prototype-scale, 1));
+  transform-origin: center center;
+  border: 3px solid rgba(119, 119, 140, 0.47);
+  border-radius: 28px;
+  background-color: #101622;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.011) 1px, transparent 1px) 0 0 / 39px 39px,
+    linear-gradient(0deg, rgba(255,255,255,0.008) 1px, transparent 1px) 0 0 / 39px 39px,
+    radial-gradient(circle at 98% 29%, rgba(160, 70, 70, 0.18), transparent 18%),
+    radial-gradient(circle at 66% -8%, rgba(43, 55, 131, 0.22), transparent 32%),
+    radial-gradient(circle at 5% 96%, rgba(113, 58, 77, 0.47), transparent 24%),
+    linear-gradient(145deg, #191d2b, #080e19 58%, #0b121f);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.13),
+    inset 0 -1px 0 rgba(255,255,255,0.06),
+    0 28px 80px rgba(0,0,0,0.52);
+}
+
+.launcher-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0 48%, rgba(73, 88, 143, 0.1) 55%, transparent 72%),
+    linear-gradient(180deg, rgba(255,255,255,0.05), transparent 18%);
+  mix-blend-mode: screen;
+}
+
+.ambient {
+  position: absolute;
+  width: 520px;
+  height: 360px;
+  border-radius: 999px;
+  filter: blur(50px);
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+.ambient-blue {
+  right: 330px;
+  top: -120px;
+  background: #3458ff;
+}
+
+.ambient-red {
+  right: 18px;
+  top: 34px;
+  background: #b94846;
+  opacity: 0.14;
+}
+
+.topbar {
+  position: relative;
+  z-index: 1;
+  height: 108px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 34px 20px 30px;
+  border-bottom: 1px solid rgba(255,255,255,0.075);
+}
+
+.brand,
+.top-actions {
+  display: flex;
+  align-items: center;
+}
+
+.brand {
+  gap: 22px;
+}
+
+.logo {
+  width: 60px;
+  height: 60px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, 0.13);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.025));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.15),
+    0 12px 32px rgba(0,0,0,0.28);
+}
+
+.logo svg {
+  width: 33px;
+  fill: none;
+  stroke: #f28ae7;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 7px rgba(242, 138, 231, 0.4));
+}
+
+.brand strong {
+  font-size: 27px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.divider,
+.thin-divider {
+  display: inline-block;
+  width: 1px;
+  height: 28px;
+  background: rgba(255,255,255,0.2);
+}
+
+.tagline {
+  font-family: var(--font-zh-refined);
+  color: rgba(222, 227, 238, 0.58);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.top-actions {
+  gap: 20px;
+}
+
+.search,
+.settings,
+.add {
+  position: relative;
+  overflow: hidden;
+  --hover-x: 50%;
+  --hover-y: 50%;
+  --hover-lift: 0px;
+  --hover-scale: 1;
+  --hover-glow: 0;
+  border: 2px solid rgba(255,255,255,0.09);
+  background: linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 14px 28px rgba(0,0,0,0.22),
+    0 0 calc(var(--hover-glow) * 24px) rgba(105, 176, 255, 0.2);
+  transform: translateY(var(--hover-lift)) scale(var(--hover-scale));
+  transition:
+    border-color 180ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
+  will-change: transform;
+}
+
+.search:hover,
+.settings:hover,
+.add:hover {
+  --hover-lift: -3px;
+  --hover-scale: 1.012;
+  --hover-glow: 1;
+  border-color: rgba(255,255,255,0.13);
+}
+
+.search {
+  width: 205px;
+  height: 66px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 22px;
+  border-radius: 18px;
+  color: rgba(241, 244, 252, 0.76);
+  font-family: var(--font-zh-refined);
+  font-size: 23px;
+  font-weight: 500;
+}
+
+.search svg {
+  width: 28px;
+}
+
+.settings {
+  width: 70px;
+  height: 66px;
+  display: grid;
+  place-items: center;
+  border-radius: 17px;
+}
+
+.theme-toggle {
+  position: relative;
+  --hover-lift: 0px;
+  --hover-scale: 1;
+  width: 112px;
+  height: 66px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 2px solid rgba(255,255,255,0.09);
+  border-radius: 17px;
+  background: linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 14px 28px rgba(0,0,0,0.22);
+  transform: translateY(var(--hover-lift)) scale(var(--hover-scale));
+  transition:
+    border-color 180ms ease,
+    box-shadow 220ms ease,
+    transform 220ms ease;
+  cursor: pointer;
+}
+
+.theme-toggle:hover {
+  --hover-lift: -3px;
+  --hover-scale: 1.012;
+  border-color: rgba(255,255,255,0.13);
+}
+
+.theme-toggle::before {
+  content: "";
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  left: 9px;
+  top: 15px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.13), 0 8px 20px rgba(0,0,0,0.2);
+  transition: transform 220ms ease;
+}
+
+:root[data-theme="aurora"] .theme-toggle::before {
+  transform: translateX(58px);
+}
+
+:root[data-theme="warm"] .theme-toggle::before {
+  transform: translateX(29px);
+}
+
+.theme-swatch {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), 0 0 14px rgba(0,0,0,0.16);
+}
+
+.theme-swatch-classic {
+  background: linear-gradient(145deg, #5ca9ff, #1c263c 58%, #7a3d55);
+}
+
+.theme-swatch-warm {
+  background: linear-gradient(145deg, #f7b45e, #5b3327);
+}
+
+.theme-swatch-aurora {
+  background: linear-gradient(145deg, #66a6ff, #b06bff 52%, #ff7468);
+}
+
+.settings svg,
+.search svg {
+  fill: none;
+  stroke: rgba(239, 243, 255, 0.75);
+  stroke-width: 2.35;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.settings svg {
+  width: 34px;
+  height: 34px;
+}
+
+.thin-divider {
+  height: 30px;
+  opacity: 0.35;
+}
+
+.traffic {
+  display: flex;
+  gap: 19px;
+  align-items: center;
+  padding-left: 2px;
+}
+
+.traffic i {
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  box-shadow: 0 0 16px currentColor;
+}
+
+.traffic .red { background: #f25f5a; color: rgba(242, 95, 90, 0.42); }
+.traffic .yellow { background: #f5bd4e; color: rgba(245, 189, 78, 0.38); }
+.traffic .green { background: #6dd15c; color: rgba(109, 209, 92, 0.38); }
+
+.tabs {
+  position: relative;
+  z-index: 1;
+  height: 80px;
+  display: flex;
+  align-items: end;
+  gap: 40px;
+  padding-left: 28px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+
+.tab,
+.add {
+  height: 64px;
+  border: 0;
+}
+
+.tab {
+  min-width: 130px;
+  padding: 0 38px;
+  color: rgba(228,232,242,0.62);
+  background: transparent;
+  border-radius: 13px 13px 0 0;
+  font-family: var(--font-zh-refined);
+  font-size: 25px;
+  font-weight: 560;
+}
+
+.tab.active {
+  position: relative;
+  color: #fbfcff;
+  background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-bottom: 0;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.09), 0 16px 34px rgba(0,0,0,0.18);
+}
+
+.tab.active::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 7px;
+  border-radius: 4px 4px 0 0;
+  background: linear-gradient(90deg, #3f90ff, #69b0ff);
+  box-shadow: 0 0 16px rgba(72, 151, 255, 0.55);
+}
+
+.add {
+  width: 60px;
+  margin-bottom: 9px;
+  border-radius: 18px;
+  display: grid;
+  place-items: center;
+  padding: 0 0 4px;
+  font-size: 37px;
+  line-height: 0;
+  font-weight: 300;
+  color: rgba(247, 249, 255, 0.92);
+}
+
+.keyboard {
+  position: relative;
+  z-index: 1;
+  padding-top: 17px;
+}
+
+.row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 160px;
+  gap: 14px;
+  height: 145px;
+  margin-bottom: 12px;
+}
+
+.number-row { margin-left: 80px; }
+.q-row { margin-left: 130px; }
+.a-row { margin-left: 170px; grid-auto-columns: 158px; }
+.z-row { margin-left: 212px; grid-auto-columns: 166px; }
+
+.key {
+  position: relative;
+  --tilt-x: 0deg;
+  --tilt-y: 0deg;
+  --hover-x: 50%;
+  --hover-y: 50%;
+  --hover-lift: 0px;
+  --hover-scale: 1;
+  --hover-glow: 0;
+  height: 145px;
+  border: 2px solid rgba(255,255,255,0.09);
+  border-radius: 16px;
+  overflow: hidden;
+  color: #eef2fb;
+  background: linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 14px 28px rgba(0,0,0,0.22),
+    0 0 calc(var(--hover-glow) * 24px) rgba(105, 176, 255, 0.18);
+  transform:
+    perspective(720px)
+    translateY(var(--hover-lift))
+    rotateX(var(--tilt-x))
+    rotateY(var(--tilt-y))
+    scale(var(--hover-scale));
+  transform-style: preserve-3d;
+  transition:
+    border-color 180ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
+  will-change: transform;
+}
+
+.key::before,
+.search::before,
+.settings::before,
+.add::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: var(--hover-glow);
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at var(--hover-x) var(--hover-y), rgba(255,255,255,0.22), transparent 34%),
+    linear-gradient(135deg, rgba(255,255,255,0.12), transparent 48%);
+  mix-blend-mode: screen;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.key::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 14px;
+  background: radial-gradient(circle at 70% 82%, rgba(255,255,255,0.035), transparent 36%);
+  pointer-events: none;
+}
+
+.key:hover {
+  --hover-lift: -7px;
+  --hover-scale: 1.022;
+  --hover-glow: 1;
+  border-color: rgba(255,255,255,0.13);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.1),
+    0 16px 30px rgba(0,0,0,0.25),
+    0 0 calc(var(--hover-glow) * 24px) rgba(105, 176, 255, 0.18);
+}
+
+.key:active {
+  --hover-lift: 1px;
+  --hover-scale: 0.992;
+}
+
+.hint {
+  position: absolute;
+  top: 12px;
+  left: 17px;
+  color: rgba(220, 226, 239, 0.48);
+  font-size: 19px;
+  font-weight: 620;
+}
+
+.filled {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.label {
+  position: relative;
+  z-index: 2;
+  font-family: var(--font-zh-refined);
+  color: rgba(252, 253, 255, 0.98);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1;
+  text-shadow: 0 1px 6px rgba(0,0,0,0.55);
+}
+
+.icon {
+  position: relative;
+  z-index: 2;
+  width: 47px;
+  height: 47px;
+  display: grid;
+  place-items: center;
+}
+
+.icon svg {
+  width: 46px;
+  height: 46px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.96;
+  filter:
+    drop-shadow(0 0 5px color-mix(in srgb, currentColor 48%, transparent))
+    drop-shadow(0 1px 2px rgba(0,0,0,0.42));
+}
+
+.icon-blue { color: #5ca9ff; }
+.icon-purple { color: #a77dff; }
+.icon-green { color: #75d997; }
+.icon-orange { color: #ffb94a; }
+.icon-terminal { color: #6cde75; }
+
+.sun {
+  width: 44px;
+  height: 44px;
+  border: 4px solid rgba(231, 236, 246, 0.8);
+  border-radius: 50%;
+  transform: scale(0.52);
+  box-shadow:
+    0 -34px 0 -18px rgba(231, 236, 246, 0.8),
+    0 34px 0 -18px rgba(231, 236, 246, 0.8),
+    34px 0 0 -18px rgba(231, 236, 246, 0.8),
+    -34px 0 0 -18px rgba(231, 236, 246, 0.8),
+    24px 24px 0 -18px rgba(231, 236, 246, 0.8),
+    -24px -24px 0 -18px rgba(231, 236, 246, 0.8),
+    24px -24px 0 -18px rgba(231, 236, 246, 0.8),
+    -24px 24px 0 -18px rgba(231, 236, 246, 0.8);
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.36));
+}
+
+.gpt-mark {
+  color: #75d997;
+  font-size: 48px;
+  font-weight: 900;
+  line-height: 0.76;
+  text-shadow: 0 0 10px rgba(117,217,151,0.52), 0 1px 2px rgba(0,0,0,0.42);
+}
+
+.braces {
+  color: #aa78ff;
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 0.72;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px rgba(170, 120, 255, 0.52), 0 1px 2px rgba(0,0,0,0.42);
+}
+
+.vs {
+  color: #56a7ff;
+  font-size: 44px;
+  transform: rotate(45deg) skew(-6deg, -6deg);
+  text-shadow: -10px 10px 0 rgba(79, 151, 235, 0.95), 0 0 12px rgba(86,167,255,0.46);
+  line-height: 0.7;
+}
+
+:root[data-theme="warm"] body {
+  background: #090806;
+}
+
+:root[data-theme="warm"] .stage {
+  background:
+    radial-gradient(circle at 93% 8%, rgba(112, 52, 65, 0.18), transparent 24%),
+    radial-gradient(circle at 8% 100%, rgba(95, 55, 44, 0.45), transparent 34%),
+    linear-gradient(145deg, #090806 0%, #17120e 48%, #080806 100%);
+}
+
+:root[data-theme="warm"] .launcher-shell {
+  border-color: rgba(128, 105, 91, 0.52);
+  background-color: #17130f;
+  background:
+    linear-gradient(90deg, rgba(255,232,198,0.011) 1px, transparent 1px) 0 0 / 39px 39px,
+    linear-gradient(0deg, rgba(255,232,198,0.008) 1px, transparent 1px) 0 0 / 39px 39px,
+    radial-gradient(circle at 98% 29%, rgba(132, 63, 62, 0.18), transparent 18%),
+    radial-gradient(circle at 18% 4%, rgba(98, 68, 40, 0.22), transparent 30%),
+    radial-gradient(circle at 8% 96%, rgba(105, 61, 50, 0.45), transparent 24%),
+    linear-gradient(145deg, #1e1a14, #11100d 58%, #0a0a08);
+}
+
+:root[data-theme="warm"] .ambient-blue {
+  background: #7d5938;
+  opacity: 0.16;
+}
+
+:root[data-theme="warm"] .ambient-red {
+  background: #8f4b47;
+  opacity: 0.13;
+}
+
+:root[data-theme="warm"] .tab.active::after {
+  background: linear-gradient(90deg, #ffad57, #ffc46f);
+  box-shadow: 0 0 16px rgba(255, 177, 86, 0.48);
+}
+
+:root[data-theme="warm"] .key,
+:root[data-theme="warm"] .search,
+:root[data-theme="warm"] .settings,
+:root[data-theme="warm"] .add,
+:root[data-theme="warm"] .theme-toggle {
+  border-color: rgba(255, 220, 178, 0.12);
+  background: linear-gradient(145deg, rgba(255, 214, 157, 0.095), rgba(255, 255, 255, 0.025));
+  box-shadow:
+    inset 0 1px 0 rgba(255,232,198,0.08),
+    0 14px 28px rgba(0,0,0,0.24),
+    0 0 calc(var(--hover-glow, 0) * 22px) rgba(255, 181, 92, 0.18);
+}
+
+:root[data-theme="warm"] .logo svg {
+  stroke: #f09adf;
+}
+
+:root[data-theme="warm"] .icon-blue { color: #74a8ff; }
+:root[data-theme="warm"] .icon-purple { color: #c08bdf; }
+:root[data-theme="warm"] .icon-green { color: #7bd19a; }
+:root[data-theme="warm"] .icon-orange { color: #ffb54f; }
+:root[data-theme="warm"] .icon-terminal { color: #91dd72; }
+:root[data-theme="warm"] .sun { border-color: rgba(255, 178, 72, 0.78); }
+
+:root[data-theme="aurora"] body {
+  background: #050917;
+}
+
+:root[data-theme="aurora"] .stage {
+  background:
+    radial-gradient(circle at 88% 5%, rgba(203, 95, 91, 0.24), transparent 24%),
+    radial-gradient(circle at 10% 100%, rgba(96, 48, 109, 0.44), transparent 34%),
+    linear-gradient(145deg, #050b16 0%, #111a30 42%, #060b16 100%);
+}
+
+:root[data-theme="aurora"] .launcher-shell {
+  border-color: rgba(132, 142, 178, 0.54);
+  background-color: #101622;
+  background:
+    linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 39px 39px,
+    linear-gradient(0deg, rgba(255,255,255,0.008) 1px, transparent 1px) 0 0 / 39px 39px,
+    radial-gradient(circle at 88% 13%, rgba(205, 89, 84, 0.24), transparent 22%),
+    radial-gradient(circle at 66% 8%, rgba(94, 73, 178, 0.28), transparent 30%),
+    radial-gradient(circle at 11% 96%, rgba(116, 58, 128, 0.42), transparent 28%),
+    linear-gradient(145deg, #121a2a, #07111e 58%, #08101d);
+}
+
+:root[data-theme="aurora"] .ambient-blue {
+  background: #4768ff;
+  opacity: 0.24;
+}
+
+:root[data-theme="aurora"] .ambient-red {
+  background: #d25b57;
+  opacity: 0.15;
+}
+
+:root[data-theme="aurora"] .tab.active::after {
+  background: linear-gradient(90deg, #4b95ff, #82baff);
+  box-shadow: 0 0 16px rgba(72, 151, 255, 0.58);
+}
+
+:root[data-theme="aurora"] .key,
+:root[data-theme="aurora"] .search,
+:root[data-theme="aurora"] .settings,
+:root[data-theme="aurora"] .add,
+:root[data-theme="aurora"] .theme-toggle {
+  border-color: rgba(198, 211, 255, 0.13);
+  background: linear-gradient(145deg, rgba(204, 217, 255, 0.118), rgba(255, 255, 255, 0.036));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.09),
+    0 14px 28px rgba(0,0,0,0.23),
+    0 0 calc(var(--hover-glow, 0) * 24px) rgba(105, 176, 255, 0.22);
+}
+
+:root[data-theme="aurora"] .key:nth-child(7n + 1),
+:root[data-theme="aurora"] .key.filled:nth-child(3n) {
+  border-color: rgba(123, 217, 151, 0.24);
+  background:
+    radial-gradient(circle at 50% 35%, rgba(93, 210, 158, 0.11), transparent 46%),
+    linear-gradient(145deg, rgba(204, 217, 255, 0.118), rgba(255, 255, 255, 0.036));
+}
+
+:root[data-theme="aurora"] .key:nth-child(4n + 2) {
+  border-color: rgba(167, 125, 255, 0.25);
+}
+
+</style>
+  </head>
+  <body>
+    <main class="stage" aria-label="DevLauncher image to code prototype">
+      <section class="launcher-shell">
+        <div class="ambient ambient-blue"></div>
+        <div class="ambient ambient-red"></div>
+        <header class="topbar">
+          <div class="brand">
+            <div class="logo" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M5 16.5h14l-1.1-8.2a2.4 2.4 0 0 0-2.3-2l-2.5 2.6-2.3-3.5-2.4 3.5-2.7-2.6a2.4 2.4 0 0 0-2.4 2L5 16.5Z" />
+                <path d="M8.5 13.1h7" />
+              </svg>
+            </div>
+            <strong>DevLauncher</strong>
+            <span class="divider"></span>
+            <span class="tagline">一键启动你的开发工作流</span>
+          </div>
+          <div class="top-actions">
+            <button class="search" type="button" aria-label="搜索">
+              <svg viewBox="0 0 24 24"><path d="m21 21-4.3-4.3" /><circle cx="11" cy="11" r="7" /></svg>
+              <span>搜索</span>
+            </button>
+            <button class="settings" type="button" aria-label="设置">
+              <svg viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1A2 2 0 0 1 4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 0 1 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 .9-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 0 1 19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5.9h.1a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" /></svg>
+            </button>
+            <button class="theme-toggle" type="button" aria-label="切换主题" aria-pressed="false">
+              <span class="theme-swatch theme-swatch-classic"></span>
+              <span class="theme-swatch theme-swatch-warm"></span>
+              <span class="theme-swatch theme-swatch-aurora"></span>
+            </button>
+            <span class="thin-divider"></span>
+            <div class="traffic" aria-hidden="true">
+              <i class="red"></i><i class="yellow"></i><i class="green"></i>
+            </div>
+          </div>
+        </header>
+
+        <nav class="tabs" aria-label="分类">
+          <button class="tab active" type="button">开发</button>
+          <button class="tab" type="button">网站</button>
+          <button class="add" type="button" aria-label="添加">+</button>
+        </nav>
+
+        <div class="keyboard" aria-label="快捷键网格">
+          <div class="row number-row">
+            <button class="key filled"><span class="hint">1</span><span class="icon sun"></span><span class="label">锁屏</span></button>
+            <button class="key"><span class="hint">2</span></button>
+            <button class="key"><span class="hint">3</span></button>
+            <button class="key filled"><span class="hint">4</span><span class="icon icon-blue" data-icon="monitor"></span><span class="label">远程桌面</span></button>
+            <button class="key"><span class="hint">5</span></button>
+            <button class="key"><span class="hint">6</span></button>
+            <button class="key filled"><span class="hint">7</span><span class="icon icon-purple" data-icon="image"></span><span class="label">截图问题</span></button>
+            <button class="key"><span class="hint">8</span></button>
+            <button class="key"><span class="hint">9</span></button>
+            <button class="key"><span class="hint">0</span></button>
+          </div>
+          <div class="row q-row">
+            <button class="key filled"><span class="hint">Q</span><span class="icon icon-green" data-icon="shield"></span><span class="label">令牌</span></button>
+            <button class="key filled"><span class="hint">W</span><span class="icon icon-orange" data-icon="folder"></span><span class="label">工作区</span></button>
+            <button class="key"><span class="hint">E</span></button>
+            <button class="key"><span class="hint">R</span></button>
+            <button class="key"><span class="hint">T</span></button>
+            <button class="key filled"><span class="hint">Y</span><span class="icon icon-blue" data-icon="cloud"></span><span class="label">Termius</span></button>
+            <button class="key"><span class="hint">U</span></button>
+            <button class="key filled"><span class="hint">I</span><span class="icon icon-green" data-icon="globe"></span><span class="label">iotda</span></button>
+            <button class="key"><span class="hint">O</span></button>
+            <button class="key"><span class="hint">P</span></button>
+          </div>
+          <div class="row a-row">
+            <button class="key"><span class="hint">A</span></button>
+            <button class="key filled"><span class="hint">S</span><span class="icon icon-purple" data-icon="file"></span><span class="label">快捷记忆</span></button>
+            <button class="key"><span class="hint">D</span></button>
+            <button class="key"><span class="hint">F</span></button>
+            <button class="key filled"><span class="hint">G</span><span class="gpt-mark">◎</span><span class="label">GPT</span></button>
+            <button class="key"><span class="hint">H</span></button>
+            <button class="key filled"><span class="hint">J</span><span class="braces">{ }</span><span class="label">JSON</span></button>
+            <button class="key"><span class="hint">K</span></button>
+            <button class="key"><span class="hint">L</span></button>
+          </div>
+          <div class="row z-row">
+            <button class="key filled"><span class="hint">Z</span><span class="icon icon-green" data-icon="globe"></span><span class="label">谷歌</span></button>
+            <button class="key filled"><span class="hint">X</span><span class="icon icon-blue" data-icon="camera"></span><span class="label">截图</span></button>
+            <button class="key filled"><span class="hint">C</span><span class="icon icon-blue" data-icon="clipboard"></span><span class="label">剪切板</span></button>
+            <button class="key filled"><span class="hint">V</span><span class="vs">◆</span><span class="label">VS</span></button>
+            <button class="key"><span class="hint">B</span></button>
+            <button class="key"><span class="hint">N</span></button>
+            <button class="key filled"><span class="hint">M</span><span class="icon icon-terminal" data-icon="terminal"></span><span class="label">终端</span></button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <script>
+const paths = {
+  monitor: '<path d="M4 5h16v10H4z"/><path d="M12 15v4"/><path d="M8 19h8"/>',
+  image: '<path d="M4 5h16v14H4z"/><path d="m8 15 3-3 3 3 2-2 3 3"/><circle cx="8.5" cy="9" r="1.1"/>',
+  shield: '<path d="M12 3 5.5 6v5.5c0 4 2.7 7.7 6.5 9 3.8-1.3 6.5-5 6.5-9V6L12 3Z"/><path d="m9 12 2 2 4-5"/>',
+  folder: '<path d="M3.5 7.5h6l1.8 2H20.5v9H3.5z"/><path d="M3.5 9.5h17"/>',
+  cloud: '<path d="M8 17h8.8a4.2 4.2 0 0 0 .5-8.3A6 6 0 0 0 6 10.5 3.5 3.5 0 0 0 8 17Z"/><path d="m10 12 2-2 2 2"/><path d="m12 10v5"/>',
+  globe: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4a12 12 0 0 1 0 16"/><path d="M12 4a12 12 0 0 0 0 16"/>',
+  file: '<path d="M6 3.5h8l4 4V20H6z"/><path d="M14 3.5v4h4"/><path d="M9 12h6"/><path d="M9 16h5"/>',
+  camera: '<path d="M5 8h3l1.2-2h5.6L16 8h3v11H5z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  clipboard: '<path d="M8 5h8v3H8z"/><path d="M7 7H5.5V20h13V7H17"/>',
+  terminal: '<path d="M4 5h16v14H4z"/><path d="m8 10 3 2.5L8 15"/><path d="M13 15h4"/>',
+};
+
+function fitPrototype() {
+  const scale = Math.min((window.innerWidth - 10) / 1833, (window.innerHeight - 14) / 862, 1);
+  document.documentElement.style.setProperty("--prototype-scale", Math.max(scale, 0.2).toFixed(4));
+}
+
+fitPrototype();
+window.addEventListener("resize", fitPrototype);
+
+const THEME_KEY = "devlauncher.prototype.theme";
+const themes = ["classic", "warm", "aurora"];
+const savedTheme = localStorage.getItem(THEME_KEY);
+const initialTheme = themes.includes(savedTheme) ? savedTheme : "classic";
+const themeToggle = document.querySelector(".theme-toggle");
+
+function applyTheme(theme) {
+  const nextTheme = themes.includes(theme) ? theme : "classic";
+  document.documentElement.dataset.theme = nextTheme;
+  localStorage.setItem(THEME_KEY, nextTheme);
+  if (themeToggle) {
+    themeToggle.setAttribute("aria-pressed", String(nextTheme === "aurora"));
+    const themeNames = {
+      classic: "当前：原版主题",
+      warm: "当前：暖棕主题",
+      aurora: "当前：蓝紫主题",
+    };
+    themeToggle.setAttribute("title", themeNames[nextTheme]);
+  }
+}
+
+applyTheme(initialTheme);
+
+themeToggle?.addEventListener("click", () => {
+  const current = document.documentElement.dataset.theme || "classic";
+  const nextIndex = (themes.indexOf(current) + 1) % themes.length;
+  applyTheme(themes[nextIndex]);
+});
+
+document.querySelectorAll("[data-icon]").forEach((node) => {
+  const icon = node.dataset.icon;
+  node.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${paths[icon] || ""}</svg>`;
+});
+
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function animateValue(from, to, duration, ease, update) {
+  if (reduceMotion.matches || duration === 0) {
+    update(to);
+    return () => {};
+  }
+
+  const start = performance.now();
+  let frame = 0;
+
+  function tick(now) {
+    const progress = Math.min((now - start) / duration, 1);
+    const eased = ease(progress);
+    update(from + (to - from) * eased);
+    if (progress < 1) frame = requestAnimationFrame(tick);
+  }
+
+  frame = requestAnimationFrame(tick);
+  return () => cancelAnimationFrame(frame);
+}
+
+const eases = {
+  power3Out: (t) => 1 - Math.pow(1 - t, 3),
+  backOut: (t) => {
+    const c1 = 1.45;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  },
+};
+
+function bindHoverMotion(element, options = {}) {
+  const maxTilt = options.maxTilt ?? 5;
+  const lift = options.lift ?? -6;
+  const scale = options.scale ?? 1.018;
+  const state = { lift: 0, scale: 1, glow: 0 };
+  const stops = [];
+
+  function setVar(name, value) {
+    element.style.setProperty(name, value);
+  }
+
+  function stopTweens() {
+    while (stops.length) stops.pop()();
+  }
+
+  element.addEventListener("pointerenter", () => {
+    stopTweens();
+    stops.push(animateValue(state.lift, lift, 360, eases.backOut, (value) => {
+      state.lift = value;
+      setVar("--hover-lift", `${value.toFixed(2)}px`);
+    }));
+    stops.push(animateValue(state.scale, scale, 320, eases.power3Out, (value) => {
+      state.scale = value;
+      setVar("--hover-scale", value.toFixed(4));
+    }));
+    stops.push(animateValue(state.glow, 1, 220, eases.power3Out, (value) => {
+      state.glow = value;
+      setVar("--hover-glow", value.toFixed(3));
+    }));
+  });
+
+  element.addEventListener("pointermove", (event) => {
+    const rect = element.getBoundingClientRect();
+    const px = (event.clientX - rect.left) / rect.width;
+    const py = (event.clientY - rect.top) / rect.height;
+    const tiltY = (px - 0.5) * maxTilt * 2;
+    const tiltX = -(py - 0.5) * maxTilt * 2;
+    setVar("--hover-x", `${(px * 100).toFixed(1)}%`);
+    setVar("--hover-y", `${(py * 100).toFixed(1)}%`);
+    setVar("--tilt-x", `${tiltX.toFixed(2)}deg`);
+    setVar("--tilt-y", `${tiltY.toFixed(2)}deg`);
+  });
+
+  element.addEventListener("pointerleave", () => {
+    stopTweens();
+    setVar("--tilt-x", "0deg");
+    setVar("--tilt-y", "0deg");
+    setVar("--hover-x", "50%");
+    setVar("--hover-y", "50%");
+    stops.push(animateValue(state.lift, 0, 460, eases.backOut, (value) => {
+      state.lift = value;
+      setVar("--hover-lift", `${value.toFixed(2)}px`);
+    }));
+    stops.push(animateValue(state.scale, 1, 360, eases.power3Out, (value) => {
+      state.scale = value;
+      setVar("--hover-scale", value.toFixed(4));
+    }));
+    stops.push(animateValue(state.glow, 0, 260, eases.power3Out, (value) => {
+      state.glow = value;
+      setVar("--hover-glow", value.toFixed(3));
+    }));
+  });
+}
+
+document.querySelectorAll(".key").forEach((element) => {
+  bindHoverMotion(element, { maxTilt: 4.5, lift: -7, scale: 1.022 });
+});
+
+document.querySelectorAll(".search, .settings, .add, .theme-toggle").forEach((element) => {
+  bindHoverMotion(element, { maxTilt: 2.2, lift: -3, scale: 1.012 });
+});
+
+</script>
+  </body>
+</html>

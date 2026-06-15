@@ -4,6 +4,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
+import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { CaptureIcon, CopyIcon, DownloadIcon, RetryIcon } from "@/icons/controlIcons";
 import { addScreenshot, takePendingScreenshotEdit, updateScreenshot } from "../screenshotStore";
 import type { StoredScreenshotAnnotation } from "../screenshotStore";
 
@@ -560,51 +562,6 @@ function IconBoxCallout() {
     </svg>
   );
 }
-function IconOcr() {
-  return (
-    <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" strokeWidth={2} />
-      <path d="M8 10h8M8 14h5" stroke="currentColor" strokeWidth={2} strokeLinecap="round" />
-      <path d="M7 2H5a3 3 0 0 0-3 3v2M17 2h2a3 3 0 0 1 3 3v2M7 22H5a3 3 0 0 1-3-3v-2M17 22h2a3 3 0 0 0 3-3v-2" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" />
-    </svg>
-  );
-}
-function IconUndo() {
-  return (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <polyline points="9 14 4 9 9 4" />
-      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
-    </svg>
-  );
-}
-function IconSave() {
-  return (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
-    </svg>
-  );
-}
-function IconCopy() {
-  return (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-}
-function IconIssueReport() {
-  return (
-    <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-      <rect x="3" y="4" width="18" height="16" rx="2.5" />
-      <path d="M7 14l2.4-2.4 2 2 2.8-3.1L17 14" strokeLinejoin="round" />
-      <path d="M7 17h5M15 17h2" />
-      <circle cx="17" cy="7" r="3" fill="currentColor" stroke="none" />
-      <text x="17" y="9.2" textAnchor="middle" fontSize="5.5" fontFamily="sans-serif" fontWeight="bold" fill="#111827">1</text>
-    </svg>
-  );
-}
 // 鈹€鈹€ Toolbar 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const TOOLS: { key: Tool; icon: () => ReactElement; title: string }[] = [
   { key: "move",       icon: IconMove,       title: "拖拽编辑痕迹 (V)" },
@@ -673,6 +630,7 @@ function Toolbar({
 
   return (
     <div
+      className="motion-scroll-area"
       style={{
         position: "absolute",
         display: "flex",
@@ -680,7 +638,6 @@ function Toolbar({
         gap: 2,
         padding: "7px 12px",
         maxWidth: "calc(100vw - 24px)",
-        overflowX: "auto",
         overflowY: "hidden",
         background: "rgba(20, 20, 24, 0.92)",
         backdropFilter: "blur(32px)",
@@ -715,7 +672,7 @@ function Toolbar({
                 cursor: ocrBusy ? "default" : "pointer",
               }}
             >
-              <IconOcr />
+              <CaptureIcon size={20} />
             </button>
           )}
         </span>
@@ -774,16 +731,16 @@ function Toolbar({
 
       {/* Actions */}
       <button title="撤销 (Ctrl+Z)" onClick={onUndo} style={baseBtn}>
-        <IconUndo />
+        <RetryIcon size={18} />
       </button>
       <button title="保存图片" onClick={onSave} style={baseBtn}>
-        <IconSave />
+        <DownloadIcon size={18} />
       </button>
       <button title="复制到剪贴板" onClick={onCopy} style={baseBtn}>
-        <IconCopy />
+        <CopyIcon size={18} />
       </button>
       <button title="存入截图问题报告" onClick={onPin} style={baseBtn}>
-        <IconIssueReport />
+        <BuiltinIcon feature="screenshotai" size={18} />
       </button>
 
       <div style={sep} />

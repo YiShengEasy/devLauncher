@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ClipboardEntry } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { MacWindowControls } from "@/components/MacWindowControls";
+import { animateListEnter, animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 
 interface ClipboardPanelProps {
   items: ClipboardEntry[];
@@ -30,6 +34,9 @@ export function ClipboardPanel({
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<TabType>("history");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
 
   const favoriteIds = new Set(favorites.map(f => f.id));
 
@@ -57,9 +64,21 @@ export function ClipboardPanel({
   const textCount = items.filter(e => e.kind === "text").length;
   const imageCount = items.filter(e => e.kind === "image").length;
 
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(listRef, () => {
+    const children = listRef.current?.children;
+    if (!children?.length) return;
+    animateListEnter(Array.from(children), reducedMotion);
+  }, [activeTab, search, filtered.length, items.length, favorites.length, reducedMotion]);
+
   return (
     <div
-      className="glass"
+      ref={rootRef}
+      className="glass motion-panel"
       style={{
         width: 500,
         borderRadius: 14,
@@ -97,12 +116,7 @@ export function ClipboardPanel({
             }}>{favorites.length}项</span>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button
-            onClick={onClose}
-            style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 18, padding: "0 4px", lineHeight: 1 }}
-          >×</button>
-        </div>
+        <MacWindowControls onClose={onClose} onMinimize={onClose} closeTitle="关闭剪贴板" minimizeTitle="最小化剪贴板" />
       </div>
 
       {/* Tabs */}
@@ -118,7 +132,7 @@ export function ClipboardPanel({
             borderBottom: activeTab === "history" ? "2px solid #38bdf8" : "2px solid transparent",
             color: activeTab === "history" ? "#e8eaf0" : "rgba(255,255,255,0.4)",
             borderRadius: "6px 6px 0 0",
-            transition: "all 0.15s",
+            transition: "background-color 150ms ease, border-color 150ms ease, color 150ms ease",
           }}
         >历史</button>
         <button
@@ -130,7 +144,7 @@ export function ClipboardPanel({
             borderBottom: activeTab === "favorites" ? "2px solid #facc15" : "2px solid transparent",
             color: activeTab === "favorites" ? "#e8eaf0" : "rgba(255,255,255,0.4)",
             borderRadius: "6px 6px 0 0",
-            transition: "all 0.15s",
+            transition: "background-color 150ms ease, border-color 150ms ease, color 150ms ease",
           }}
         >⭐ 收藏</button>
       </div>
@@ -153,13 +167,13 @@ export function ClipboardPanel({
       </div>
 
       {/* List */}
-      <div style={{ overflowY: "auto", flex: 1, padding: "0 8px 6px" }}>
+      <div ref={listRef} className="motion-list motion-scroll-area" style={{ flex: 1, padding: "0 8px 6px" }}>
         {filtered.length === 0 ? (
           <div style={{
             textAlign: "center", padding: "32px 0",
             color: "rgba(255,255,255,0.25)", fontSize: 13,
           }}>
-            {activeTab === "history" ? "暂无剪切板历史" : "暂无收藏"}
+            {activeTab === "history" ? "暂无剪贴板历史" : "暂无收藏"}
             {activeTab === "favorites" && (
               <div style={{ fontSize: 11, color: "rgba(255,255,255,0.15)", marginTop: 6 }}>
                 在历史记录中点击 ⭐ 收藏项目
@@ -179,7 +193,7 @@ export function ClipboardPanel({
                   marginBottom: 3,
                   background: isCopied ? "rgba(56,189,248,0.18)" : "rgba(255,255,255,0.04)",
                   border: `1px solid ${isCopied ? "rgba(56,189,248,0.4)" : fav ? "rgba(250,204,21,0.20)" : "rgba(255,255,255,0.07)"}`,
-                  transition: "all 0.12s",
+                  transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease",
                   display: "flex", alignItems: "center", gap: 8,
                 }}
                 onMouseEnter={e => {
@@ -273,12 +287,14 @@ export function ClipboardPanel({
         flexShrink: 0,
       }}>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>
-          点击复制 · Esc 关闭 · Ctrl+Shift+V 唤起
+          点击复制 · Esc 关闭 · Ctrl+Alt+V 唤起
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {activeTab === "history" && items.length > 0 && (
             <button
-              onClick={onClear}
+              onClick={() => {
+                if (window.confirm("清空剪贴板历史？")) onClear();
+              }}
               style={{
                 fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
                 border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.10)",
@@ -288,7 +304,9 @@ export function ClipboardPanel({
           )}
           {activeTab === "favorites" && favorites.length > 0 && (
             <button
-              onClick={onClearFavorites}
+              onClick={() => {
+                if (window.confirm("清空全部收藏？")) onClearFavorites();
+              }}
               style={{
                 fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
                 border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.10)",

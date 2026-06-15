@@ -121,6 +121,81 @@ fn move_remote_mouse(enigo: &mut enigo::Enigo, x: i32, y: i32) {
     let _ = enigo.move_mouse(x, y, enigo::Coordinate::Abs);
 }
 
+fn remote_key_from_event(key: &str, code: &str) -> Option<enigo::Key> {
+    use enigo::Key;
+    match code {
+        "KeyA" => Some(Key::A),
+        "KeyB" => Some(Key::B),
+        "KeyC" => Some(Key::C),
+        "KeyD" => Some(Key::D),
+        "KeyE" => Some(Key::E),
+        "KeyF" => Some(Key::F),
+        "KeyG" => Some(Key::G),
+        "KeyH" => Some(Key::H),
+        "KeyI" => Some(Key::I),
+        "KeyJ" => Some(Key::J),
+        "KeyK" => Some(Key::K),
+        "KeyL" => Some(Key::L),
+        "KeyM" => Some(Key::M),
+        "KeyN" => Some(Key::N),
+        "KeyO" => Some(Key::O),
+        "KeyP" => Some(Key::P),
+        "KeyQ" => Some(Key::Q),
+        "KeyR" => Some(Key::R),
+        "KeyS" => Some(Key::S),
+        "KeyT" => Some(Key::T),
+        "KeyU" => Some(Key::U),
+        "KeyV" => Some(Key::V),
+        "KeyW" => Some(Key::W),
+        "KeyX" => Some(Key::X),
+        "KeyY" => Some(Key::Y),
+        "KeyZ" => Some(Key::Z),
+        "Digit0" => Some(Key::Num0),
+        "Digit1" => Some(Key::Num1),
+        "Digit2" => Some(Key::Num2),
+        "Digit3" => Some(Key::Num3),
+        "Digit4" => Some(Key::Num4),
+        "Digit5" => Some(Key::Num5),
+        "Digit6" => Some(Key::Num6),
+        "Digit7" => Some(Key::Num7),
+        "Digit8" => Some(Key::Num8),
+        "Digit9" => Some(Key::Num9),
+        _ => match key {
+            "Enter" => Some(Key::Return),
+            "Escape" => Some(Key::Escape),
+            "Tab" => Some(Key::Tab),
+            " " | "Spacebar" => Some(Key::Space),
+            "Backspace" => Some(Key::Backspace),
+            "Delete" => Some(Key::Delete),
+            "ArrowUp" => Some(Key::UpArrow),
+            "ArrowDown" => Some(Key::DownArrow),
+            "ArrowLeft" => Some(Key::LeftArrow),
+            "ArrowRight" => Some(Key::RightArrow),
+            "Home" => Some(Key::Home),
+            "End" => Some(Key::End),
+            "PageUp" => Some(Key::PageUp),
+            "PageDown" => Some(Key::PageDown),
+            "Shift" => Some(Key::Shift),
+            "Control" => Some(Key::Control),
+            "Alt" => Some(Key::Alt),
+            "Meta" => Some(Key::Meta),
+            "F1" => Some(Key::F1),
+            "F2" => Some(Key::F2),
+            "F3" => Some(Key::F3),
+            "F4" => Some(Key::F4),
+            "F5" => Some(Key::F5),
+            "F6" => Some(Key::F6),
+            "F7" => Some(Key::F7),
+            "F8" => Some(Key::F8),
+            "F9" => Some(Key::F9),
+            "F10" => Some(Key::F10),
+            "F11" => Some(Key::F11),
+            "F12" => Some(Key::F12),
+            _ => None,
+        },
+    }
+}
+
 // -----------------------------------------------
 // Remote Desktop Commands
 // -----------------------------------------------
@@ -277,7 +352,7 @@ pub async fn start_remotedesk_host(
 
         let (input_tx, input_rx) = std::sync::mpsc::channel::<String>();
         std::thread::spawn(move || {
-            use enigo::{Button, Enigo, Mouse, Settings};
+            use enigo::{Button, Enigo, Keyboard, Mouse, Settings};
             let mut enigo = match Enigo::new(&Settings::default()) {
                 Ok(e) => e,
                 Err(e) => {
@@ -322,6 +397,18 @@ pub async fn start_remotedesk_host(
                     "mouseup" => {
                         move_remote_mouse(&mut enigo, x, y);
                         let _ = enigo.button(button, enigo::Direction::Release);
+                    }
+                    "keydown" | "keyup" => {
+                        let key_name = v["key"].as_str().unwrap_or("");
+                        let code = v["code"].as_str().unwrap_or("");
+                        let direction = if kind == "keydown" {
+                            enigo::Direction::Press
+                        } else {
+                            enigo::Direction::Release
+                        };
+                        if let Some(key) = remote_key_from_event(key_name, code) {
+                            let _ = enigo.key(key, direction);
+                        }
                     }
                     _ => {}
                 }

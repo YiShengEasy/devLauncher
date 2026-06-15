@@ -5,6 +5,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
+import { MacWindowControls } from "@/components/MacWindowControls";
+import { animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 import "@xterm/xterm/css/xterm.css";
 
 function makeSessionId(): string {
@@ -18,12 +22,20 @@ function toBase64(str: string): string {
 }
 
 export function TerminalApp() {
+  const rootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const sessionIdRef = useRef<string>(makeSessionId());
   const spawnedRef = useRef(false);
   const [title, setTitle] = useState("终端");
+
+  const reducedMotion = useReducedMotion();
+
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
 
   useEffect(() => {
     applyThemeFromConfig();
@@ -140,8 +152,7 @@ export function TerminalApp() {
 
     // ── Keyboard shortcuts ────────────────────────────────────────────────────
     const keyHandler = (e: KeyboardEvent) => {
-      // Ctrl+W → hide window
-      if (e.ctrlKey && e.key === "w") {
+      if (e.key === "Escape" || (e.ctrlKey && e.key.toLowerCase() === "w")) {
         e.preventDefault();
         getCurrentWindow().hide().catch(() => {});
       }
@@ -162,6 +173,7 @@ export function TerminalApp() {
 
   return (
     <div
+      ref={rootRef}
       style={{
         width: "100vw",
         height: "100vh",
@@ -189,22 +201,12 @@ export function TerminalApp() {
         <span style={{ fontSize: 12, color: "#888", fontFamily: "sans-serif" }}>
           🖥️ {title}
         </span>
-        <button
-          onClick={() => getCurrentWindow().hide().catch(() => {})}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#666",
-            cursor: "pointer",
-            fontSize: 16,
-            lineHeight: 1,
-            padding: "2px 6px",
-            borderRadius: 4,
-          }}
-          title="关闭 (Ctrl+W)"
-        >
-          ×
-        </button>
+        <MacWindowControls
+          onClose={() => getCurrentWindow().hide().catch(() => {})}
+          onMinimize={() => getCurrentWindow().minimize().catch(() => getCurrentWindow().hide().catch(() => {}))}
+          closeTitle="关闭终端 (Esc / Ctrl+W)"
+          minimizeTitle="最小化终端"
+        />
       </div>
 
       {/* Terminal container */}

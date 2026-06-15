@@ -1,8 +1,12 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { saveConfig } from "@/api/config";
 import { DEFAULT_THEME } from "@/types/actions";
+import { MacWindowControls } from "@/components/MacWindowControls";
+import { animateListEnter, animatePanelEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 import type { CSSProperties } from "react";
 import type { KeyId, KeyMap, KeyboardConfig, ThemeConfig, UrlAction } from "@/types/actions";
 
@@ -180,6 +184,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const editingEntry = webAccounts.find((entry) => entry.id === editingId) ?? webAccounts[0] ?? null;
   const [editState, setEditState] = useState<EditState | null>(null);
   const [status, setStatus] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
+
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animatePanelEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(contentRef, () => {
+    const children = contentRef.current?.children;
+    if (!children?.length) return;
+    animateListEnter(Array.from(children), reducedMotion);
+  }, [activeSection, webAccounts.length, editingId, reducedMotion]);
 
   const persistTheme = (partial: Partial<ThemeConfig>) => {
     setTheme(partial);
@@ -266,6 +284,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   const clearPassword = async (entry: WebAccountEntry) => {
     if (!config || !entry.origin || !entry.action.username) return;
+    if (!window.confirm(`清除「${entry.action.name}」保存的网页密码？`)) return;
     await invoke("delete_web_password", {
       origin: entry.origin,
       username: entry.action.username,
@@ -283,6 +302,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   const removeBinding = async (entry: WebAccountEntry) => {
     if (!config) return;
+    if (!window.confirm(`移除网页账号绑定「${entry.action.name}」？`)) return;
     if (entry.action.hasPassword && entry.origin && entry.action.username) {
       await invoke("delete_web_password", {
         origin: entry.origin,
@@ -304,7 +324,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="settings-panel" style={{
+    <div ref={rootRef} className="settings-panel motion-panel" style={{
       width: "100%",
       height: "100%",
       display: "grid",
@@ -405,10 +425,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.84)" }}>
             {activeSection === "appearance" ? "外观设置" : activeSection === "entries" ? "Entries" : "URL 与账号密码本"}
           </div>
-          <button onClick={onClose} style={{ ...BUTTON, width: 28, height: 28, padding: 0 }}>×</button>
+          <MacWindowControls onClose={onClose} closeTitle="关闭设置" />
         </header>
 
-        <div style={{ padding: 14, overflow: "auto", minHeight: 0 }}>
+        <div ref={contentRef} className="motion-scroll-area" style={{ padding: 14, minHeight: 0 }}>
           {activeSection === "appearance" ? (
             <>
               <div style={LABEL}>预设主题</div>
@@ -483,28 +503,28 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               </div>
             </>
           ) : activeSection === "entries" ? (
-            <section style={{ padding: 2, overflow: "auto" }}>
+            <section className="motion-list" style={{ padding: 2 }}>
               <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>Entries</h2>
               <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Search</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  Shortcut: Ctrl+Space. Searches keyboard bindings, built-ins, and recent actions.
+                  Shortcut: Ctrl+Alt+K. Searches keyboard bindings, built-ins, and recent actions.
                 </div>
               </div>
               <div style={{ ...panelStyle, padding: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  Shortcut: Ctrl+Shift+P. Opens quick actions for search, screenshot report, clipboard, keyboard mode, and hide. Drag to reposition; the pet position is saved.
+                  Shortcut: Ctrl+Alt+P. Opens quick actions for search, screenshot report, clipboard, keyboard mode, and hide. Drag to reposition; the pet position is saved.
                 </div>
               </div>
             </section>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 0.9fr) minmax(280px, 1.1fr)", gap: 12 }}>
-              <section style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 0.9fr) minmax(280px, 1.1fr)", gap: 12, minHeight: 0 }}>
+              <section style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, overflow: "hidden", minHeight: 0 }}>
                 <div style={{ padding: "9px 10px", borderBottom: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.72)", fontSize: 12, fontWeight: 800 }}>
                   已绑定账号
                 </div>
-                <div style={{ maxHeight: 420, overflow: "auto" }}>
+                <div className="motion-list motion-scroll-area" style={{ maxHeight: 420 }}>
                   {webAccounts.length === 0 ? (
                     <div style={{ padding: 12, color: "rgba(255,255,255,0.42)", fontSize: 12, lineHeight: 1.6 }}>
                       暂无 URL 账号绑定。请在按键绑定的“网址”中启用 Chrome 登录页自动填入。
@@ -533,7 +553,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 </div>
               </section>
 
-              <section style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, padding: 12 }}>
+              <section className="motion-scroll-area" style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, padding: 12, minHeight: 0 }}>
                 {!editingEntry || !editState ? (
                   <div style={{ color: "rgba(255,255,255,0.42)", fontSize: 12 }}>选择左侧账号进行管理。</div>
                 ) : (

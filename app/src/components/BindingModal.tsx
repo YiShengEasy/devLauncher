@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import type {
@@ -7,6 +7,9 @@ import type {
 } from "@/types/actions";
 import { ACTION_TYPE_META, SYSTEM_PRESETS, BUILTIN_FEATURES } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { animateDialogEnter, animateListEnter } from "@/motion/presets";
+import { useGsapContext } from "@/motion/useGsapContext";
+import { useReducedMotion } from "@/motion/useReducedMotion";
 
 interface BindingModalProps {
   keyId: KeyId;
@@ -61,6 +64,9 @@ function getUrlOrigin(value: string): string | null {
 export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }: BindingModalProps) {
   const [activeType, setActiveType] = useState<ActionType>(initialAction?.type ?? "app");
   const [saveError, setSaveError] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const reducedMotion = useReducedMotion();
 
   // Form state for each type
   const [name, setName]       = useState(initialAction?.name ?? "");
@@ -90,6 +96,17 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
   const [builtinFeature, setBuiltinFeature] = useState<BuiltinFeature>(
     (initialAction as BuiltinAction)?.feature ?? "clipboard"
   );
+
+  useGsapContext(rootRef, () => {
+    if (!rootRef.current) return;
+    animateDialogEnter(rootRef.current, reducedMotion);
+  }, [reducedMotion]);
+
+  useGsapContext(listRef, () => {
+    const children = listRef.current?.children;
+    if (!children?.length) return;
+    animateListEnter(Array.from(children), reducedMotion);
+  }, [activeType, folderOpenWith, webAutofill, webHasPassword, sshHasPassword, reducedMotion]);
 
   const handleBrowseApp = async () => {
     const result = await dialogOpen({
@@ -236,9 +253,12 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
     >
       {/* Panel */}
       <div
+        ref={rootRef}
+        className="motion-dialog"
         style={{
           width: 460,
           maxHeight: "90vh",
+          minHeight: 0,
           display: "flex", flexDirection: "column",
           background: "var(--theme-bg, rgba(22, 24, 40, 0.97))",
           backdropFilter: "blur(var(--theme-blur, 32px)) saturate(180%)",
@@ -282,7 +302,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                   background: active ? "rgba(255,255,255,0.10)" : "transparent",
                   color: active ? meta.color : "rgba(255,255,255,0.38)",
                   borderBottom: active ? `2px solid ${meta.color}` : "2px solid transparent",
-                  transition: "all 0.12s",
+                  transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease",
                 }}
               >
                 {meta.label}
@@ -292,7 +312,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
         </div>
 
         {/* Form body */}
-        <div style={{ padding: "16px 16px 12px", overflowY: "auto", flex: 1 }}>
+        <div ref={listRef} className="motion-scroll-area" style={{ padding: "16px 16px 12px", flex: 1 }}>
           {/* Name field (common) */}
           {activeType !== "system" && (
             <Field label="名称（可选，自动填充）">
@@ -437,6 +457,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                           type="button"
                           title="清除已保存的网页密码"
                           onClick={async () => {
+                            if (!window.confirm("清除已保存的网页密码？")) return;
                             const origin = getUrlOrigin(target);
                             if (origin && webUsername.trim()) {
                               await invoke("delete_web_password", { origin, username: webUsername.trim() }).catch(console.error);
@@ -519,6 +540,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                       type="button"
                       title="清除已保存的密码"
                       onClick={async () => {
+                        if (!window.confirm("清除已保存的 SSH 密码？")) return;
                         const credKey = `ssh:${user.trim()}@${host.trim()}:${Number(port) || 22}`;
                         await invoke("delete_ssh_password", { key: credKey }).catch(console.error);
                         setSshHasPassword(false);
@@ -604,7 +626,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                     background: sysCmd === p.command ? "rgba(148,163,184,0.15)" : "rgba(255,255,255,0.04)",
                     color: "#e8eaf0", fontSize: 11, fontWeight: 500,
                     display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-                    transition: "all 0.12s", outline: "none",
+                    transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease", outline: "none",
                   }}
                 >
                   <span style={{ fontSize: 20 }}>{p.emoji}</span>
@@ -627,7 +649,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                     background: builtinFeature === feat ? "rgba(56,189,248,0.14)" : "rgba(255,255,255,0.04)",
                     color: "#e8eaf0", fontSize: 12, fontWeight: 500,
                     display: "flex", flexDirection: "column", alignItems: "center", gap: 7,
-                    transition: "all 0.12s", outline: "none",
+                    transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease", outline: "none",
                   }}
                 >
                   <BuiltinIcon feature={feat} size={30} />
@@ -649,6 +671,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
             {onClear && initialAction && (
               <button
                 onClick={async () => {
+                  if (!window.confirm(`清除 ${keyId} 的绑定？已保存的相关密码也会删除。`)) return;
                   // Also delete stored SSH password when clearing binding
                   if (initialAction.type === "ssh" && (initialAction as SshAction).hasPassword) {
                     const a = initialAction as SshAction;

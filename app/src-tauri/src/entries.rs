@@ -30,6 +30,13 @@ fn set_position_if_present(
         .map_err(|e| e.to_string())
 }
 
+fn center_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
+    let win = app
+        .get_webview_window(label)
+        .ok_or_else(|| format!("window not found: {}", label))?;
+    win.center().map_err(|e| e.to_string())
+}
+
 fn hide_window_if_present(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
     if let Some(win) = app.get_webview_window(label) {
         win.hide().map_err(|e| e.to_string())?;
@@ -83,6 +90,11 @@ pub fn show_keyboard_window(
     app: tauri::AppHandle,
     position: Option<EntryWindowPosition>,
 ) -> Result<(), String> {
+    if position.is_none() {
+        hide_window_if_present(&app, "pet")?;
+        center_window(&app, "main")?;
+        return show_window(&app, "main");
+    }
     show_entry_mode_window(&app, "main", "pet", position)
 }
 
