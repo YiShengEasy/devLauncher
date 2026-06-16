@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import gsap from "gsap";
 import { ClipIcon, KeyboardIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
 import { motionDuration, motionEase, motionStagger } from "@/motion/tokens";
@@ -16,21 +17,43 @@ import {
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
 const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
 const PET_ACTION_UPLOAD_SLOT = "devlauncher:pet-custom-action-upload";
+const PET_ACTION_STATE_KEY = "devlauncher:pet-action-state";
+const PET_CLOSED_WINDOW_SIZE = { width: 284, height: 284 };
+const PET_OPEN_WINDOW_SIZE = { width: 284, height: 284 };
+const PET_OPEN_WINDOW_OFFSET = {
+  x: 0,
+  y: 0,
+};
+const PET_WIDTH = 148;
+const PET_HEIGHT = 132;
+const PET_MENU_CLOSE_DELAY_MS = 220;
 
-type PetSpriteActionId = "keyboardJump";
+type PetSpriteActionId = "cozy" | "keyboardJump";
 
 type PetSpriteAction = {
   id: PetSpriteActionId;
   label: string;
   frameMs: number;
   frames: string[];
+  loop: boolean;
 };
 
 const petActionRegistry: Record<PetSpriteActionId, PetSpriteAction> = {
+  cozy: {
+    id: "cozy",
+    label: "悠闲待机",
+    frameMs: 140,
+    loop: true,
+    frames: Array.from(
+      { length: 8 },
+      (_, index) => `/pet/siamese/cozy-tail-ear-wiggle/${String(index + 1).padStart(4, "0")}.png`,
+    ),
+  },
   keyboardJump: {
     id: "keyboardJump",
     label: "键盘跳跃",
     frameMs: 90,
+    loop: true,
     frames: Array.from(
       { length: 8 },
       (_, index) => `/pet/siamese/keyboard-jump/${String(index + 1).padStart(4, "0")}.png`,
@@ -45,6 +68,7 @@ const customActionUploadEntry = {
 } as const;
 
 const shellStyle: CSSProperties = {
+  position: "relative",
   width: "100vw",
   height: "100vh",
   boxSizing: "border-box",
@@ -54,13 +78,14 @@ const shellStyle: CSSProperties = {
   background: "transparent",
   color: "rgba(255,255,255,0.92)",
   fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
+  overflow: "visible",
 };
 
 const centerButtonStyle: CSSProperties = {
   position: "relative",
   zIndex: 2,
-  width: 148,
-  height: 132,
+  width: PET_WIDTH,
+  height: PET_HEIGHT,
   border: 0,
   background: "transparent",
   boxShadow: "none",
@@ -76,7 +101,8 @@ const centerButtonStyle: CSSProperties = {
 const bubbleMenuStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
-  top: 2,
+  top: 14,
+  zIndex: 5,
   width: 194,
   height: 42,
   borderRadius: 6,
@@ -91,8 +117,7 @@ const bubbleMenuStyle: CSSProperties = {
 
 const actionButtonStyle: CSSProperties = {
   position: "absolute",
-  left: "50%",
-  top: "50%",
+  zIndex: 6,
   width: 32,
   height: 32,
   borderRadius: 5,
@@ -113,11 +138,11 @@ const actionButtonStyle: CSSProperties = {
 };
 
 const menuItems = [
-  { label: "搜索", title: "打开搜索", x: -72, y: 0, action: "search" },
-  { label: "报告", title: "打开截图报告", x: -36, y: 0, action: "report" },
-  { label: "剪贴", title: "打开剪贴板", x: 0, y: 0, action: "clip" },
-  { label: "键盘", title: "切换到键盘模式", x: 36, y: 0, action: "keyboard" },
-  { label: "动作", title: "自定义动作图片入口", x: 72, y: 0, action: "custom-action" },
+  { label: "搜索", title: "打开搜索", left: 24, top: 21, action: "search" },
+  { label: "报告", title: "打开截图报告", left: 61, top: 21, action: "report" },
+  { label: "剪贴", title: "打开剪贴板", left: 97, top: 21, action: "clip" },
+  { label: "键盘", title: "切换到键盘模式", left: 133, top: 21, action: "keyboard" },
+  { label: "动作", title: "自定义动作图片入口", left: 170, top: 21, action: "custom-action" },
 ] as const;
 
 type PetAction = (typeof menuItems)[number]["action"];
@@ -131,9 +156,17 @@ function PetActionIcon({ action }: { action: PetAction }) {
   return <span className="pet-action-plus" aria-hidden="true">+</span>;
 }
 
-function PixelSiamesePet({ frameSrc, actionLabel }: { frameSrc: string; actionLabel: string }) {
+function PixelSiamesePet({
+  actionId,
+  frameSrc,
+  actionLabel,
+}: {
+  actionId: PetSpriteActionId;
+  frameSrc: string;
+  actionLabel: string;
+}) {
   return (
-    <span className="pet-siamese-frame" aria-hidden="true">
+    <span className="pet-siamese-frame" data-pet-sprite-action={actionId} aria-hidden="true">
       <img src={frameSrc} alt="" draggable={false} data-action-label={actionLabel} />
     </span>
   );
@@ -156,10 +189,26 @@ async function restorePetPosition() {
   await getCurrentWindow().setPosition(new PhysicalPosition(position.x, position.y));
 }
 
+async function setPetWindowSize(open: boolean) {
+  const size = open ? PET_OPEN_WINDOW_SIZE : PET_CLOSED_WINDOW_SIZE;
+  await getCurrentWindow().setSize(new LogicalSize(size.width, size.height));
+}
+
+async function setPetWindowLayout(open: boolean) {
+  const win = getCurrentWindow();
+  const position = await win.outerPosition();
+  const size = open ? PET_OPEN_WINDOW_SIZE : PET_CLOSED_WINDOW_SIZE;
+  const offsetX = open ? -PET_OPEN_WINDOW_OFFSET.x : PET_OPEN_WINDOW_OFFSET.x;
+  const offsetY = open ? -PET_OPEN_WINDOW_OFFSET.y : PET_OPEN_WINDOW_OFFSET.y;
+
+  await win.setSize(new LogicalSize(size.width, size.height));
+  await win.setPosition(new PhysicalPosition(position.x + offsetX, position.y + offsetY));
+}
+
 export function PetEntryApp() {
   const [open, setOpen] = useState(false);
   const [modeTransition, setModeTransition] = useState<"idle" | "to-keyboard">("idle");
-  const [spriteActionId, setSpriteActionId] = useState<PetSpriteActionId>("keyboardJump");
+  const [spriteActionId, setSpriteActionId] = useState<PetSpriteActionId>("cozy");
   const [spriteFrameIndex, setSpriteFrameIndex] = useState(0);
   const [customHintVisible, setCustomHintVisible] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -167,6 +216,7 @@ export function PetEntryApp() {
   const centerButtonRef = useRef<HTMLButtonElement>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
+  const closeLayoutTimerRef = useRef<number | null>(null);
   const spriteTimerRef = useRef<number | null>(null);
   const customHintTimerRef = useRef<number | null>(null);
   const reducedMotion = useReducedMotion();
@@ -233,16 +283,16 @@ export function PetEntryApp() {
     setSpriteActionId(actionId);
     setSpriteFrameIndex(0);
 
-    if (reducedMotion) return;
+    if (reducedMotion || action.frames.length <= 1) return;
 
     let nextFrame = 1;
     const tick = () => {
       if (nextFrame >= action.frames.length) {
-        spriteTimerRef.current = window.setTimeout(() => {
-          setSpriteFrameIndex(0);
+        if (!action.loop) {
           spriteTimerRef.current = null;
-        }, action.frameMs);
-        return;
+          return;
+        }
+        nextFrame = 0;
       }
 
       setSpriteFrameIndex(nextFrame);
@@ -251,6 +301,42 @@ export function PetEntryApp() {
     };
 
     spriteTimerRef.current = window.setTimeout(tick, action.frameMs);
+  };
+
+  const playDefaultSpriteAction = () => {
+    const action = petActionRegistry.cozy;
+    stopSpriteTimer();
+    setSpriteActionId("cozy");
+    setSpriteFrameIndex(0);
+
+    if (reducedMotion) return;
+
+    let nextFrame = 1;
+    const tick = () => {
+      if (nextFrame >= action.frames.length) {
+        nextFrame = 0;
+      }
+
+      setSpriteFrameIndex(nextFrame);
+      nextFrame += 1;
+      spriteTimerRef.current = window.setTimeout(tick, action.frameMs);
+    };
+
+    spriteTimerRef.current = window.setTimeout(tick, action.frameMs);
+  };
+
+  const setPetSpriteAction = (actionId: PetSpriteActionId) => {
+    window.localStorage.setItem(PET_ACTION_STATE_KEY, actionId);
+    playSpriteAction(actionId);
+  };
+
+  const syncPetSpriteActionFromStorage = () => {
+    const nextAction = window.localStorage.getItem(PET_ACTION_STATE_KEY);
+    if (nextAction === "keyboardJump" || nextAction === "cozy") {
+      playSpriteAction(nextAction);
+      return;
+    }
+    playDefaultSpriteAction();
   };
 
   const showCustomActionHint = () => {
@@ -263,17 +349,61 @@ export function PetEntryApp() {
     }, 1800);
   };
 
+  const clearCloseLayoutTimer = () => {
+    if (closeLayoutTimerRef.current === null) return;
+    window.clearTimeout(closeLayoutTimerRef.current);
+    closeLayoutTimerRef.current = null;
+  };
+
+  const openPetMenu = () => {
+    clearCloseLayoutTimer();
+    setOpen(true);
+    setPetWindowLayout(true).catch(console.error);
+  };
+
+  const closePetMenu = () => {
+    clearCloseLayoutTimer();
+    setOpen(false);
+    closeLayoutTimerRef.current = window.setTimeout(() => {
+      setPetWindowLayout(false).catch(console.error);
+      closeLayoutTimerRef.current = null;
+    }, reducedMotion ? 0 : PET_MENU_CLOSE_DELAY_MS);
+  };
+
   useEffect(() => {
+    window.localStorage.setItem(PET_ACTION_STATE_KEY, "cozy");
+    playDefaultSpriteAction();
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== PET_ACTION_STATE_KEY) return;
+      syncPetSpriteActionFromStorage();
+    };
+    let unlistenPetAction: (() => void) | null = null;
+    listen<string>("pet-action-state", (event) => {
+      if (event.payload === "keyboardJump" || event.payload === "cozy") {
+        window.localStorage.setItem(PET_ACTION_STATE_KEY, event.payload);
+        playSpriteAction(event.payload);
+      }
+    })
+      .then((unlisten) => {
+        unlistenPetAction = unlisten;
+      })
+      .catch(console.error);
+
+    window.addEventListener("storage", handleStorage);
     return () => {
+      if (unlistenPetAction) unlistenPetAction();
+      window.removeEventListener("storage", handleStorage);
       stopSpriteTimer();
+      clearCloseLayoutTimer();
       if (customHintTimerRef.current !== null) window.clearTimeout(customHintTimerRef.current);
     };
-  }, []);
+  }, [reducedMotion]);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     const currentWindow = getCurrentWindow();
 
+    setPetWindowSize(false).catch(console.error);
     restorePetPosition().catch(console.error);
     currentWindow
       .onMoved(({ payload }) => {
@@ -342,7 +472,8 @@ export function PetEntryApp() {
     const tl = gsap.timeline({ defaults: { overwrite: "auto" } });
     if (open) {
       tl.to(menu, {
-        autoAlpha: 1,
+        opacity: 1,
+        visibility: "visible",
         scale: 1,
         y: 0,
         duration: reducedMotion ? 0 : motionDuration.quick,
@@ -354,10 +485,9 @@ export function PetEntryApp() {
           duration: 0,
         }, 0)
         .to(actionButtons, {
-          autoAlpha: 1,
+          opacity: 1,
+          visibility: "visible",
           scale: 1,
-          x: (index) => menuItems[index]?.x ?? 0,
-          y: (index) => menuItems[index]?.y ?? 0,
           xPercent: -50,
           yPercent: -50,
           duration: reducedMotion ? 0 : motionDuration.playful,
@@ -366,10 +496,9 @@ export function PetEntryApp() {
         }, reducedMotion ? 0 : 0.03);
     } else {
       tl.to(actionButtons, {
-        autoAlpha: 0,
+        opacity: 0,
+        visibility: "hidden",
         scale: 0.72,
-        x: 0,
-        y: 0,
         xPercent: -50,
         yPercent: -50,
         duration: reducedMotion ? 0 : motionDuration.quick,
@@ -380,7 +509,8 @@ export function PetEntryApp() {
         },
       }, 0)
         .to(menu, {
-          autoAlpha: 0,
+          opacity: 0,
+          visibility: "hidden",
           scale: 0.94,
           y: 8,
           duration: reducedMotion ? 0 : motionDuration.quick,
@@ -410,7 +540,7 @@ export function PetEntryApp() {
 
   async function switchToKeyboard() {
     if (modeTransition !== "idle") return;
-    playSpriteAction("keyboardJump");
+    setPetSpriteAction("keyboardJump");
     setModeTransition("to-keyboard");
     await savePetPosition();
     const duration = reducedMotion ? 0 : motionDuration.playful;
@@ -433,10 +563,9 @@ export function PetEntryApp() {
       ease: reducedMotion ? motionEase.standard : motionEase.morph,
     }, 0)
       .to(actionButtons, {
-        autoAlpha: 0,
+        opacity: 0,
+        visibility: "hidden",
         scale: reducedMotion ? 1 : 0.82,
-        x: 0,
-        y: 0,
         xPercent: -50,
         yPercent: -50,
         duration: reducedMotion ? 0 : motionDuration.panel,
@@ -447,7 +576,8 @@ export function PetEntryApp() {
         },
       }, 0)
       .to(menu, {
-        autoAlpha: 0,
+        opacity: 0,
+        visibility: "hidden",
         scale: reducedMotion ? 0.94 : 0.98,
         y: reducedMotion ? 8 : 14,
         duration,
@@ -464,7 +594,7 @@ export function PetEntryApp() {
 
     window.setTimeout(() => {
       gsap.set(shell, { autoAlpha: 1, scale: 1, filter: "none", clearProps: "transform" });
-      gsap.set(menu, { scaleX: 1, scaleY: 1, scale: 0.94, y: 8, autoAlpha: 0 });
+      gsap.set(menu, { scaleX: 1, scaleY: 1, scale: 0.94, y: 8, opacity: 0, visibility: "hidden" });
       gsap.set(centerButton, { scale: 1, rotation: 0, filter: "none", autoAlpha: 1 });
       window.localStorage.setItem(KEYBOARD_RETURN_ANIMATION_KEY, "1");
       invoke("switch_to_keyboard_mode", { position: getStoredEntryPosition("main") })
@@ -477,7 +607,7 @@ export function PetEntryApp() {
   }
 
   async function runAction(action: PetAction) {
-    setOpen(false);
+    closePetMenu();
     if (action === "search") await openSearch();
     if (action === "report") await openScreenshotReport();
     if (action === "clip") await openClipboard();
@@ -486,14 +616,14 @@ export function PetEntryApp() {
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (open || event.button !== 0) return;
+    if (event.button !== 0) return;
     pointerStartRef.current = { x: event.clientX, y: event.clientY };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function handlePointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
     const start = pointerStartRef.current;
-    if (!start || open) return;
+    if (!start) return;
     const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
     if (distance < 10) return;
 
@@ -515,8 +645,11 @@ export function PetEntryApp() {
       suppressClickRef.current = false;
       return;
     }
-    playSpriteAction("keyboardJump");
-    setOpen((value) => !value);
+    if (open) {
+      closePetMenu();
+      return;
+    }
+    openPetMenu();
   }
 
   return (
@@ -526,6 +659,9 @@ export function PetEntryApp() {
         className={`pet-bubble-menu ${open ? "is-open" : ""} ${modeTransition === "to-keyboard" ? "is-switching" : ""}`}
         style={{
           ...bubbleMenuStyle,
+          opacity: open ? 1 : 0,
+          visibility: open ? "visible" : "hidden",
+          transform: open ? "translateX(-50%) translateY(0) scale(1)" : bubbleMenuStyle.transform,
           pointerEvents: open ? "auto" : "none",
         }}
       >
@@ -536,6 +672,11 @@ export function PetEntryApp() {
             onClick={() => runAction(item.action).catch(console.error)}
             style={{
               ...actionButtonStyle,
+              left: item.left,
+              top: item.top,
+              opacity: open ? 1 : 0,
+              visibility: open ? "visible" : "hidden",
+              transform: open ? "translate(-50%, -50%) scale(1)" : actionButtonStyle.transform,
             }}
             data-pet-action={item.action}
             aria-label={item.label}
@@ -556,13 +697,13 @@ export function PetEntryApp() {
         onPointerCancel={handlePointerUp}
         style={{
           ...centerButtonStyle,
-          cursor: open ? "pointer" : "grab",
+          cursor: "grab",
           filter: open ? "drop-shadow(0 5px 0 rgba(0,0,0,0.18))" : "none",
         }}
         title={open ? "收起菜单" : "展开快捷入口"}
         type="button"
       >
-        <PixelSiamesePet frameSrc={spriteFrameSrc} actionLabel={spriteAction.label} />
+        <PixelSiamesePet actionId={spriteAction.id} frameSrc={spriteFrameSrc} actionLabel={spriteAction.label} />
       </button>
       <div className={`pet-custom-action-hint ${customHintVisible ? "is-visible" : ""}`} role="status">
         已预留上传动作图片入口

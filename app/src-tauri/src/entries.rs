@@ -1,4 +1,4 @@
-use tauri::{Manager, PhysicalPosition, PhysicalSize};
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
 pub struct EntryWindowPosition {
@@ -8,6 +8,7 @@ pub struct EntryWindowPosition {
 
 const KEYBOARD_PET_DOCK_OFFSET_X: i32 = -18;
 const KEYBOARD_PET_DOCK_OFFSET_Y: i32 = -150;
+const PET_ACTION_EVENT: &str = "pet-action-state";
 
 #[cfg(target_os = "macos")]
 fn ns_window(win: &tauri::WebviewWindow) -> Result<&objc2_app_kit::NSWindow, String> {
@@ -136,6 +137,10 @@ fn hide_window_if_present(app: &tauri::AppHandle, label: &str) -> Result<(), Str
     Ok(())
 }
 
+pub fn set_pet_action(app: &tauri::AppHandle, action: &str) {
+    let _ = app.emit(PET_ACTION_EVENT, action);
+}
+
 fn show_entry_mode_window(
     app: &tauri::AppHandle,
     label: &str,
@@ -202,6 +207,7 @@ pub fn show_keyboard_window(
     app: tauri::AppHandle,
     position: Option<EntryWindowPosition>,
 ) -> Result<(), String> {
+    set_pet_action(&app, "keyboardJump");
     if let Some(position) = position {
         set_position_if_present(&app, "main", Some(position))?;
         restore_main_window(&app)?;
@@ -240,5 +246,22 @@ pub fn switch_to_keyboard_mode(
 
 #[tauri::command]
 pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("pet") {
+        if win.is_visible().unwrap_or(false) {
+            return win.hide().map_err(|e| e.to_string());
+        }
+    }
+    set_pet_action(&app, "cozy");
     show_pet_window(app, None)
+}
+
+pub fn toggle_keyboard_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("main") {
+        if win.is_visible().unwrap_or(false) {
+            set_pet_action(&app, "cozy");
+            return win.hide().map_err(|e| e.to_string());
+        }
+    }
+
+    show_keyboard_window(app, None)
 }

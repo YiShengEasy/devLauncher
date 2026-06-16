@@ -24,7 +24,8 @@
         "alwaysOnTop": true,
         "visibleOnAllWorkspaces": true,
         "center": true,
-        "skipTaskbar": false
+        "skipTaskbar": false,
+        "visible": false
       },
       {
         "label": "clipboard",
