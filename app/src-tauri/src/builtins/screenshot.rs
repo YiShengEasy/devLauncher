@@ -1,13 +1,153 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+#[cfg(not(target_os = "macos"))]
 use image::RgbaImage;
 use std::fs;
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "macos")]
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager};
 
+#[cfg(not(target_os = "macos"))]
 use crate::utils::image::encode_image_jpeg;
 
 pub struct ScreenshotCaptureState {
     pub image_data: Arc<Mutex<Option<String>>>,
+}
+
+#[cfg(target_os = "macos")]
+fn set_capture_window_bounds(
+    win: &tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    win.set_position(tauri::LogicalPosition::new(x as f64, y as f64))
+        .map_err(|e| e.to_string())?;
+    win.set_size(tauri::LogicalSize::new(width as f64, height as f64))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_capture_window_bounds(
+    win: &tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    win.set_position(tauri::PhysicalPosition::new(x, y))
+        .map_err(|e| e.to_string())?;
+    win.set_size(tauri::PhysicalSize::new(width, height))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn set_editor_window_size(win: &tauri::WebviewWindow, width: u32, height: u32) -> Result<(), String> {
+    win.set_size(tauri::LogicalSize::new(width as f64, height as f64))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_editor_window_size(win: &tauri::WebviewWindow, width: u32, height: u32) -> Result<(), String> {
+    win.set_size(tauri::PhysicalSize::new(width, height))
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_capture_window_for_current_space(win: &tauri::WebviewWindow) -> Result<(), String> {
+    use objc2_app_kit::NSWindowCollectionBehavior;
+
+    win.set_visible_on_all_workspaces(true)
+        .map_err(|e| e.to_string())?;
+
+    let ns_window = ns_window(win)?;
+    let behavior = ns_window.collectionBehavior()
+        | NSWindowCollectionBehavior::CanJoinAllSpaces
+        | NSWindowCollectionBehavior::FullScreenAuxiliary
+        | NSWindowCollectionBehavior::Stationary;
+    ns_window.setCollectionBehavior(behavior);
+
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn ns_window(win: &tauri::WebviewWindow) -> Result<&objc2_app_kit::NSWindow, String> {
+    use objc2_app_kit::NSWindow;
+
+    let ns_window = win.ns_window().map_err(|e| e.to_string())? as *mut NSWindow;
+    (unsafe { ns_window.as_ref() }).ok_or_else(|| "screenshot ns_window is null".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn prepare_capture_window_for_current_space(win: &tauri::WebviewWindow) -> Result<(), String> {
+    win.set_visible_on_all_workspaces(true)
+        .map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn focus_capture_window(_win: &tauri::WebviewWindow) -> Result<(), String> {
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn focus_capture_window(win: &tauri::WebviewWindow) -> Result<(), String> {
+    win.set_focus().map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn show_capture_window(win: &tauri::WebviewWindow) -> Result<(), String> {
+    ns_window(win)?.orderFrontRegardless();
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_capture_window(win: &tauri::WebviewWindow) -> Result<(), String> {
+    win.show().map_err(|e| e.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn capture_screen_b64() -> Result<String, String> {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let path = std::env::temp_dir().join(format!(
+        "devlauncher-screenshot-{}-{stamp}.png",
+        std::process::id()
+    ));
+
+    let output = Command::new("/usr/sbin/screencapture")
+        .arg("-x")
+        .arg("-t")
+        .arg("png")
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("failed to start screencapture: {e}"))?;
+
+    let bytes = fs::read(&path).map_err(|e| {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if output.status.success() {
+            format!("failed to read screenshot: {e}")
+        } else {
+            format!("screencapture failed: {stderr}")
+        }
+    })?;
+    let _ = fs::remove_file(&path);
+
+    if bytes.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("screencapture produced an empty image: {stderr}"));
+    }
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("[screenshot] screencapture returned non-zero but produced an image: {stderr}");
+    }
+
+    Ok(BASE64.encode(bytes))
 }
 
 pub fn setup(app: &mut tauri::App) {
@@ -35,24 +175,50 @@ pub fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
             let sw = screen.display_info.width;
             let sh = screen.display_info.height;
 
-            // Step 1: capture FIRST (pure BitBlt, ~5ms) BEFORE window is shown.
-            // This guarantees the screenshot window itself never appears in the image.
-            let captured = screen.capture().map_err(|e| e.to_string())?;
-            let w = captured.width();
-            let h = captured.height();
-            let raw = captured.into_raw();
+            // Step 1: capture FIRST, preserving the user's current screen state.
+            // On macOS, use the system screencapture tool so Screen Recording
+            // permission is handled by the OS capture path instead of the dev binary.
+            #[cfg(target_os = "macos")]
+            let png_b64 = match capture_screen_b64() {
+                Ok(b64) => b64,
+                Err(e) => {
+                    eprintln!("[screenshot] macOS screencapture failed: {e}");
+                    let _ = crate::entries::restore_main_window(&app);
+                    return Err(e);
+                }
+            };
+
+            #[cfg(not(target_os = "macos"))]
+            let (w, h, raw) = {
+                let captured = match screen.capture() {
+                    Ok(captured) => captured,
+                    Err(e) => {
+                        let _ = crate::entries::restore_main_window(&app);
+                        return Err(e.to_string());
+                    }
+                };
+                let w = captured.width();
+                let h = captured.height();
+                let raw = captured.into_raw();
+                (w, h, raw)
+            };
 
             // Step 2: show window immediately after capture.
-            win.set_position(tauri::PhysicalPosition::new(sx, sy))
-                .map_err(|e| e.to_string())?;
-            win.set_size(tauri::PhysicalSize::new(sw, sh))
-                .map_err(|e| e.to_string())?;
-            win.show().map_err(|e| e.to_string())?;
-            win.set_focus().map_err(|e| e.to_string())?;
+            set_capture_window_bounds(&win, sx, sy, sw, sh)?;
+            prepare_capture_window_for_current_space(&win)?;
+            show_capture_window(&win)?;
+            focus_capture_window(&win)?;
 
-            // Step 3: encode JPEG in background thread (~30ms).
-            // Raw pixels are already in memory; encoding is the only remaining work.
+            // Step 3: publish screenshot data to the overlay.
+            #[cfg(target_os = "macos")]
+            {
+                app.emit_to("screenshot", "screenshot-ready", png_b64)
+                    .map_err(|e| e.to_string())?;
+            }
+
+            #[cfg(not(target_os = "macos"))]
             let app2 = app.clone();
+            #[cfg(not(target_os = "macos"))]
             std::thread::spawn(move || {
                 let rgba = match RgbaImage::from_raw(w, h, raw) {
                     Some(i) => i,
@@ -79,8 +245,7 @@ pub fn show_screenshot_editor_window(
     if let Some(win) = app.get_webview_window("screenshot") {
         let editor_width = width.saturating_add(120).max(940);
         let editor_height = height.saturating_add(150).max(460);
-        win.set_size(tauri::PhysicalSize::new(editor_width, editor_height))
-            .map_err(|e| e.to_string())?;
+        set_editor_window_size(&win, editor_width, editor_height)?;
         win.center().map_err(|e| e.to_string())?;
         win.show().map_err(|e| e.to_string())?;
         win.set_focus().map_err(|e| e.to_string())?;

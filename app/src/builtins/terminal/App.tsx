@@ -21,6 +21,8 @@ function toBase64(str: string): string {
   return btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""));
 }
 
+type ShellSpec = [string, string[]];
+
 export function TerminalApp() {
   const rootRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -85,7 +87,6 @@ export function TerminalApp() {
     fitRef.current = fitAddon;
 
     // ── PTY spawn ──────────────────────────────────────────────────────────────
-    const shell = navigator.platform.startsWith("Win") ? "powershell.exe" : "bash";
     const spawnPty = (cmd: string, args: string[]) => {
       if (spawnedRef.current) return;
       spawnedRef.current = true;
@@ -101,17 +102,23 @@ export function TerminalApp() {
     };
 
     // Check for a pending command (e.g. SSH/script initiated from execute_action)
-    invoke<string | null>("terminal_take_pending_cmd").then((pendingCmd) => {
+    Promise.all([
+      invoke<string | null>("terminal_take_pending_cmd"),
+      invoke<ShellSpec>("get_default_shell").catch((): ShellSpec => {
+        return navigator.platform.startsWith("Win") ? ["powershell.exe", []] : ["/bin/zsh", ["-l"]];
+      }),
+    ]).then(([pendingCmd, defaultShell]) => {
+      const [shellProgram, shellArgs] = defaultShell;
       if (pendingCmd) {
         // Route through a shell so inline commands, arguments, and quotes are preserved.
         if (navigator.platform.startsWith("Win")) {
           spawnPty("powershell.exe", ["-NoExit", "-Command", pendingCmd]);
         } else {
-          spawnPty("bash", ["-lc", `${pendingCmd}; exec bash`]);
+          spawnPty(shellProgram, ["-lc", `${pendingCmd}; exec ${shellProgram}`]);
         }
         setTitle(pendingCmd.slice(0, 40));
       } else {
-        spawnPty(shell, []);
+        spawnPty(shellProgram, shellArgs);
       }
     });
 

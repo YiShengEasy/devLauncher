@@ -57,6 +57,8 @@ dependencies = [
  "futures-util",
  "image 0.25.10",
  "keyring",
+ "objc2 0.6.4",
+ "objc2-app-kit",
  "open",
  "portable-pty",
  "rand 0.8.6",

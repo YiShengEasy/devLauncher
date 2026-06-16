@@ -32,6 +32,14 @@ interface HostStatus {
   pin: string | null;
 }
 
+interface PlatformCapabilities {
+  platform: string;
+  supportsWindowsRdp: boolean;
+  supportsWindowsOcr: boolean;
+  supportsWsl: boolean;
+  preferredShortcutModifier: string;
+}
+
 type Tab = "rdp" | "host" | "connect";
 
 function generateId(): string {
@@ -107,12 +115,16 @@ function RdpTab() {
   const [password, setPassword] = useState("");
   const [launching, setLaunching] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
+  const [platformCaps, setPlatformCaps] = useState<PlatformCapabilities | null>(null);
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     invoke<RemoteDeskProfile[]>("load_remotedesk_profiles")
       .then(setProfiles)
       .catch(() => {});
+    invoke<PlatformCapabilities>("get_platform_capabilities")
+      .then(setPlatformCaps)
+      .catch(() => setPlatformCaps(null));
   }, []);
 
   function startNew() {
@@ -230,6 +242,12 @@ function RdpTab() {
         </span>
         <button onClick={startNew} style={btnPrimary}>+ 新建</button>
       </div>
+
+      {platformCaps && !platformCaps.supportsWindowsRdp && (
+        <div style={{ color: "#fbbf24", fontSize: 12, lineHeight: 1.6 }}>
+          macOS 当前不支持 mstsc/RDP 一键启动；此页其他远程能力可继续按实际权限验证。
+        </div>
+      )}
 
       {profiles.length === 0 && (
         <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", fontSize: 13, padding: "24px 0" }}>

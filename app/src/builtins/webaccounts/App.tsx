@@ -30,6 +30,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 export function WebAccountsApp() {
+  const isMac = navigator.platform.startsWith("Mac");
+
   return (
     <div style={{
       minHeight: "100vh",
@@ -56,7 +58,16 @@ export function WebAccountsApp() {
           Host 名称固定为：
           <code style={codeStyle}>com.devlauncher.webaccounts</code>
           编译目标：
-          <code style={codeStyle}>app/src-tauri/target/debug/devlauncher_native_host.exe</code>
+          <code style={codeStyle}>
+            {isMac
+              ? "app/src-tauri/target/debug/devlauncher_native_host"
+              : "app/src-tauri/target/debug/devlauncher_native_host.exe"}
+          </code>
+          {isMac && (
+            <p style={{ color: "#fbbf24", fontSize: 12 }}>
+              macOS Native Messaging 注册路径与 Windows 注册表不同，本版本先展示二进制路径，自动安装脚本不在 macOS MVP 范围内。
+            </p>
+          )}
         </Section>
 
         <Section title="安全边界">

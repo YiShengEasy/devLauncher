@@ -3,13 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import type {
   Action, ActionType, KeyId,
-  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith
+  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith, SystemCommand
 } from "@/types/actions";
 import { ACTION_TYPE_META, SYSTEM_PRESETS, BUILTIN_FEATURES } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { animateDialogEnter, animateListEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
+import { isMacPlatform } from "@/platform/shortcuts";
 
 interface BindingModalProps {
   keyId: KeyId;
@@ -20,6 +21,7 @@ interface BindingModalProps {
 }
 
 const TABS: ActionType[] = ["app", "folder", "url", "ssh", "script", "system", "builtin"];
+const MAC_UNSUPPORTED_SYSTEM_COMMANDS = new Set<SystemCommand>(["taskmanager", "shutdown", "restart"]);
 
 const INPUT_STYLE: React.CSSProperties = {
   width: "100%", padding: "7px 10px",
@@ -62,6 +64,7 @@ function getUrlOrigin(value: string): string | null {
 }
 
 export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }: BindingModalProps) {
+  const isMac = isMacPlatform();
   const [activeType, setActiveType] = useState<ActionType>(initialAction?.type ?? "app");
   const [saveError, setSaveError] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -89,10 +92,18 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
   const [port, setPort]       = useState(String((initialAction as SshAction)?.port ?? 22));
   const [sshPassword, setSshPassword]           = useState("");
   const [sshHasPassword, setSshHasPassword]     = useState((initialAction as SshAction)?.hasPassword ?? false);
-  const [sshTerminal, setSshTerminal]           = useState<SshTerminal>((initialAction as SshAction)?.terminal ?? "auto");
-  const [shell, setShell]     = useState<"powershell"|"cmd"|"bat"|"wsl"|"terminal">((initialAction as ScriptAction)?.shell ?? "powershell");
+  const initialSshTerminal = (initialAction as SshAction)?.terminal ?? "auto";
+  const safeInitialSshTerminal = isMac && initialSshTerminal !== "terminal" ? "terminal" : initialSshTerminal;
+  const [sshTerminal, setSshTerminal] = useState<SshTerminal>(safeInitialSshTerminal);
+  const initialScriptShell = (initialAction as ScriptAction)?.shell;
+  const safeInitialScriptShell = isMac ? "terminal" : (initialScriptShell ?? "powershell");
+  const [shell, setShell] = useState<"powershell" | "cmd" | "bat" | "wsl" | "terminal">(safeInitialScriptShell);
   const [content, setContent] = useState((initialAction as ScriptAction)?.content ?? "");
-  const [sysCmd, setSysCmd]   = useState((initialAction as SystemAction)?.command ?? "calculator");
+  const initialSystemCommand = (initialAction as SystemAction)?.command ?? "calculator";
+  const safeInitialSystemCommand = isMac && MAC_UNSUPPORTED_SYSTEM_COMMANDS.has(initialSystemCommand)
+    ? "calculator"
+    : initialSystemCommand;
+  const [sysCmd, setSysCmd] = useState<SystemCommand>(safeInitialSystemCommand);
   const [builtinFeature, setBuiltinFeature] = useState<BuiltinFeature>(
     (initialAction as BuiltinAction)?.feature ?? "clipboard"
   );
@@ -108,11 +119,15 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
     animateListEnter(Array.from(children), reducedMotion);
   }, [activeType, folderOpenWith, webAutofill, webHasPassword, sshHasPassword, reducedMotion]);
 
+  const systemPresets = isMac
+    ? SYSTEM_PRESETS.filter((preset) => !MAC_UNSUPPORTED_SYSTEM_COMMANDS.has(preset.command))
+    : SYSTEM_PRESETS;
+
   const handleBrowseApp = async () => {
     const result = await dialogOpen({
       multiple: false,
       directory: false,
-      filters: [{ name: "程序", extensions: ["exe", "cmd", "bat", "lnk"] }],
+      filters: [{ name: "程序", extensions: isMac ? ["app"] : ["exe", "cmd", "bat", "lnk"] }],
     });
     if (typeof result === "string") {
       setTarget(result);
@@ -331,7 +346,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
               <div style={{ display: "flex", gap: 6 }}>
                 <input
                   style={{ ...INPUT_STYLE, flex: 1 }}
-                  placeholder="C:\Program Files\...\app.exe"
+                  placeholder={isMac ? "/Applications/App.app" : "C:\\Program Files\\...\\app.exe"}
                   value={target}
                   onChange={e => setTarget(e.target.value)}
                 />
@@ -344,12 +359,12 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
           {(activeType === "folder" || activeType === "file") && (
             <Field label={activeType === "folder" ? "目录路径 *" : "文件路径 *"}>
               <div style={{ display: "flex", gap: 6 }}>
-                <input
-                  style={{ ...INPUT_STYLE, flex: 1 }}
-                  placeholder={activeType === "folder" ? "D:\\Project" : "D:\\document.pdf"}
-                  value={target}
-                  onChange={e => setTarget(e.target.value)}
-                />
+                  <input
+                    style={{ ...INPUT_STYLE, flex: 1 }}
+                    placeholder={activeType === "folder" ? (isMac ? "/Users/me/Project" : "D:\\Project") : (isMac ? "/Users/me/document.pdf" : "D:\\document.pdf")}
+                    value={target}
+                    onChange={e => setTarget(e.target.value)}
+                  />
                 <button
                   style={BROWSE_BTN_STYLE}
                   onClick={activeType === "folder" ? handleBrowseFolder : handleBrowseFile}
@@ -366,7 +381,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                   onChange={e => setFolderOpenWith(e.target.value as FolderOpenWith)}
                   style={{ ...INPUT_STYLE, cursor: "pointer" }}
                 >
-                  <option value="explorer" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>文件资源管理器</option>
+                  <option value="explorer" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>{isMac ? "Finder" : "文件资源管理器"}</option>
                   <option value="vscode" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>VS Code</option>
                   <option value="cursor" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Cursor</option>
                   <option value="custom" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>其他工具</option>
@@ -376,12 +391,12 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                 <>
                   <Field label="工具路径 *">
                     <div style={{ display: "flex", gap: 6 }}>
-                      <input
-                        style={{ ...INPUT_STYLE, flex: 1 }}
-                        placeholder="C:\Program Files\...\app.exe"
-                        value={customOpener}
-                        onChange={e => setCustomOpener(e.target.value)}
-                      />
+                        <input
+                          style={{ ...INPUT_STYLE, flex: 1 }}
+                          placeholder={isMac ? "/Applications/App.app" : "C:\\Program Files\\...\\app.exe"}
+                          value={customOpener}
+                          onChange={e => setCustomOpener(e.target.value)}
+                        />
                       <button style={BROWSE_BTN_STYLE} onClick={handleBrowseCustomOpener}>浏览</button>
                     </div>
                   </Field>
@@ -566,14 +581,14 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                   onChange={e => setSshTerminal(e.target.value as SshTerminal)}
                   style={{ ...INPUT_STYLE, cursor: "pointer" }}
                 >
-                  <option value="auto" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>自动（优先 Windows Terminal）</option>
-                  <option value="wt" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Windows Terminal (wt.exe)</option>
-                  <option value="cmd" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>CMD</option>
-                  <option value="powershell" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>PowerShell</option>
-                  <option value="gitbash" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Git Bash（支持 expect 自动密码）</option>
+                  {!isMac && <option value="auto" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>自动（优先 Windows Terminal）</option>}
+                  {!isMac && <option value="wt" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Windows Terminal (wt.exe)</option>}
+                  {!isMac && <option value="cmd" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>CMD</option>}
+                  {!isMac && <option value="powershell" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>PowerShell</option>}
+                  {!isMac && <option value="gitbash" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Git Bash（支持 expect 自动密码）</option>}
                   <option value="terminal" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>内置终端</option>
                 </select>
-                {sshTerminal === "gitbash" && (
+                {!isMac && sshTerminal === "gitbash" && (
                   <span style={{ fontSize: 10, color: "rgba(255,195,0,0.7)", marginTop: 3, display: "block" }}>
                     需安装 Git for Windows，路径 C:\Program Files\Git\bin\bash.exe
                   </span>
@@ -591,10 +606,10 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
                   onChange={e => setShell(e.target.value as typeof shell)}
                   style={{ ...INPUT_STYLE, cursor: "pointer" }}
                 >
-                  <option value="powershell" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>PowerShell</option>
-                  <option value="cmd" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>CMD</option>
-                  <option value="bat" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Bat 文件</option>
-                  <option value="wsl" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>WSL (Ubuntu)</option>
+                  {!isMac && <option value="powershell" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>PowerShell</option>}
+                  {!isMac && <option value="cmd" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>CMD</option>}
+                  {!isMac && <option value="bat" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>Bat 文件</option>}
+                  {!isMac && <option value="wsl" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>WSL (Ubuntu)</option>}
                   <option value="terminal" style={{ background: "#1a1c2e", color: "#e8eaf0" }}>内置终端</option>
                 </select>
               </Field>
@@ -616,7 +631,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
           {/* System */}
           {activeType === "system" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-              {SYSTEM_PRESETS.map(p => (
+              {systemPresets.map(p => (
                 <button
                   key={p.command}
                   onClick={() => setSysCmd(p.command)}

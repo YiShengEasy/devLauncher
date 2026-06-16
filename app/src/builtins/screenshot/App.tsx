@@ -370,6 +370,26 @@ function renderAnnotation(ctx: CanvasRenderingContext2D, ann: Ann, bgImg?: HTMLI
   ctx.restore();
 }
 
+function imageDisplayScale(bgImg: HTMLImageElement, bgRect: Rect | null): { x: number; y: number } {
+  if (!bgRect) return { x: 1, y: 1 };
+  return {
+    x: bgImg.width / Math.max(1, bgRect.w),
+    y: bgImg.height / Math.max(1, bgRect.h),
+  };
+}
+
+function displayRectToImageRect(rect: Rect, bgImg: HTMLImageElement, bgRect: Rect | null): Rect {
+  const n = norm(rect);
+  if (!bgRect) return n;
+  const scale = imageDisplayScale(bgImg, bgRect);
+  return {
+    x: (n.x - bgRect.x) * scale.x,
+    y: (n.y - bgRect.y) * scale.y,
+    w: n.w * scale.x,
+    h: n.h * scale.y,
+  };
+}
+
 function renderFrame(
   canvas: HTMLCanvasElement,
   bgImg: HTMLImageElement | null,
@@ -410,12 +430,13 @@ function renderFrame(
       // Reveal selected area from background
       if (bgImg) {
         if (bgRect) {
+          const source = displayRectToImageRect(n, bgImg, bgRect);
           ctx.drawImage(
             bgImg,
-            n.x - bgRect.x,
-            n.y - bgRect.y,
-            n.w,
-            n.h,
+            source.x,
+            source.y,
+            source.w,
+            source.h,
             n.x,
             n.y,
             n.w,
@@ -967,7 +988,7 @@ export function ScreenshotApp() {
         const toolbarReserve = 96;
         const maxW = Math.max(1, window.innerWidth - 48);
         const maxH = Math.max(1, window.innerHeight - toolbarReserve - 48);
-        const displayScale = Math.max(1, Math.min(maxW / w, maxH / h));
+        const displayScale = Math.min(1, maxW / w, maxH / h);
         const displayW = Math.round(w * displayScale);
         const displayH = Math.round(h * displayScale);
         const x = Math.max(24, Math.round((window.innerWidth - displayW) / 2));
@@ -980,6 +1001,7 @@ export function ScreenshotApp() {
         phaseRef.current = "annotating";
         setPhaseState("annotating");
       } else {
+        bgRectRef.current = { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
         phaseRef.current = "selecting";
         setPhaseState("selecting");
       }
@@ -1267,17 +1289,18 @@ export function ScreenshotApp() {
     const bgImg = bgImgRef.current;
     if (!sel || !bgImg) return null;
     const bgRect = bgRectRef.current;
-    const editScale = editingScreenshotIdRef.current ? editScaleRef.current : 1;
+    const scale = imageDisplayScale(bgImg, bgRect);
     const out = document.createElement("canvas");
-    out.width  = Math.max(1, Math.round(sel.w / editScale));
-    out.height = Math.max(1, Math.round(sel.h / editScale));
+    out.width  = Math.max(1, Math.round(sel.w * scale.x));
+    out.height = Math.max(1, Math.round(sel.h * scale.y));
     const ctx = out.getContext("2d")!;
     if (bgRect) {
-      ctx.drawImage(bgImg, (sel.x - bgRect.x) / editScale, (sel.y - bgRect.y) / editScale, sel.w / editScale, sel.h / editScale, 0, 0, out.width, out.height);
+      const source = displayRectToImageRect(sel, bgImg, bgRect);
+      ctx.drawImage(bgImg, source.x, source.y, source.w, source.h, 0, 0, out.width, out.height);
     } else {
       ctx.drawImage(bgImg, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
     }
-    if (editScale !== 1) ctx.scale(1 / editScale, 1 / editScale);
+    ctx.scale(scale.x, scale.y);
     ctx.translate(-sel.x, -sel.y);
     for (const ann of annsRef.current) renderAnnotation(ctx, ann, bgImg, bgRect);
     return out;
@@ -1289,13 +1312,14 @@ export function ScreenshotApp() {
     const bgImg = bgImgRef.current;
     if (!sel || !bgImg) return null;
     const bgRect = bgRectRef.current;
-    const editScale = editingScreenshotIdRef.current ? editScaleRef.current : 1;
+    const scale = imageDisplayScale(bgImg, bgRect);
     const out = document.createElement("canvas");
-    out.width  = Math.max(1, Math.round(sel.w / editScale));
-    out.height = Math.max(1, Math.round(sel.h / editScale));
+    out.width  = Math.max(1, Math.round(sel.w * scale.x));
+    out.height = Math.max(1, Math.round(sel.h * scale.y));
     const ctx = out.getContext("2d")!;
     if (bgRect) {
-      ctx.drawImage(bgImg, (sel.x - bgRect.x) / editScale, (sel.y - bgRect.y) / editScale, sel.w / editScale, sel.h / editScale, 0, 0, out.width, out.height);
+      const source = displayRectToImageRect(sel, bgImg, bgRect);
+      ctx.drawImage(bgImg, source.x, source.y, source.w, source.h, 0, 0, out.width, out.height);
     } else {
       ctx.drawImage(bgImg, sel.x, sel.y, sel.w, sel.h, 0, 0, sel.w, sel.h);
     }

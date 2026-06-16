@@ -1,14 +1,15 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
-import { ClipIcon, KeyboardIcon, PixelPetIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
+import { ClipIcon, KeyboardIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
 
-type PreviewAction = "search" | "report" | "clip" | "keyboard";
+type PreviewAction = "search" | "report" | "clip" | "keyboard" | "custom-action";
 
 const actions: Array<{ action: PreviewAction; label: string; x: number; y: number }> = [
-  { action: "search", label: "搜索", x: 0, y: -92 },
-  { action: "report", label: "报告", x: 92, y: 0 },
-  { action: "clip", label: "剪贴", x: 0, y: 92 },
-  { action: "keyboard", label: "键盘", x: -92, y: 0 },
+  { action: "search", label: "搜索", x: -72, y: 0 },
+  { action: "report", label: "报告", x: -36, y: 0 },
+  { action: "clip", label: "剪贴", x: 0, y: 0 },
+  { action: "keyboard", label: "键盘", x: 36, y: 0 },
+  { action: "custom-action", label: "动作", x: 72, y: 0 },
 ];
 
 const pageStyle: CSSProperties = {
@@ -39,7 +40,8 @@ function PreviewIcon({ action }: { action: PreviewAction }) {
   if (action === "search") return <SearchIcon {...iconProps} />;
   if (action === "report") return <ReportIcon {...iconProps} />;
   if (action === "clip") return <ClipIcon {...iconProps} />;
-  return <KeyboardIcon {...iconProps} />;
+  if (action === "keyboard") return <KeyboardIcon {...iconProps} />;
+  return <span className="pet-action-plus" aria-hidden="true">+</span>;
 }
 
 export function BrowserPreviewApp() {
@@ -65,7 +67,7 @@ export function BrowserPreviewApp() {
         </section>
 
         <section style={{ minHeight: 440, display: "grid", placeItems: "center", position: "relative", overflow: "hidden" }}>
-          <div className={`pet-ring ${open ? "is-open" : ""}`} style={{ position: "relative", width: 232, height: 232, borderRadius: "50%", background: "radial-gradient(circle, rgba(12,16,24,0.76) 0 32%, rgba(12,16,24,0.94) 33% 65%, rgba(255,255,255,0.08) 66% 67%, transparent 68%)", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 18px 46px rgba(0,0,0,0.38)", transform: open ? "scale(1)" : "scale(0.72)", opacity: open ? 1 : 0.45, transition: "opacity 180ms ease, transform 220ms cubic-bezier(.2,.85,.2,1)" }}>
+          <div className={`pet-bubble-menu ${open ? "is-open" : ""}`} style={{ position: "absolute", left: "50%", top: 56, width: 194, height: 42, borderRadius: 6, background: "rgba(12,18,28,0.96)", border: "2px solid rgba(248,250,252,0.72)", boxShadow: "0 4px 0 rgba(0,0,0,0.32), inset 0 -2px 0 rgba(15,23,42,0.72)", transform: open ? "translateX(-50%) translateY(0) scale(1)" : "translateX(-50%) translateY(6px) scale(0.94)", opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none", transition: "opacity 180ms ease, transform 220ms cubic-bezier(.16,1,.3,1)" }}>
             {actions.map((item) => (
               <button
                 key={item.action}
@@ -77,17 +79,17 @@ export function BrowserPreviewApp() {
                   position: "absolute",
                   left: "50%",
                   top: "50%",
-                  width: 60,
-                  height: 60,
-                  borderRadius: "50%",
-                  border: "1px solid rgba(255,255,255,0.16)",
-                  background: "rgba(22,27,38,0.96)",
+                  width: 32,
+                  height: 32,
+                  borderRadius: 5,
+                  border: "2px solid rgba(226,232,240,0.68)",
+                  background: "rgba(30,41,59,0.98)",
                   color: "rgba(255,255,255,0.9)",
                   cursor: "pointer",
                   display: "grid",
                   placeItems: "center",
-                  boxShadow: "0 10px 24px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.12)",
-                  transform: open ? `translate(calc(-50% + ${item.x}px), calc(-50% + ${item.y}px)) var(--pet-action-hover-transform, skew(0deg, 0deg))` : "translate(-50%, -50%) scale(0.55)",
+                  boxShadow: "0 3px 0 rgba(0,0,0,0.35)",
+                  transform: open ? `translate(calc(-50% + ${item.x}px), calc(-50% + ${item.y}px)) var(--pet-action-hover-transform, skew(0deg, 0deg))` : "translate(-50%, -50%) scale(0.72)",
                   opacity: open ? 1 : 0,
                 }}
               >
@@ -96,8 +98,10 @@ export function BrowserPreviewApp() {
             ))}
           </div>
 
-          <button className="preview-cat-button" type="button" onClick={() => setOpen((value) => !value)}>
-            <PixelPetIcon size={42} decorative />
+          <button className="preview-cat-button" type="button" onClick={() => setOpen((value) => !value)} style={{ width: 148, height: 132, border: 0, background: "transparent", boxShadow: "none" }}>
+            <span className="pet-siamese-frame" aria-hidden="true">
+              <img src="/pet/siamese/keyboard-jump/0001.png" alt="" draggable={false} />
+            </span>
           </button>
         </section>
       </div>
