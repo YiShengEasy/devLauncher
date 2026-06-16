@@ -1,7 +1,9 @@
 import { useState, useCallback, useRef } from "react";
 import { KEY_ROWS } from "@/types/actions";
 import type { KeyId, KeyMap } from "@/types/actions";
+import { ACTION_TYPE_META } from "@/types/actions";
 import { KeyCell } from "./KeyCell";
+import { ActionIcon } from "./ActionIcon";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { saveConfig } from "@/api/config";
 
@@ -11,18 +13,18 @@ interface KeyboardPanelProps {
   onKeyBind?: (keyId: KeyId) => void;
 }
 
-// Row left-padding to mimic real keyboard stagger (px)
-// Unit = KEY_SIZE + KEY_GAP = 75px
-// Q: +0.50u, A: +0.75u, Z: +1.25u from number row
-const ROW_PADDING = [0, 38, 57, 95];
+const ROW_PADDING = [0, 18, 45, 90];
 
-const KEY_SIZE = 68;
-const KEY_GAP = 6;
+const KEY_WIDTH = 72;
+const KEY_HEIGHT = 68;
+const KEY_GAP = 8;
+const KEY_ICON_SIZE = 32;
 
 export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProps) {
   const [dragKey, setDragKey] = useState<KeyId | null>(null);
   const [dropTarget, setDropTarget] = useState<KeyId | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
+  const [hoverResetSignal, setHoverResetSignal] = useState(0);
   const isDragging = useRef(false);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,6 +92,7 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
       setDragKey(null);
       setDropTarget(null);
       setDragPos(null);
+      setHoverResetSignal((value) => value + 1);
       dragStartPos.current = null;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
@@ -102,7 +105,7 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
   // Check if a click should be ignored (was a drag)
   const wasDrag = useCallback(() => isDragging.current, []);
 
-  // ── Drag ghost (floating clone of the dragged key) ──
+  // Drag ghost: floating clone of the dragged key.
   const renderDragGhost = () => {
     if (!dragKey || !dragPos) return null;
     const binding = keys[dragKey];
@@ -110,21 +113,25 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
     return (
       <div style={{
         position: "fixed",
-        left: dragPos.x - KEY_SIZE / 2,
-        top: dragPos.y - KEY_SIZE / 2,
-        width: KEY_SIZE, height: KEY_SIZE,
-        borderRadius: 10,
-        border: "2px solid rgba(59,130,246,0.9)",
+        left: dragPos.x - KEY_WIDTH / 2,
+        top: dragPos.y - KEY_HEIGHT / 2,
+        width: KEY_WIDTH, height: KEY_HEIGHT,
+        borderRadius: 8,
+        border: "1px solid rgba(96,165,250,0.72)",
         background: action
-          ? (ACTION_TYPE_META[action.type]?.bg ?? "rgba(59,130,246,0.6)")
-          : "rgba(255,255,255,0.15)",
+          ? [
+              `radial-gradient(circle at 50% 38%, ${ACTION_TYPE_META[action.type]?.color ?? "#60a5fa"}24, transparent 46%)`,
+              "radial-gradient(circle at 70% 82%, rgba(255,255,255,0.035), transparent 36%)",
+              "linear-gradient(145deg, rgba(255,255,255,0.13), rgba(255,255,255,0.045))",
+            ].join(", ")
+          : "linear-gradient(145deg, rgba(255,255,255,0.13), rgba(255,255,255,0.045))",
         display: "flex", flexDirection: "column",
         alignItems: "center", justifyContent: "center",
         pointerEvents: "none",
         zIndex: 9999,
         opacity: 0.85,
         transform: "scale(1.08)",
-        boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.085), 0 8px 24px rgba(0,0,0,0.5), 0 0 11px rgba(59,130,246,0.22)",
         transition: "none",
       }}>
         <span style={{
@@ -134,17 +141,22 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
         }}>
           {dragKey}
         </span>
-        {action && (
-          <span style={{ fontSize: 9, fontWeight: 500, color: "rgba(255,255,255,0.9)", lineHeight: 1 }}>
-            {action.name}
-          </span>
-        )}
+        {action && <ActionIcon action={action} size={KEY_ICON_SIZE} />}
       </div>
     );
   };
 
   return (
-    <div ref={containerRef} style={{ display: "flex", flexDirection: "column", gap: KEY_GAP, userSelect: "none" }}>
+    <div
+      ref={containerRef}
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        gap: KEY_GAP,
+        userSelect: "none",
+      }}
+    >
       {KEY_ROWS.map((row, rowIndex) => (
         <div
           key={rowIndex}
@@ -159,6 +171,8 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
               onBind={onKeyBind}
               isDragSource={dragKey === keyId}
               isDropTarget={dropTarget === keyId}
+              isDragging={dragKey !== null}
+              hoverResetSignal={hoverResetSignal}
               onMouseDown={(e) => handleMouseDown(keyId, e)}
               wasDrag={wasDrag}
               ref={(el) => registerCell(keyId, el)}
@@ -170,6 +184,3 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
     </div>
   );
 }
-
-// Need to import ACTION_TYPE_META for ghost rendering
-import { ACTION_TYPE_META } from "@/types/actions";

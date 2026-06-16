@@ -21,9 +21,8 @@ export function MinimizeIcon(props: IconProps) {
 export function SettingsIcon(props: IconProps) {
   return (
     <IconBase {...withIconColor(props, iconColors.settings)}>
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M12 3.5v2M12 18.5v2M4.65 7.75l1.75 1M17.6 15.25l1.75 1M4.65 16.25l1.75-1M17.6 8.75l1.75-1" />
-      <path d="M3.5 12h2M18.5 12h2" />
+      <circle cx="12" cy="12" r="3.15" />
+      <path d="M19.35 13.45a7.8 7.8 0 0 0 0-2.9l2.05-1.22-2.05-3.56-2.35 1a8.1 8.1 0 0 0-2.5-1.45L14.15 3h-4.3L9.5 5.32A8.1 8.1 0 0 0 7 6.77l-2.35-1L2.6 9.33l2.05 1.22a7.8 7.8 0 0 0 0 2.9L2.6 14.67l2.05 3.56 2.35-1a8.1 8.1 0 0 0 2.5 1.45l.35 2.32h4.3l.35-2.32a8.1 8.1 0 0 0 2.5-1.45l2.35 1 2.05-3.56-2.05-1.22Z" />
     </IconBase>
   );
 }

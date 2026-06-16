@@ -1,60 +1,46 @@
 import { useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useKeyboardStore } from "@/store/useKeyboardStore";
+import type { CSSProperties } from "react";
 import { saveConfig } from "@/api/config";
-import { DEFAULT_THEME } from "@/types/actions";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
-import type { CSSProperties } from "react";
+import { useKeyboardStore } from "@/store/useKeyboardStore";
+import { DEFAULT_THEME } from "@/types/actions";
 import type { KeyId, KeyMap, KeyboardConfig, ThemeConfig, UrlAction } from "@/types/actions";
 
 const PRESET_COLORS = [
-  "#10121f", "#1a1a2e", "#0d1117", "#1e1b2e",
-  "#0f172a", "#1c1917", "#14532d", "#1e3a5f",
+  "#101622",
+  "#17130f",
+  "#10121f",
+  "#121a2a",
+  "#0f172a",
+  "#1c1917",
+  "#14532d",
+  "#1e3a5f",
 ];
 
 const THEME_PRESETS: { name: string; theme: ThemeConfig }[] = [
-  { name: "默认", theme: { ...DEFAULT_THEME } },
+  { name: "经典黑", theme: { ...DEFAULT_THEME } },
   {
-    name: "macOS",
+    name: "暖棕",
     theme: {
-      bgColor: "#1e1e2e",
-      bgOpacity: 0.68,
-      blurRadius: 44,
-      borderColor: "#ffffff18",
-      keyBgOpacity: 0.06,
+      bgColor: "#17130f",
+      bgOpacity: 0.93,
+      blurRadius: 22,
+      borderColor: "#80695b85",
+      keyBgOpacity: 0.052,
     },
   },
   {
-    name: "纯黑",
+    name: "蓝紫",
     theme: {
-      bgColor: "#000000",
-      bgOpacity: 0.92,
-      blurRadius: 0,
-      borderColor: "#333333",
-      keyBgOpacity: 0.05,
-    },
-  },
-  {
-    name: "半透明",
-    theme: {
-      bgColor: "#080808",
-      bgOpacity: 0.38,
-      blurRadius: 56,
-      borderColor: "#ffffff10",
-      keyBgOpacity: 0.02,
-    },
-  },
-  {
-    name: "午夜蓝",
-    theme: {
-      bgColor: "#0a1128",
-      bgOpacity: 0.80,
-      blurRadius: 28,
-      borderColor: "#3b82f640",
-      keyBgOpacity: 0.04,
+      bgColor: "#101622",
+      bgOpacity: 0.93,
+      blurRadius: 24,
+      borderColor: "#848eb28a",
+      keyBgOpacity: 0.064,
     },
   },
 ];
@@ -135,6 +121,7 @@ function getUrlOrigin(value: string): string | null {
 function getWebAccountEntries(config: KeyboardConfig | null): WebAccountEntry[] {
   if (!config) return [];
   const entries: WebAccountEntry[] = [];
+
   config.pages.forEach((page, pageIndex) => {
     (Object.entries(page.keys) as [KeyId, KeyMap[KeyId]][]).forEach(([keyId, binding]) => {
       const action = binding?.action;
@@ -150,6 +137,7 @@ function getWebAccountEntries(config: KeyboardConfig | null): WebAccountEntry[] 
       });
     });
   });
+
   return entries;
 }
 
@@ -228,6 +216,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setStatus("请输入有效网址。");
       return;
     }
+
     const username = nextState.username.trim();
     const oldOrigin = getUrlOrigin(entry.action.target);
     const keyChanged = oldOrigin !== origin || (entry.action.username ?? "") !== username;
@@ -237,6 +226,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setStatus("保存密码需要账号名。");
       return;
     }
+
     if (keyChanged && entry.action.hasPassword && !nextState.password) {
       setStatus("修改网址或账号时，请重新输入密码。");
       return;
@@ -284,7 +274,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   const clearPassword = async (entry: WebAccountEntry) => {
     if (!config || !entry.origin || !entry.action.username) return;
-    if (!window.confirm(`清除「${entry.action.name}」保存的网页密码？`)) return;
+    if (!window.confirm(`清除“${entry.action.name}”保存的网页密码？`)) return;
+
     await invoke("delete_web_password", {
       origin: entry.origin,
       username: entry.action.username,
@@ -302,13 +293,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
   const removeBinding = async (entry: WebAccountEntry) => {
     if (!config) return;
-    if (!window.confirm(`移除网页账号绑定「${entry.action.name}」？`)) return;
+    if (!window.confirm(`移除网页账号绑定“${entry.action.name}”？`)) return;
+
     if (entry.action.hasPassword && entry.origin && entry.action.username) {
       await invoke("delete_web_password", {
         origin: entry.origin,
         username: entry.action.username,
       }).catch(() => {});
     }
+
     const pages = [...config.pages];
     const page = { ...pages[entry.pageIndex], keys: { ...pages[entry.pageIndex].keys } };
     page.keys[entry.keyId] = { action: null };
@@ -324,14 +317,18 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div ref={rootRef} className="settings-panel motion-panel" style={{
-      width: "100%",
-      height: "100%",
-      display: "grid",
-      gridTemplateColumns: "132px 1fr",
-      overflow: "hidden",
-      boxSizing: "border-box",
-    }}>
+    <div
+      ref={rootRef}
+      className="settings-panel motion-panel"
+      style={{
+        width: "100%",
+        height: "100%",
+        display: "grid",
+        gridTemplateColumns: "132px 1fr",
+        overflow: "hidden",
+        boxSizing: "border-box",
+      }}
+    >
       <style>{`
         .settings-panel input[type="range"] {
           -webkit-appearance: none;
@@ -372,23 +369,23 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         }
         .settings-panel input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
         .settings-panel input[type="color"]::-webkit-color-swatch { border: none; border-radius: 4px; }
-        .settings-panel button {
-          font-family: inherit;
-        }
+        .settings-panel button { font-family: inherit; }
       `}</style>
 
-      <aside style={{
-        padding: 12,
-        borderRight: "1px solid rgba(255,255,255,0.08)",
-        background: "rgba(0,0,0,0.10)",
-      }}>
+      <aside
+        style={{
+          padding: 12,
+          borderRight: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(0,0,0,0.10)",
+        }}
+      >
         <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.86)", marginBottom: 12 }}>
           设置
         </div>
         {[
           ["appearance", "外观"],
-          ["webaccounts", "密码本"],
-          ["entries", "Entries"],
+          ["webaccounts", "网页账号"],
+          ["entries", "入口"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -413,17 +410,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       </aside>
 
       <main style={{ minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <header style={{
-          height: 44,
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 14px",
-          borderBottom: "1px solid rgba(255,255,255,0.08)",
-        }}>
+        <header
+          style={{
+            height: 44,
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "0 14px",
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
+          }}
+        >
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.84)" }}>
-            {activeSection === "appearance" ? "外观设置" : activeSection === "entries" ? "Entries" : "URL 与账号密码本"}
+            {activeSection === "appearance" ? "外观设置" : activeSection === "entries" ? "入口设置" : "URL 与账号密码本"}
           </div>
           <MacWindowControls onClose={onClose} closeTitle="关闭设置" />
         </header>
@@ -454,20 +453,23 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       border: theme.bgColor === color ? "2px solid #60a5fa" : "1px solid rgba(255,255,255,0.16)",
                       cursor: "pointer",
                     }}
+                    aria-label={`背景色 ${color}`}
                   />
                 ))}
-                <label style={{
-                  width: 24,
-                  height: 24,
-                  borderRadius: 6,
-                  border: "1px dashed rgba(255,255,255,0.26)",
-                  cursor: "pointer",
-                  position: "relative",
-                  overflow: "hidden",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}>
+                <label
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: 6,
+                    border: "1px dashed rgba(255,255,255,0.26)",
+                    cursor: "pointer",
+                    position: "relative",
+                    overflow: "hidden",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
                   <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>+</span>
                   <input
                     type="color"
@@ -504,17 +506,17 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </>
           ) : activeSection === "entries" ? (
             <section className="motion-list" style={{ padding: 2 }}>
-              <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>Entries</h2>
+              <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>入口</h2>
               <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Search</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  Shortcut: Ctrl+Alt+K. Searches keyboard bindings, built-ins, and recent actions.
+                  快捷键：Ctrl+Alt+K。搜索键盘绑定、内置功能和最近动作。
                 </div>
               </div>
               <div style={{ ...panelStyle, padding: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  Shortcut: Ctrl+Alt+P. Opens quick actions for search, screenshot report, clipboard, keyboard mode, and hide. Drag to reposition; the pet position is saved.
+                  快捷键：Ctrl+Alt+P。打开搜索、截图报告、剪切板、键盘模式和隐藏操作；可拖动并保存位置。
                 </div>
               </div>
             </section>
@@ -546,7 +548,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                     >
                       <div style={{ fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.action.name}</div>
                       <div style={{ marginTop: 5, fontSize: 10, color: "rgba(255,255,255,0.42)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                        {entry.pageName} / {entry.keyId} · {entry.action.username || "未设置账号"}
+                        {entry.pageName} / {entry.keyId} / {entry.action.username || "未设置账号"}
                       </div>
                     </button>
                   ))}
@@ -573,7 +575,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                     <div style={LABEL}>账号</div>
                     <input style={{ ...INPUT, marginBottom: 10 }} value={editState.username} onChange={(event) => setEditState({ ...editState, username: event.target.value })} />
                     <div style={LABEL}>重设密码</div>
-                    <input style={{ ...INPUT, marginBottom: 10 }} type="password" value={editState.password} placeholder={editingEntry.action.hasPassword ? "已保存，留空不修改" : "输入后保存到系统凭据"} onChange={(event) => setEditState({ ...editState, password: event.target.value })} />
+                    <input
+                      style={{ ...INPUT, marginBottom: 10 }}
+                      type="password"
+                      value={editState.password}
+                      placeholder={editingEntry.action.hasPassword ? "已保存，留空不修改" : "输入后保存到系统凭据"}
+                      onChange={(event) => setEditState({ ...editState, password: event.target.value })}
+                    />
 
                     <label style={{ display: "flex", gap: 8, alignItems: "center", color: "rgba(255,255,255,0.68)", fontSize: 12, marginBottom: 8 }}>
                       <input type="checkbox" checked={editState.autofill} onChange={(event) => setEditState({ ...editState, autofill: event.target.checked })} />
@@ -599,7 +607,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                       {editingEntry.action.hasPassword && <button onClick={() => clearPassword(editingEntry)} style={BUTTON}>清除密码</button>}
                       <button onClick={() => updateEntry(editingEntry, editState)} style={{ ...BUTTON, background: "rgba(37,99,235,0.70)", color: "#fff", borderColor: "rgba(96,165,250,0.32)" }}>保存</button>
                     </div>
-                    {status && <div style={{ marginTop: 10, color: status.includes("已") ? "rgba(74,222,128,0.86)" : "rgba(248,113,113,0.9)", fontSize: 11 }}>{status}</div>}
+                    {status && (
+                      <div style={{ marginTop: 10, color: status.includes("已") ? "rgba(74,222,128,0.86)" : "rgba(248,113,113,0.9)", fontSize: 11 }}>
+                        {status}
+                      </div>
+                    )}
                   </>
                 )}
               </section>
