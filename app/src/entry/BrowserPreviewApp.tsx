@@ -100,7 +100,7 @@ export function BrowserPreviewApp() {
 
           <button className="preview-cat-button" type="button" onClick={() => setOpen((value) => !value)} style={{ width: 148, height: 132, border: 0, background: "transparent", boxShadow: "none" }}>
             <span className="pet-siamese-frame" aria-hidden="true">
-              <img src="/pet/siamese/keyboard-jump/0001.png" alt="" draggable={false} />
+              <img src="/pet/siamese/cozy-tail-ear-wiggle/0001.png" alt="" draggable={false} />
             </span>
           </button>
         </section>

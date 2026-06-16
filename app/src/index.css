@@ -281,12 +281,17 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 188px;
+    width: 168px;
     height: auto;
-    transform: translate(-50%, -53%);
+    transform: translate(-50%, -51%);
     image-rendering: pixelated;
     user-select: none;
     -webkit-user-drag: none;
+  }
+
+  .pet-siamese-frame[data-pet-sprite-action="keyboardJump"] img {
+    width: 188px;
+    transform: translate(-50%, -53%);
   }
 
   .pet-custom-action-hint {

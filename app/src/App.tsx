@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { register as registerShortcut, unregisterAll } from "@tauri-apps/plugin-global-shortcut";
+import { register as registerShortcut, unregister as unregisterShortcut } from "@tauri-apps/plugin-global-shortcut";
 import gsap from "gsap";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { loadConfig, saveConfig } from "@/api/config";
@@ -10,7 +10,6 @@ import { KeyboardPanel } from "@/components/KeyboardPanel";
 import { BindingModal } from "@/components/BindingModal";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { MacWindowControls } from "@/components/MacWindowControls";
-import { getStoredEntryPosition, setStoredEntryPosition } from "@/entry/windowPosition";
 import type { Action, KeyId, BuiltinAction, KeyboardConfig, ThemeConfig } from "@/types/actions";
 import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon } from "@/icons";
 import { PixelPetIcon, SearchIcon } from "@/icons/entryIcons";
@@ -22,14 +21,15 @@ import { getGlobalShortcuts, keyIdToShortcut } from "@/platform/shortcuts";
 import "./index.css";
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
-const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
-const MAIN_WINDOW_WIDTH = 920;
-const MAIN_WINDOW_HEIGHT = 540;
-const PET_WINDOW_SIZE = 284;
+const PET_ACTION_STATE_KEY = "devlauncher:pet-action-state";
 const GLOBAL_SHORTCUTS = getGlobalShortcuts();
 
 function builtinToggleCommand(feature: BuiltinAction["feature"]): string {
   return feature === "json" ? "toggle_json_helper_window" : `toggle_${feature}_window`;
+}
+
+function setPetActionState(action: "cozy" | "keyboardJump") {
+  window.localStorage.setItem(PET_ACTION_STATE_KEY, action);
 }
 
 // Hex to rgba helper
@@ -109,8 +109,6 @@ export default function App() {
   } = useKeyboardStore();
 
   const [bindingKey, setBindingKey] = useState<KeyId | null>(null);
-  const [modeTransition, setModeTransition] = useState<"idle" | "to-pet">("idle");
-
   // Tab editing state
   const [editingTabIndex, setEditingTabIndex] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -120,6 +118,7 @@ export default function App() {
   const settingsDialogRef = useRef<HTMLDivElement>(null);
   const petModeButtonRef = useRef<HTMLButtonElement>(null);
   const reducedMotion = useReducedMotion();
+  const registeredFrontendShortcutsRef = useRef<string[]>([]);
 
   const resetKeyboardPanelVisualState = useCallback(() => {
     const panel = rootPanelRef.current;
@@ -184,7 +183,6 @@ export default function App() {
 
   useEffect(() => {
     const handleWindowFocus = () => {
-      if (modeTransition === "to-pet") return;
       const shouldAnimateReturn = window.localStorage.getItem(KEYBOARD_RETURN_ANIMATION_KEY) === "1";
       if (shouldAnimateReturn) {
         window.localStorage.removeItem(KEYBOARD_RETURN_ANIMATION_KEY);
@@ -202,7 +200,7 @@ export default function App() {
       window.removeEventListener("focus", handleWindowFocus);
       document.removeEventListener("visibilitychange", handleWindowFocus);
     };
-  }, [modeTransition, playKeyboardReturnTimeline, resetKeyboardPanelVisualState]);
+  }, [playKeyboardReturnTimeline, resetKeyboardPanelVisualState]);
 
   useGsapContext(settingsDialogRef, () => {
     if (!showSettings || !settingsDialogRef.current) return;
@@ -354,8 +352,11 @@ export default function App() {
     let cancelled = false;
 
     const setup = async () => {
-      // Unregister all first, then guard against stale runs
-      try { await unregisterAll(); } catch {}
+      const previousShortcuts = registeredFrontendShortcutsRef.current;
+      registeredFrontendShortcutsRef.current = [];
+      if (previousShortcuts.length > 0) {
+        try { await unregisterShortcut(previousShortcuts); } catch {}
+      }
       if (cancelled) return;
 
       const entries = Object.entries(page?.keys ?? {});
@@ -381,30 +382,9 @@ export default function App() {
         });
         try {
           await registerShortcut(shortcut, handler);
+          registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, shortcut];
         } catch (err) {
           console.warn(`Global shortcut ${shortcut} unavailable:`, err);
-        }
-      }
-
-      if (!cancelled) {
-        try {
-          await registerShortcut(
-            GLOBAL_SHORTCUTS.keyboard,
-            makeDebounced(async () => {
-              const win = getCurrentWindow();
-              if (await win.isVisible()) {
-                const position = await win.outerPosition();
-                setStoredEntryPosition("main", { x: position.x, y: position.y });
-                win.hide().catch(() => {});
-              } else {
-                invoke("show_keyboard_window", {
-                  position: getStoredEntryPosition("main"),
-                }).catch(console.error);
-              }
-            })
-          );
-        } catch (err) {
-          console.warn(`${GLOBAL_SHORTCUTS.keyboard} shortcut unavailable:`, err);
         }
       }
 
@@ -416,6 +396,7 @@ export default function App() {
               invoke("show_clipboard_window").catch(console.error);
             })
           );
+          registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, GLOBAL_SHORTCUTS.clipboard];
         } catch (err) {
           console.warn(`${GLOBAL_SHORTCUTS.clipboard} shortcut unavailable:`, err);
         }
@@ -429,31 +410,20 @@ export default function App() {
               invoke("show_search_window").catch(console.error);
             })
           );
+          registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, GLOBAL_SHORTCUTS.search];
         } catch (err) {
           console.warn(`${GLOBAL_SHORTCUTS.search} search shortcut unavailable:`, err);
         }
       }
 
-      if (!cancelled) {
-        try {
-          await registerShortcut(
-            GLOBAL_SHORTCUTS.pet,
-            makeDebounced(async () => {
-              invoke("show_pet_window", {
-                position: getStoredEntryPosition("pet"),
-              }).catch(console.error);
-            })
-          );
-        } catch (err) {
-          console.warn(`${GLOBAL_SHORTCUTS.pet} pet shortcut unavailable:`, err);
-        }
-      }
     };
 
     setup();
     return () => {
       cancelled = true;
-      unregisterAll().catch(() => {});
+      const shortcuts = registeredFrontendShortcutsRef.current;
+      registeredFrontendShortcutsRef.current = [];
+      if (shortcuts.length > 0) unregisterShortcut(shortcuts).catch(() => {});
     };
   }, [config, activePageIndex]);
 
@@ -502,68 +472,6 @@ export default function App() {
 
   const activePage = config?.pages[activePageIndex];
 
-  const saveCurrentWindowPosition = useCallback(async (mode: "main" | "pet") => {
-    const position = await getCurrentWindow().outerPosition();
-    setStoredEntryPosition(mode, { x: position.x, y: position.y });
-    return position;
-  }, []);
-
-  const playSwitchToPetTimeline = useCallback(() => {
-    const panel = rootPanelRef.current;
-    const petButton = petModeButtonRef.current;
-    const duration = reducedMotion ? 0 : motionDuration.playful;
-
-    if (!panel) return duration;
-
-    gsap.timeline({ defaults: { overwrite: "auto" } })
-      .to(petButton, {
-        scale: reducedMotion ? 1 : 1.12,
-        rotation: reducedMotion ? 0 : -8,
-        filter: reducedMotion ? "none" : "brightness(1.22) saturate(1.22)",
-        duration: reducedMotion ? 0 : motionDuration.panel,
-        ease: motionEase.enter,
-      }, 0)
-      .to(panel, {
-        autoAlpha: 0,
-        y: reducedMotion ? 0 : 10,
-        scale: reducedMotion ? 1 : 0.9,
-        borderRadius: reducedMotion ? 16 : 34,
-        filter: reducedMotion ? "none" : "blur(1.4px) saturate(1.08) brightness(0.78)",
-        duration,
-        ease: reducedMotion ? motionEase.standard : motionEase.morph,
-      }, 0);
-
-    return duration;
-  }, [reducedMotion]);
-
-  const switchToPetMode = useCallback(async () => {
-    if (modeTransition !== "idle") return;
-    setModeTransition("to-pet");
-    try {
-      const mainPosition = await saveCurrentWindowPosition("main");
-      const petPosition = getStoredEntryPosition("pet") ?? {
-        x: mainPosition.x + MAIN_WINDOW_WIDTH + 24,
-        y: mainPosition.y + Math.round((MAIN_WINDOW_HEIGHT - PET_WINDOW_SIZE) / 2),
-      };
-      setStoredEntryPosition("pet", petPosition);
-      const durationMs = Math.round(playSwitchToPetTimeline() * 1000);
-      window.setTimeout(() => {
-        window.localStorage.setItem(PET_RETURN_ANIMATION_KEY, "1");
-        invoke("switch_to_pet_mode", { position: petPosition })
-          .catch((error) => {
-            window.localStorage.removeItem(PET_RETURN_ANIMATION_KEY);
-            console.error(error);
-            resetKeyboardPanelVisualState();
-          })
-          .finally(() => setModeTransition("idle"));
-      }, durationMs);
-    } catch (error) {
-      console.error(error);
-      resetKeyboardPanelVisualState();
-      setModeTransition("idle");
-    }
-  }, [modeTransition, playSwitchToPetTimeline, resetKeyboardPanelVisualState, saveCurrentWindowPosition]);
-
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent" }}>
       {/* Glass panel */}
@@ -598,27 +506,22 @@ export default function App() {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               ref={petModeButtonRef}
-              onClick={() => switchToPetMode().catch(console.error)}
-              title="Pet mode"
+              title="Keyboard mode"
               style={{
                 width: 28,
                 height: 28,
                 borderRadius: 8,
                 border: "1px solid rgba(255,255,255,0.13)",
-                background: modeTransition === "to-pet"
-                  ? "rgba(243,201,139,0.18)"
-                  : "linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.025))",
-                boxShadow: modeTransition === "to-pet"
-                  ? "0 0 18px rgba(243,201,139,0.28)"
-                  : "inset 0 1px 0 rgba(255,255,255,0.15), 0 6px 15px rgba(0,0,0,0.28)",
-                cursor: modeTransition === "idle" ? "pointer" : "default",
+                background: "linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.025))",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.15), 0 6px 15px rgba(0,0,0,0.28)",
+                cursor: "default",
                 padding: 0,
                 display: "grid",
                 placeItems: "center",
                 transition: "background 180ms ease, box-shadow 180ms ease",
               }}
               type="button"
-              disabled={modeTransition !== "idle"}
+              tabIndex={-1}
               data-tauri-drag-region="false"
             >
               <PixelPetIcon size={18} decorative />
@@ -683,8 +586,14 @@ export default function App() {
             </button>
             <span style={{ width: 1, height: 14, background: "rgba(255,255,255,0.2)", opacity: 0.35 }} />
             <MacWindowControls
-              onClose={() => getCurrentWindow().hide()}
-              onMinimize={() => getCurrentWindow().minimize()}
+              onClose={() => {
+                setPetActionState("cozy");
+                getCurrentWindow().hide();
+              }}
+              onMinimize={() => {
+                setPetActionState("cozy");
+                getCurrentWindow().minimize();
+              }}
               closeTitle="Hide to tray"
               minimizeTitle="Minimize"
             />

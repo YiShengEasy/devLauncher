@@ -12,6 +12,10 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
+use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
+
+const KEYBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+Space";
+const PET_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+P";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -25,7 +29,37 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_shortcuts([KEYBOARD_GLOBAL_SHORTCUT, PET_GLOBAL_SHORTCUT])
+                .expect("failed to parse built-in global shortcuts")
+                .with_handler(|app, _shortcut, event| {
+                    if event.state != ShortcutState::Pressed {
+                        return;
+                    }
+
+                    let keyboard_shortcut = KEYBOARD_GLOBAL_SHORTCUT.parse::<Shortcut>();
+                    let pet_shortcut = PET_GLOBAL_SHORTCUT.parse::<Shortcut>();
+
+                    if keyboard_shortcut
+                        .as_ref()
+                        .map(|shortcut| shortcut.id() == event.id)
+                        .unwrap_or(false)
+                    {
+                        let _ = entries::toggle_keyboard_window(app.clone());
+                        return;
+                    }
+
+                    if pet_shortcut
+                        .as_ref()
+                        .map(|shortcut| shortcut.id() == event.id)
+                        .unwrap_or(false)
+                    {
+                        let _ = entries::toggle_pet_window(app.clone());
+                    }
+                })
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             config::load_config,
             config::save_config,
