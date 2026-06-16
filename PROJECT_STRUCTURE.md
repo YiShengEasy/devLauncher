@@ -95,6 +95,7 @@ app/src-tauri/
     +-- lib.rs            # Tauri builder, plugins, invoke handlers, setup, tray
     +-- actions.rs        # Generic launcher actions: app/folder/file/url/ssh/script/system
     +-- config.rs         # keyboard.yaml load/save/path commands
+    +-- platform.rs       # OS-specific command specs, shell defaults, capabilities
     +-- types.rs          # Rust config/action/clipboard shared data types
     +-- builtins/         # Backend modules for built-in features
     `-- utils/            # Shared helpers such as icon extraction and image encoding
@@ -102,9 +103,20 @@ app/src-tauri/
 
 Current Rust module entry points:
 
-- `app/src-tauri/src/lib.rs`: declares `mod actions`, `mod builtins`, `mod config`, `mod types`, and `mod utils`.
+- `app/src-tauri/src/lib.rs`: declares `mod actions`, `mod builtins`, `mod config`, `mod platform`, `mod types`, and `mod utils`.
 - `app/src-tauri/src/builtins/mod.rs`: exposes all built-in backend modules.
 - `app/src-tauri/src/utils/mod.rs`: exposes shared utility modules.
+
+## Platform Compatibility
+
+Platform-specific behavior is centralized in:
+
+```text
+app/src/platform/shortcuts.ts      # Frontend shortcut strings and labels
+app/src-tauri/src/platform.rs      # Rust command specs, shell defaults, capabilities
+```
+
+Do not add direct `cmd`, `powershell`, `explorer.exe`, `mstsc`, or `open -a` calls in feature modules when a platform helper can own the choice.
 
 ## Rust Command Search Map
 

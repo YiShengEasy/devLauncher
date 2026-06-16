@@ -1,9 +1,9 @@
 # DevLauncher
 
-Developer productivity launcher for Windows. DevLauncher binds frequent development actions to a virtual keyboard and ships several built-in utility panels for everyday engineering work.
+Developer productivity launcher for Windows and macOS MVP workflows. DevLauncher binds frequent development actions to a virtual keyboard and ships several built-in utility panels for everyday engineering work.
 
 ![version](https://img.shields.io/badge/version-0.2.0-blue)
-![platform](https://img.shields.io/badge/platform-Windows-lightgrey)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20MVP-lightgrey)
 ![tauri](https://img.shields.io/badge/Tauri-2.x-orange)
 
 ## Current Status
@@ -23,11 +23,11 @@ Recent app work focused on built-in tools and plugin-style feature registration:
 | --- | --- |
 | Virtual keyboard launcher | Bind actions to keyboard-like keys and trigger them from the main panel. |
 | Multiple pages | Organize bindings across pages and switch pages with `Tab` / `Shift+Tab`. |
-| Global shortcuts | `Alt+Space` toggles the main window; `Alt+<key>` triggers the active page binding. |
+| Global shortcuts | Platform-aware shortcuts toggle the main window and trigger active page bindings. |
 | Tray behavior | Main window can hide to tray and be shown again from the tray/menu. |
 | Action bindings | Supports app, folder, file, URL, SSH, script, system command, and built-in actions. |
 | Theme settings | Glass-style panel with configurable background, blur, border, and key opacity. |
-| Folder open-with | Folder bindings can open in Explorer, VS Code, Cursor, or a custom opener. |
+| Folder open-with | Folder bindings can open in Explorer/Finder, VS Code, Cursor, or a custom opener. |
 | Built-in panels | Clipboard, JSON, TOTP, remote desk, terminal, screenshot, screenshot report, web accounts, and quick memory. |
 
 ## Built-In Panels
@@ -68,11 +68,25 @@ Behavior:
 
 | Shortcut | Behavior |
 | --- | --- |
-| `Alt+Space` | Show or hide the main DevLauncher window. |
-| `Alt+<key>` | Trigger the binding for a key on the active page. |
-| `Ctrl+Shift+V` | Open clipboard history. |
+| `Ctrl+Alt+Space` | Show or hide the main DevLauncher window on Windows. |
+| `Alt+<key>` | Trigger the binding for a key on the active page on Windows. |
+| `Ctrl+Alt+V` | Open clipboard history on Windows. |
 | `Tab` / `Shift+Tab` | Switch launcher pages while the main window is focused. |
 | `Esc` | Hide most built-in utility windows. |
+
+### macOS Shortcut Behavior
+
+DevLauncher must be running before global shortcuts work. The virtual keyboard window can be hidden after startup; registered key bindings still work while the app process is running in the background.
+
+Default macOS shortcuts:
+
+| Shortcut | Behavior |
+| --- | --- |
+| `Cmd+Opt+Space` | Show or hide the main DevLauncher window. |
+| `Cmd+Opt+<key>` | Trigger the binding for a key on the active page. |
+| `Cmd+Opt+V` | Open clipboard history. |
+| `Cmd+Opt+K` | Open search. |
+| `Cmd+Opt+P` | Open pet/entry mode. |
 
 ## Project Layout
 
@@ -113,9 +127,9 @@ app/src-tauri/src/lib.rs
 
 Requirements:
 
-- Windows with WebView2
+- Windows with WebView2, or macOS with system WebView support
 - Node.js 18+
-- Rust stable
+- Rust stable with Cargo available on PATH
 
 Install and run:
 
