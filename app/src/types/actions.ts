@@ -169,11 +169,11 @@ export interface ThemeConfig {
 }
 
 export const DEFAULT_THEME: ThemeConfig = {
-  bgColor: "#10121f",
-  bgOpacity: 0.82,
-  blurRadius: 32,
-  borderColor: "#ffffff1a",
-  keyBgOpacity: 0.04,
+  bgColor: "#101622",
+  bgOpacity: 0.92,
+  blurRadius: 24,
+  borderColor: "#77778c78",
+  keyBgOpacity: 0.055,
 };
 
 export interface KeyboardConfig {

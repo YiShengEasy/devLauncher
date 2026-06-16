@@ -11,9 +11,9 @@ import { BindingModal } from "@/components/BindingModal";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { getStoredEntryPosition, setStoredEntryPosition } from "@/entry/windowPosition";
-import type { Action, KeyId, BuiltinAction, KeyboardConfig } from "@/types/actions";
+import type { Action, KeyId, BuiltinAction, KeyboardConfig, ThemeConfig } from "@/types/actions";
 import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon } from "@/icons";
-import { PixelPetIcon } from "@/icons/entryIcons";
+import { PixelPetIcon, SearchIcon } from "@/icons/entryIcons";
 import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
 import { motionDuration, motionEase } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
@@ -22,8 +22,8 @@ import "./index.css";
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
 const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
-const MAIN_WINDOW_WIDTH = 860;
-const MAIN_WINDOW_HEIGHT = 480;
+const MAIN_WINDOW_WIDTH = 920;
+const MAIN_WINDOW_HEIGHT = 540;
 const PET_WINDOW_SIZE = 284;
 const GLOBAL_SHORTCUTS = {
   keyboard: "Ctrl+Alt+Space",
@@ -32,7 +32,7 @@ const GLOBAL_SHORTCUTS = {
   pet: "Ctrl+Alt+P",
 } as const;
 
-// Convert KeyId → global shortcut string (hotkey crate format)
+// Convert KeyId to global shortcut string (hotkey crate format)
 function keyIdToShortcut(keyId: string): string {
   if (/^\d$/.test(keyId)) return `Alt+Digit${keyId}`;
   return `Alt+Key${keyId}`;
@@ -42,12 +42,50 @@ function builtinToggleCommand(feature: BuiltinAction["feature"]): string {
   return feature === "json" ? "toggle_json_helper_window" : `toggle_${feature}_window`;
 }
 
-// Hex → rgba helper
+// Hex to rgba helper
 function hexToRgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function launcherShellBackground(theme: ThemeConfig): string {
+  const bgColor = theme.bgColor.toLowerCase();
+  const borderColor = theme.borderColor.toLowerCase();
+  const isWarm = bgColor === "#17130f";
+  const isAurora = borderColor.startsWith("#848eb2");
+
+  if (isWarm) {
+    return [
+      "linear-gradient(90deg, rgba(255,232,198,0.011) 1px, transparent 1px) 0 0 / 39px 39px",
+      "linear-gradient(0deg, rgba(255,232,198,0.008) 1px, transparent 1px) 0 0 / 39px 39px",
+      "radial-gradient(circle at 98% 29%, rgba(132,63,62,0.18), transparent 18%)",
+      "radial-gradient(circle at 18% 4%, rgba(98,68,40,0.22), transparent 30%)",
+      "radial-gradient(circle at 8% 96%, rgba(105,61,50,0.45), transparent 24%)",
+      "linear-gradient(145deg, #1e1a14, #11100d 58%, #0a0a08)",
+    ].join(", ");
+  }
+
+  if (isAurora) {
+    return [
+      "linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 39px 39px",
+      "linear-gradient(0deg, rgba(255,255,255,0.008) 1px, transparent 1px) 0 0 / 39px 39px",
+      "radial-gradient(circle at 88% 13%, rgba(205,89,84,0.24), transparent 22%)",
+      "radial-gradient(circle at 66% 8%, rgba(94,73,178,0.28), transparent 30%)",
+      "radial-gradient(circle at 11% 96%, rgba(116,58,128,0.42), transparent 28%)",
+      "linear-gradient(145deg, #121a2a, #07111e 58%, #08101d)",
+    ].join(", ");
+  }
+
+  return [
+    "linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px) 0 0 / 39px 39px",
+    "linear-gradient(0deg, rgba(255,255,255,0.008) 1px, transparent 1px) 0 0 / 39px 39px",
+    "radial-gradient(circle at 98% 29%, rgba(160,70,70,0.18), transparent 18%)",
+    "radial-gradient(circle at 18% 4%, rgba(43,55,131,0.22), transparent 30%)",
+    "radial-gradient(circle at 8% 96%, rgba(113,58,77,0.47), transparent 24%)",
+    "linear-gradient(145deg, #191d2b, #080e19 58%, #0b121f)",
+  ].join(", ");
 }
 
 function getUrlOrigin(value: string): string | null {
@@ -181,7 +219,7 @@ export default function App() {
     animateDialogEnter(settingsDialogRef.current, reducedMotion);
   }, [showSettings, reducedMotion]);
 
-  // Extract app icons from .exe files — defined BEFORE the effects that call it
+  // Extract app icons from .exe files.
   const extractAllAppIcons = useCallback(async (cfg: KeyboardConfig) => {
     const paths = new Set<string>();
     for (const page of cfg.pages) {
@@ -277,7 +315,7 @@ export default function App() {
       unlisten?.();
     };
   }, [setShowSettings]);
-  // Extract app icons from .exe files — MOVED above, before first useEffect
+  // Extract app icons from .exe files.
 
   // Execute action on key click
   const handleKeyClick = useCallback(async (keyId: KeyId) => {
@@ -297,7 +335,6 @@ export default function App() {
     }
   }, [config, activePageIndex]);
 
-  // ── Tab key: cycle pages when window focused (not inside an input) ──
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Tab" || e.repeat) return;
@@ -316,7 +353,6 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  // ── Global Alt+key shortcuts + low-conflict entry shortcuts ──
   useEffect(() => {
     if (!config) return;
     const page = config.pages[activePageIndex];
@@ -349,7 +385,6 @@ export default function App() {
         }
       }
 
-      // ── Register keyboard-window toggle shortcut (always active) ──
       if (!cancelled) {
         try {
           await registerShortcut(
@@ -372,7 +407,6 @@ export default function App() {
         }
       }
 
-      // ── Register clipboard-window shortcut (always active) ──
       if (!cancelled) {
         try {
           await registerShortcut(
@@ -536,45 +570,46 @@ export default function App() {
         ref={rootPanelRef}
         className="glass entry-mode-shell"
         style={{
-          width: 840, borderRadius: 16,
+          width: 900, borderRadius: 16,
           display: "flex", flexDirection: "column",
           overflow: "hidden",
-          background: hexToRgba(theme.bgColor, theme.bgOpacity),
+          backgroundColor: hexToRgba(theme.bgColor, theme.bgOpacity),
+          background: launcherShellBackground(theme),
           backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           border: `1px solid ${theme.borderColor}`,
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 20px 48px rgba(0,0,0,0.28)",
           position: "relative",
         }}
       >
-        {/* ── Title bar (drag region) ─────────────────── */}
+        {/* Header */}
         <div
           data-tauri-drag-region
           style={{
-            height: 38,
+            height: 50,
             flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "0 14px",
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
+            padding: "10px 16px 9px 14px",
+            borderBottom: "1px solid rgba(255,255,255,0.075)",
             cursor: "move",
           }}
         >
-          {/* Left: logo + name */}
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               ref={petModeButtonRef}
               onClick={() => switchToPetMode().catch(console.error)}
-              title="Switch to pixel cat pet"
+              title="Pet mode"
               style={{
                 width: 28,
                 height: 28,
                 borderRadius: 8,
-                border: "1px solid rgba(255,255,255,0.14)",
+                border: "1px solid rgba(255,255,255,0.13)",
                 background: modeTransition === "to-pet"
                   ? "rgba(243,201,139,0.18)"
-                  : "rgba(255,255,255,0.06)",
+                  : "linear-gradient(145deg, rgba(255,255,255,0.09), rgba(255,255,255,0.025))",
                 boxShadow: modeTransition === "to-pet"
                   ? "0 0 18px rgba(243,201,139,0.28)"
-                  : "inset 0 1px 0 rgba(255,255,255,0.08)",
+                  : "inset 0 1px 0 rgba(255,255,255,0.15), 0 6px 15px rgba(0,0,0,0.28)",
                 cursor: modeTransition === "idle" ? "pointer" : "default",
                 padding: 0,
                 display: "grid",
@@ -587,43 +622,79 @@ export default function App() {
             >
               <PixelPetIcon size={18} decorative />
             </button>
-            <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.75)", letterSpacing: "0.3px", pointerEvents: "none" }}>
+            <span style={{ fontSize: 12, fontWeight: 650, color: "rgba(255,255,255,0.86)", letterSpacing: 0, pointerEvents: "none" }}>
               DevLauncher
+            </span>
+            <span style={{ width: 1, height: 13, background: "rgba(255,255,255,0.2)", display: "inline-block" }} />
+            <span style={{ color: "rgba(222,227,238,0.58)", fontSize: 10, fontWeight: 500, letterSpacing: 0, pointerEvents: "none" }}>
+              {"\u4e00\u952e\u542f\u52a8\u4f60\u7684\u5f00\u53d1\u5de5\u4f5c\u6d41"}
             </span>
           </div>
 
-          {/* Right: window controls */}
-          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+            <button
+              onClick={() => invoke("show_search_window").catch(console.error)}
+              style={{
+                width: 94,
+                height: 30,
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "0 10px",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,0.09)",
+                background: "linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035))",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 13px rgba(0,0,0,0.22)",
+                color: "rgba(241,244,252,0.76)",
+                cursor: "pointer",
+                fontSize: 11,
+                fontWeight: 500,
+              }}
+              title="Search"
+              type="button"
+              data-tauri-drag-region="false"
+            >
+              <SearchIcon size={13} decorative />
+              <span>{"\u641c\u7d22"}</span>
+            </button>
             <button
               onClick={() => setShowSettings(!showSettings)}
               style={{
-                width: 20, height: 20, borderRadius: 4,
-                background: showSettings ? "rgba(59,130,246,0.25)" : "transparent",
-                border: showSettings ? "1px solid rgba(59,130,246,0.4)" : "1px solid transparent",
-                cursor: "pointer", padding: 0, outline: "none",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: showSettings ? "rgba(96,165,250,0.9)" : "rgba(255,255,255,0.4)",
-                transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease",
+                width: 32,
+                height: 30,
+                borderRadius: 8,
+                background: "linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035))",
+                border: "1px solid rgba(255,255,255,0.09)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 13px rgba(0,0,0,0.22)",
+                cursor: "pointer",
+                padding: 0,
+                outline: "none",
+                display: "grid",
+                placeItems: "center",
+                color: "rgba(239,243,255,0.75)",
+                transition: "background-color 180ms ease, border-color 180ms ease, color 180ms ease",
               }}
-              title="设置"
+              title="Settings"
+              type="button"
+              data-tauri-drag-region="false"
             >
-              <SettingsIcon size={12} decorative />
+              <SettingsIcon size={17} decorative />
             </button>
+            <span style={{ width: 1, height: 14, background: "rgba(255,255,255,0.2)", opacity: 0.35 }} />
             <MacWindowControls
               onClose={() => getCurrentWindow().hide()}
               onMinimize={() => getCurrentWindow().minimize()}
-              closeTitle="隐藏到托盘"
-              minimizeTitle="最小化"
+              closeTitle="Hide to tray"
+              minimizeTitle="Minimize"
             />
           </div>
         </div>
-
-        {/* ── Page tabs ──────────────────────────────── */}
         {config && (
           <div style={{
-            display: "flex", alignItems: "flex-end", gap: 3,
-            padding: "8px 12px 0", flexShrink: 0,
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            height: 37,
+            display: "flex", alignItems: "flex-end", gap: 18,
+            padding: "0 0 0 13px", flexShrink: 0,
+            borderBottom: "1px solid rgba(255,255,255,0.08)",
             overflowX: "auto",
           }}>
             {config.pages.map((page, i) => {
@@ -647,15 +718,16 @@ export default function App() {
                         e.stopPropagation();
                       }}
                       style={{
-                        padding: "4px 8px",
-                        minWidth: 48,
-                        width: Math.max(48, editingName.length * 9),
+                        height: 29,
+                        padding: "0 17px",
+                        minWidth: 60,
+                        width: Math.max(60, editingName.length * 10),
                         borderRadius: "6px 6px 0 0",
                         border: "none",
-                        borderBottom: "2px solid #3b82f6",
+                        borderBottom: "3px solid #3f90ff",
                         background: "rgba(255,255,255,0.15)",
                         color: "rgba(255,255,255,0.95)",
-                        fontSize: 12, fontWeight: 500, outline: "none",
+                        fontSize: 12, fontWeight: 560, outline: "none",
                       }}
                     />
                   ) : (
@@ -667,13 +739,17 @@ export default function App() {
                         setTabMenu({ index: i, x: e.clientX, y: e.clientY });
                       }}
                       style={{
-                        padding: "4px 14px",
+                        height: 29,
+                        minWidth: 60,
+                        padding: "0 17px",
                         borderRadius: "6px 6px 0 0",
-                        border: "none", cursor: "pointer",
-                        fontSize: 12, fontWeight: 500,
-                        background: isActive ? "rgba(255,255,255,0.10)" : "transparent",
-                        color: isActive ? "rgba(255,255,255,0.90)" : "rgba(255,255,255,0.38)",
-                        borderBottom: isActive ? "2px solid #3b82f6" : "2px solid transparent",
+                        border: isActive ? "1px solid rgba(255,255,255,0.08)" : "1px solid transparent",
+                        borderBottom: isActive ? "3px solid #3f90ff" : "3px solid transparent",
+                        cursor: "pointer",
+                        fontSize: 12, fontWeight: 560,
+                        background: isActive ? "linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04))" : "transparent",
+                        color: isActive ? "#fbfcff" : "rgba(228,232,242,0.62)",
+                        boxShadow: isActive ? "inset 0 1px 0 rgba(255,255,255,0.09), 0 7px 16px rgba(0,0,0,0.18)" : "none",
                         transition: "background-color 120ms ease, border-color 120ms ease, color 120ms ease", whiteSpace: "nowrap",
                       }}
                     >
@@ -687,18 +763,19 @@ export default function App() {
             {/* Add page button */}
             <button
               onClick={() => {
-                const name = `页面 ${config.pages.length + 1}`;
+                const name = `Page ${config.pages.length + 1}`;
                 addPage(name);
                 persistConfig();
               }}
-              title="新增页面"
+              title="Add page"
               style={{
-                width: 24, height: 24, borderRadius: 6, flexShrink: 0,
-                border: "1px dashed rgba(255,255,255,0.22)",
-                background: "transparent",
-                color: "rgba(255,255,255,0.45)", fontSize: 16, lineHeight: 1,
-                cursor: "pointer", marginBottom: 2, outline: "none",
-                display: "flex", alignItems: "center", justifyContent: "center",
+                width: 27, height: 29, borderRadius: 8, flexShrink: 0,
+                border: "1px solid rgba(255,255,255,0.09)",
+                background: "linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035))",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 13px rgba(0,0,0,0.22)",
+                color: "rgba(247,249,255,0.92)", fontSize: 17, lineHeight: 1,
+                cursor: "pointer", marginBottom: 4, outline: "none",
+                display: "grid", placeItems: "center",
                 transition: "border-color 120ms ease, color 120ms ease, background-color 120ms ease",
               }}
               onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(255,255,255,0.5)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.75)"; }}
@@ -726,14 +803,14 @@ export default function App() {
           >
             {[
               {
-                label: "重命名", icon: <RenameIcon size={14} decorative />,
+                label: "Rename", icon: <RenameIcon size={14} decorative />,
                 action: () => { setEditingTabIndex(tabMenu.index); setEditingName(config.pages[tabMenu.index].name); setTabMenu(null); }
               },
               ...(config.pages.length > 1 ? [{
-                label: "删除此页", icon: <DeleteIcon size={14} decorative />,
+                label: "Delete page", icon: <DeleteIcon size={14} decorative />,
                 action: () => {
-                  const pageName = config.pages[tabMenu.index]?.name ?? "此页面";
-                  if (!window.confirm(`删除页面「${pageName}」？此操作会移除该页所有键位绑定。`)) return;
+                  const pageName = config.pages[tabMenu.index]?.name ?? "this page";
+                  if (!window.confirm(`Delete page "${pageName}"? This will remove all bindings on this page.`)) return;
                   removePage(tabMenu.index);
                   persistConfig();
                   setTabMenu(null);
@@ -763,29 +840,29 @@ export default function App() {
           </div>
         )}
 
-        {/* ── Keyboard area ──────────────────────────── */}
-        <div style={{ padding: "14px 16px 16px" }}>
+        {/* Keyboard area */}
+        <div style={{ padding: "22px 40px 34px" }}>
           {loading ? (
             <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "40px 0", fontSize: 13 }}>
-              加载中...
+              {"Loading..."}
             </div>
           ) : error ? (
             <div style={{ textAlign: "center", color: "rgba(248,113,113,0.86)", padding: "32px 24px", fontSize: 13, lineHeight: 1.7 }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>加载配置失败</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>{"Load config failed"}</div>
               <div style={{ color: "rgba(255,255,255,0.48)", wordBreak: "break-word" }}>{error}</div>
               <div style={{ color: "rgba(255,255,255,0.34)", marginTop: 8 }}>
-                DevLauncher 主界面需要在 Tauri 桌面窗口中运行，直接打开 localhost 只能看到前端壳。
+                {"DevLauncher main window needs the Tauri desktop runtime. Opening localhost directly only shows the frontend shell."}
               </div>
             </div>
           ) : !config ? (
             <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "40px 0", fontSize: 13 }}>
-              暂无配置
+              {"No config"}
             </div>
           ) : config.pages.length === 0 ? (
             <div style={{ textAlign: "center", padding: "40px 0" }}>
-              <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>暂无页面配置</div>
+              <div style={{ color: "rgba(255,255,255,0.3)", fontSize: 13 }}>{"No page config"}</div>
               <div style={{ color: "rgba(255,255,255,0.18)", fontSize: 11, marginTop: 6 }}>
-                请编辑 keyboard.yaml 添加页面
+                {"Edit keyboard.yaml to add pages"}
               </div>
             </div>
           ) : (
@@ -799,7 +876,7 @@ export default function App() {
 
       </div>
 
-      {/* ── Settings Modal ──────────────────────────── */}
+      {/* Settings modal */}
       {showSettings && (
         <div
           className="motion-dialog"
@@ -831,7 +908,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Binding Modal ──────────────────────────── */}
+      {/* Binding modal */}
       {bindingKey && (
         <BindingModal
           keyId={bindingKey}

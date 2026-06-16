@@ -9,6 +9,23 @@ import type { IconComponent } from "@/icons";
 
 const TYPE_ICONS: Record<ActionType, IconComponent> = ACTION_ICON_COMPONENTS;
 
+function LineIconShell({ children, size, color }: { children: ReactNode; size: number; color: string }) {
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        display: "grid",
+        placeItems: "center",
+        color,
+        filter: `drop-shadow(0 0 5px ${color}66) drop-shadow(0 1px 2px rgba(0,0,0,0.42))`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 function websiteOrigin(target: string): string | null {
   try {
     const url = new URL(target.trim());
@@ -108,83 +125,43 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
 
   if (action.type === "system") {
     return (
-      <div
-        style={{
-          width: size, height: size,
-          borderRadius: size * 0.22,
-          background: meta.bg,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "white",
-          fontSize: size * 0.45,
-        }}
-      >
-        <Icon size={size * 0.5} />
-      </div>
+      <LineIconShell size={size} color={meta.color}>
+        <Icon size={size} />
+      </LineIconShell>
     );
   }
 
   if (action.type === "builtin") {
     const feature = (action as BuiltinAction).feature as BuiltinFeature;
     return (
-      <div
-        style={{
-          width: size, height: size,
-          borderRadius: size * 0.22,
-          background: meta.bg,
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}
-      >
-        <BuiltinIcon feature={feature} size={size * 0.78} />
-      </div>
+      <LineIconShell size={size} color={meta.color}>
+        <BuiltinIcon feature={feature} size={size} />
+      </LineIconShell>
     );
   }
 
   if (action.type === "url") {
     const fallback = (
-      <div
-        style={{
-          width: size, height: size,
-          borderRadius: size * 0.22,
-          background: meta.bg,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "white",
-        }}
-      >
-        <Icon size={size * 0.5} />
-      </div>
+      <LineIconShell size={size} color={meta.color}>
+        <Icon size={size} />
+      </LineIconShell>
     );
     return <UrlFavicon action={action as UrlAction} size={size} fallback={fallback} />;
   }
 
   if (action.type === "folder") {
     return (
-      <div
-        style={{
-          width: size, height: size,
-          borderRadius: size * 0.22,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          overflow: "hidden",
-          color: meta.color,
-        }}
-      >
+      <LineIconShell size={size} color={meta.color}>
         <Icon size={size} />
-      </div>
+      </LineIconShell>
     );
   }
 
   if (action.type === "ssh") {
     return (
-      <div
-        style={{
-          width: size, height: size,
-          borderRadius: size * 0.22,
-          overflow: "hidden",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: meta.color,
-        }}
-      >
+      <LineIconShell size={size} color={meta.color}>
         <Icon size={size} />
-      </div>
+      </LineIconShell>
     );
   }
 
@@ -193,12 +170,13 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
   return (
     <div
       style={{
-        width: size, height: size,
-        borderRadius: size * 0.22,
-        background: meta.bg,
-        display: "flex",
-        alignItems: "center", justifyContent: "center",
+        width: size,
+        height: size,
+        display: "grid",
+        placeItems: "center",
         overflow: "hidden",
+        color: meta.color,
+        filter: `drop-shadow(0 0 5px ${meta.color}66) drop-shadow(0 1px 2px rgba(0,0,0,0.42))`,
       }}
     >
       <span style={{
