@@ -5,6 +5,7 @@ import { MacWindowControls } from "@/components/MacWindowControls";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
+import { getGlobalShortcutLabels } from "@/platform/shortcuts";
 
 interface ClipboardPanelProps {
   items: ClipboardEntry[];
@@ -37,6 +38,7 @@ export function ClipboardPanel({
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
+  const shortcutLabels = getGlobalShortcutLabels();
 
   const favoriteIds = new Set(favorites.map(f => f.id));
 
@@ -287,7 +289,7 @@ export function ClipboardPanel({
         flexShrink: 0,
       }}>
         <div style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>
-          点击复制 · Esc 关闭 · Ctrl+Alt+V 唤起
+          点击复制 · Esc 关闭 · {shortcutLabels.clipboard} 唤起
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {activeTab === "history" && items.length > 0 && (

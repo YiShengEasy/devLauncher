@@ -1,6 +1,10 @@
 use tauri::Manager;
 
 use crate::builtins::terminal::TerminalState;
+use crate::platform::{
+    app_launch_spec, chrome_candidates, current_platform, folder_open_spec, shell_run_spec, spawn_spec,
+    system_command_spec, unsupported_on_macos, Platform,
+};
 
 pub fn split_command_args(input: &str) -> Vec<String> {
     let mut args = Vec::new();
@@ -44,37 +48,6 @@ fn spawn_first(candidates: &[String], args: &[String]) -> Result<(), String> {
     Err(last_err.unwrap_or_else(|| "no opener candidates".to_string()))
 }
 
-fn folder_opener_candidates(open_with: &str) -> Vec<String> {
-    let mut candidates = Vec::new();
-    match open_with {
-        "vscode" => {
-            candidates.push("code".to_string());
-            candidates.push("code.cmd".to_string());
-            if let Ok(local) = std::env::var("LOCALAPPDATA") {
-                candidates.push(format!(r"{}\Programs\Microsoft VS Code\Code.exe", local));
-            }
-            if let Ok(program_files) = std::env::var("ProgramFiles") {
-                candidates.push(format!(r"{}\Microsoft VS Code\Code.exe", program_files));
-            }
-        }
-        "cursor" => {
-            candidates.push("cursor".to_string());
-            candidates.push("cursor.cmd".to_string());
-            if let Ok(local) = std::env::var("LOCALAPPDATA") {
-                candidates.push(format!(r"{}\Programs\Cursor\Cursor.exe", local));
-            }
-            if let Ok(program_files) = std::env::var("ProgramFiles") {
-                candidates.push(format!(r"{}\Cursor\Cursor.exe", program_files));
-            }
-        }
-        _ => {
-            #[cfg(target_os = "windows")]
-            candidates.push("explorer.exe".to_string());
-        }
-    }
-    candidates
-}
-
 fn open_folder_with(action: &serde_json::Value, target: &str) -> Result<(), String> {
     let open_with = action["openWith"]
         .as_str()
@@ -102,32 +75,8 @@ fn open_folder_with(action: &serde_json::Value, target: &str) -> Result<(), Stri
             .map_err(|e| e.to_string());
     }
 
-    let candidates = folder_opener_candidates(open_with);
-    if !candidates.is_empty() {
-        return spawn_first(&candidates, &[target.to_string()]);
-    }
-
-    open::that(target).map_err(|e| e.to_string())
-}
-
-fn chrome_candidates() -> Vec<String> {
-    let mut candidates = vec!["chrome.exe".to_string(), "chrome".to_string()];
-    if let Ok(program_files) = std::env::var("ProgramFiles") {
-        candidates.push(format!(
-            r"{}\Google\Chrome\Application\chrome.exe",
-            program_files
-        ));
-    }
-    if let Ok(program_files_x86) = std::env::var("ProgramFiles(x86)") {
-        candidates.push(format!(
-            r"{}\Google\Chrome\Application\chrome.exe",
-            program_files_x86
-        ));
-    }
-    if let Ok(local) = std::env::var("LOCALAPPDATA") {
-        candidates.push(format!(r"{}\Google\Chrome\Application\chrome.exe", local));
-    }
-    candidates
+    let spec = folder_open_spec(current_platform(), open_with, target)?;
+    spawn_spec(&spec)
 }
 
 fn normalize_url_target(target: &str) -> Result<String, String> {
@@ -145,11 +94,26 @@ fn open_url_action(action: &serde_json::Value, target: &str) -> Result<(), Strin
     let url = normalize_url_target(target)?;
     let use_chrome = action["autofill"].as_bool().unwrap_or(false);
     if use_chrome {
-        if spawn_first(&chrome_candidates(), std::slice::from_ref(&url)).is_ok() {
+        if spawn_first(&chrome_candidates(current_platform()), std::slice::from_ref(&url)).is_ok() {
             return Ok(());
         }
     }
     open::that(url).map_err(|e| e.to_string())
+}
+
+fn stage_terminal_command(
+    app: &tauri::AppHandle,
+    term_state: &tauri::State<'_, TerminalState>,
+    command: String,
+) -> Result<(), String> {
+    *term_state.pending_cmd.lock().unwrap() = Some(command);
+    if let Some(win) = app.get_webview_window("terminal") {
+        if !win.is_visible().unwrap_or(false) {
+            win.show().map_err(|e| e.to_string())?;
+        }
+        win.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -232,10 +196,8 @@ pub fn execute_action(
                         .collect()
                 })
                 .unwrap_or_default();
-            std::process::Command::new(target)
-                .args(&args)
-                .spawn()
-                .map_err(|e| format!("启动失败: {}", e))?;
+            let spec = app_launch_spec(current_platform(), target, &args);
+            spawn_spec(&spec).map_err(|e| format!("启动失败: {}", e))?;
         }
         "folder" => {
             let target = action["target"].as_str().ok_or("missing target")?;
@@ -261,6 +223,16 @@ pub fn execute_action(
             let password: Option<String> = keyring::Entry::new("DevLauncher", &cred_key)
                 .ok()
                 .and_then(|e| e.get_password().ok());
+
+            if current_platform() != Platform::Windows {
+                let port_flag = if port == 22 {
+                    String::new()
+                } else {
+                    format!("-p {} ", port)
+                };
+                let ssh_cmd = format!("ssh {}{}", port_flag, ssh_target);
+                return stage_terminal_command(&app, &term_state, ssh_cmd);
+            }
 
             let launch_gitbash_expect = |pwd: &str| -> bool {
                 let gitbash_candidates = [
@@ -431,14 +403,7 @@ pub fn execute_action(
                     format!("-p {} ", port)
                 };
                 let ssh_cmd = format!("ssh {}{}", port_flag, ssh_target);
-                *term_state.pending_cmd.lock().unwrap() = Some(ssh_cmd);
-                if let Some(win) = app.get_webview_window("terminal") {
-                    if !win.is_visible().unwrap_or(false) {
-                        win.show().map_err(|e| e.to_string())?;
-                    }
-                    win.set_focus().map_err(|e| e.to_string())?;
-                }
-                return Ok(());
+                return stage_terminal_command(&app, &term_state, ssh_cmd);
             }
 
             if let Some(ref pwd) = password {
@@ -463,29 +428,33 @@ pub fn execute_action(
             let shell = action["shell"].as_str().unwrap_or("powershell");
             let content = action["content"].as_str().unwrap_or("");
             if shell == "terminal" {
-                *term_state.pending_cmd.lock().unwrap() = Some(content.to_string());
-                if let Some(win) = app.get_webview_window("terminal") {
-                    if !win.is_visible().unwrap_or(false) {
-                        win.show().map_err(|e| e.to_string())?;
-                    }
-                    win.set_focus().map_err(|e| e.to_string())?;
-                }
-                return Ok(());
+                return stage_terminal_command(&app, &term_state, content.to_string());
             }
             match shell {
                 "powershell" => {
-                    std::process::Command::new("powershell")
-                        .args(["-NoExit", "-Command", content])
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
+                    if current_platform() == Platform::Windows {
+                        std::process::Command::new("powershell")
+                            .args(["-NoExit", "-Command", content])
+                            .spawn()
+                            .map_err(|e| e.to_string())?;
+                    } else {
+                        let spec = shell_run_spec(current_platform(), content);
+                        spawn_spec(&spec)?;
+                    }
                 }
                 "cmd" | "bat" => {
+                    if current_platform() != Platform::Windows {
+                        return Err(unsupported_on_macos("CMD/BAT 脚本"));
+                    }
                     std::process::Command::new("cmd")
                         .args(["/K", content])
                         .spawn()
                         .map_err(|e| e.to_string())?;
                 }
                 "wsl" => {
+                    if current_platform() != Platform::Windows {
+                        return Err(unsupported_on_macos("WSL 脚本"));
+                    }
                     let distro = action["distro"].as_str().unwrap_or("Ubuntu");
                     if content.is_empty() {
                         if std::process::Command::new("wt.exe")
@@ -545,53 +514,8 @@ pub fn execute_action(
         }
         "system" => {
             let cmd = action["command"].as_str().unwrap_or("");
-            match cmd {
-                "lock" => {
-                    std::process::Command::new("rundll32.exe")
-                        .args(["user32.dll,LockWorkStation"])
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                "sleep" => {
-                    std::process::Command::new("powershell")
-                        .args(["-Command", "Add-Type -Assembly System.Windows.Forms; [System.Windows.Forms.Application]::SetSuspendState('Suspend', $false, $false)"])
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                "calculator" => {
-                    std::process::Command::new("calc.exe")
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                "notepad" => {
-                    std::process::Command::new("notepad.exe")
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                "explorer" => {
-                    std::process::Command::new("explorer.exe")
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                "taskmanager" => {
-                    std::process::Command::new("taskmgr.exe")
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                "shutdown" => {
-                    std::process::Command::new("shutdown")
-                        .args(["/s", "/t", "0"])
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                "restart" => {
-                    std::process::Command::new("shutdown")
-                        .args(["/r", "/t", "0"])
-                        .spawn()
-                        .map_err(|e| e.to_string())?;
-                }
-                _ => {}
-            }
+            let spec = system_command_spec(current_platform(), cmd)?;
+            spawn_spec(&spec)?;
         }
         _ => {}
     }

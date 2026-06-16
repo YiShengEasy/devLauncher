@@ -3,6 +3,7 @@ mod builtins;
 mod config;
 mod entries;
 mod ocr;
+mod platform;
 mod types;
 mod utils;
 
@@ -18,11 +19,7 @@ pub fn run() {
         .plugin(
             tauri_plugin_single_instance::Builder::new()
                 .callback(|app, _argv, _cwd| {
-                    if let Some(win) = app.get_webview_window("main") {
-                        let _ = win.show();
-                        let _ = win.unminimize();
-                        let _ = win.set_focus();
-                    }
+                    let _ = entries::restore_main_window(app);
                 })
                 .build(),
         )
@@ -33,6 +30,8 @@ pub fn run() {
             config::load_config,
             config::save_config,
             config::get_config_path,
+            platform::get_platform_capabilities,
+            platform::get_default_shell,
             actions::execute_action,
             actions::save_ssh_password,
             actions::delete_ssh_password,
@@ -102,6 +101,7 @@ pub fn run() {
             builtins::terminal::setup(app);
             builtins::screenshot::setup(app);
             builtins::clipboard::setup(app);
+            let _ = entries::show_pet_window(app.handle().clone(), None);
 
             let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
@@ -115,17 +115,10 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.unminimize();
-                            let _ = win.set_focus();
-                        }
+                        let _ = entries::restore_main_window(app);
                     }
                     "settings" => {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let _ = win.show();
-                            let _ = win.unminimize();
-                            let _ = win.set_focus();
+                        if entries::restore_main_window(app).is_ok() {
                             let _ = app.emit("open-settings", ());
                         }
                     }
@@ -146,8 +139,7 @@ pub fn run() {
                             if win.is_visible().unwrap_or(false) {
                                 let _ = win.hide();
                             } else {
-                                let _ = win.show();
-                                let _ = win.set_focus();
+                                let _ = entries::restore_main_window(app);
                             }
                         }
                     }
@@ -156,6 +148,13 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| match event {
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                let _ = entries::restore_main_window(app);
+            }
+            _ => {}
+        });
 }

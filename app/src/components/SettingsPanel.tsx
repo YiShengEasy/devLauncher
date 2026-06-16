@@ -6,6 +6,7 @@ import { MacWindowControls } from "@/components/MacWindowControls";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
+import { getGlobalShortcutLabels } from "@/platform/shortcuts";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { DEFAULT_THEME } from "@/types/actions";
 import type { KeyId, KeyMap, KeyboardConfig, ThemeConfig, UrlAction } from "@/types/actions";
@@ -166,6 +167,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const config = useKeyboardStore((s) => s.config);
   const theme = useKeyboardStore((s) => s.theme);
   const setTheme = useKeyboardStore((s) => s.setTheme);
+  const shortcutLabels = getGlobalShortcutLabels();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
   const webAccounts = useMemo(() => getWebAccountEntries(config), [config]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -510,13 +512,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Search</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  快捷键：Ctrl+Alt+K。搜索键盘绑定、内置功能和最近动作。
+                  快捷键：{shortcutLabels.search}。搜索键盘绑定、内置功能和最近动作。
                 </div>
               </div>
               <div style={{ ...panelStyle, padding: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  快捷键：Ctrl+Alt+P。打开搜索、截图报告、剪切板、键盘模式和隐藏操作；可拖动并保存位置。
+                  快捷键：{shortcutLabels.pet}。打开搜索、截图报告、剪切板、键盘模式和隐藏操作；可拖动并保存位置。
                 </div>
               </div>
             </section>

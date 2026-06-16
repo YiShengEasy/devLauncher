@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -20,6 +21,8 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "center": true,
         "skipTaskbar": false
       },
@@ -34,6 +37,7 @@
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "center": true,
         "skipTaskbar": true,
         "visible": false
@@ -49,6 +53,7 @@
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "center": true,
         "skipTaskbar": true,
         "visible": false
@@ -124,6 +129,7 @@
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "center": true,
         "skipTaskbar": true,
         "visible": false
@@ -184,6 +190,7 @@
         "transparent": true,
         "shadow": false,
         "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
         "center": false,
         "skipTaskbar": true,
         "visible": false

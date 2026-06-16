@@ -8,6 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
+    "tauri:dev:mac": "scripts/dev-mac-signed.sh",
     "test": "vitest run"
   },
   "dependencies": {

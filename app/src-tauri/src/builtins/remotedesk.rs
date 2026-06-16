@@ -123,76 +123,47 @@ fn move_remote_mouse(enigo: &mut enigo::Enigo, x: i32, y: i32) {
 
 fn remote_key_from_event(key: &str, code: &str) -> Option<enigo::Key> {
     use enigo::Key;
-    match code {
-        "KeyA" => Some(Key::A),
-        "KeyB" => Some(Key::B),
-        "KeyC" => Some(Key::C),
-        "KeyD" => Some(Key::D),
-        "KeyE" => Some(Key::E),
-        "KeyF" => Some(Key::F),
-        "KeyG" => Some(Key::G),
-        "KeyH" => Some(Key::H),
-        "KeyI" => Some(Key::I),
-        "KeyJ" => Some(Key::J),
-        "KeyK" => Some(Key::K),
-        "KeyL" => Some(Key::L),
-        "KeyM" => Some(Key::M),
-        "KeyN" => Some(Key::N),
-        "KeyO" => Some(Key::O),
-        "KeyP" => Some(Key::P),
-        "KeyQ" => Some(Key::Q),
-        "KeyR" => Some(Key::R),
-        "KeyS" => Some(Key::S),
-        "KeyT" => Some(Key::T),
-        "KeyU" => Some(Key::U),
-        "KeyV" => Some(Key::V),
-        "KeyW" => Some(Key::W),
-        "KeyX" => Some(Key::X),
-        "KeyY" => Some(Key::Y),
-        "KeyZ" => Some(Key::Z),
-        "Digit0" => Some(Key::Num0),
-        "Digit1" => Some(Key::Num1),
-        "Digit2" => Some(Key::Num2),
-        "Digit3" => Some(Key::Num3),
-        "Digit4" => Some(Key::Num4),
-        "Digit5" => Some(Key::Num5),
-        "Digit6" => Some(Key::Num6),
-        "Digit7" => Some(Key::Num7),
-        "Digit8" => Some(Key::Num8),
-        "Digit9" => Some(Key::Num9),
-        _ => match key {
-            "Enter" => Some(Key::Return),
-            "Escape" => Some(Key::Escape),
-            "Tab" => Some(Key::Tab),
-            " " | "Spacebar" => Some(Key::Space),
-            "Backspace" => Some(Key::Backspace),
-            "Delete" => Some(Key::Delete),
-            "ArrowUp" => Some(Key::UpArrow),
-            "ArrowDown" => Some(Key::DownArrow),
-            "ArrowLeft" => Some(Key::LeftArrow),
-            "ArrowRight" => Some(Key::RightArrow),
-            "Home" => Some(Key::Home),
-            "End" => Some(Key::End),
-            "PageUp" => Some(Key::PageUp),
-            "PageDown" => Some(Key::PageDown),
-            "Shift" => Some(Key::Shift),
-            "Control" => Some(Key::Control),
-            "Alt" => Some(Key::Alt),
-            "Meta" => Some(Key::Meta),
-            "F1" => Some(Key::F1),
-            "F2" => Some(Key::F2),
-            "F3" => Some(Key::F3),
-            "F4" => Some(Key::F4),
-            "F5" => Some(Key::F5),
-            "F6" => Some(Key::F6),
-            "F7" => Some(Key::F7),
-            "F8" => Some(Key::F8),
-            "F9" => Some(Key::F9),
-            "F10" => Some(Key::F10),
-            "F11" => Some(Key::F11),
-            "F12" => Some(Key::F12),
-            _ => None,
-        },
+    if key.chars().count() == 1 {
+        return key.chars().next().map(Key::Unicode);
+    }
+
+    match key {
+        "Enter" => Some(Key::Return),
+        "Escape" => Some(Key::Escape),
+        "Tab" => Some(Key::Tab),
+        " " | "Spacebar" => Some(Key::Space),
+        "Backspace" => Some(Key::Backspace),
+        "Delete" => Some(Key::Delete),
+        "ArrowUp" => Some(Key::UpArrow),
+        "ArrowDown" => Some(Key::DownArrow),
+        "ArrowLeft" => Some(Key::LeftArrow),
+        "ArrowRight" => Some(Key::RightArrow),
+        "Home" => Some(Key::Home),
+        "End" => Some(Key::End),
+        "PageUp" => Some(Key::PageUp),
+        "PageDown" => Some(Key::PageDown),
+        "Shift" => Some(Key::Shift),
+        "Control" => Some(Key::Control),
+        "Alt" => Some(Key::Alt),
+        "Meta" => Some(Key::Meta),
+        "F1" => Some(Key::F1),
+        "F2" => Some(Key::F2),
+        "F3" => Some(Key::F3),
+        "F4" => Some(Key::F4),
+        "F5" => Some(Key::F5),
+        "F6" => Some(Key::F6),
+        "F7" => Some(Key::F7),
+        "F8" => Some(Key::F8),
+        "F9" => Some(Key::F9),
+        "F10" => Some(Key::F10),
+        "F11" => Some(Key::F11),
+        "F12" => Some(Key::F12),
+        _ if code.starts_with("Key") && code.len() == 4 => code
+            .chars()
+            .nth(3)
+            .map(|ch| Key::Unicode(ch.to_ascii_lowercase())),
+        _ if code.starts_with("Digit") && code.len() == 6 => code.chars().nth(5).map(Key::Unicode),
+        _ => None,
     }
 }
 
@@ -251,6 +222,13 @@ pub fn delete_remotedesk_password(id: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn launch_rdp(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    if !cfg!(target_os = "windows") {
+        return Err(
+            "RDP/mstsc 暂不支持 macOS；可以先使用远程桌面的 Host/Connect 能力或系统自带远程工具。"
+                .to_string(),
+        );
+    }
+
     let profiles = load_remotedesk_profiles(app.clone())?;
     let profile = profiles
         .iter()

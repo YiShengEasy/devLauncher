@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import gsap from "gsap";
-import { ClipIcon, KeyboardIcon, PixelPetIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
+import { ClipIcon, KeyboardIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
 import { motionDuration, motionEase, motionStagger } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -15,6 +15,34 @@ import {
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
 const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
+const PET_ACTION_UPLOAD_SLOT = "devlauncher:pet-custom-action-upload";
+
+type PetSpriteActionId = "keyboardJump";
+
+type PetSpriteAction = {
+  id: PetSpriteActionId;
+  label: string;
+  frameMs: number;
+  frames: string[];
+};
+
+const petActionRegistry: Record<PetSpriteActionId, PetSpriteAction> = {
+  keyboardJump: {
+    id: "keyboardJump",
+    label: "键盘跳跃",
+    frameMs: 90,
+    frames: Array.from(
+      { length: 8 },
+      (_, index) => `/pet/siamese/keyboard-jump/${String(index + 1).padStart(4, "0")}.png`,
+    ),
+  },
+};
+
+const customActionUploadEntry = {
+  storageKey: PET_ACTION_UPLOAD_SLOT,
+  accepts: ["image/png", "image/webp"],
+  frameSource: "future-upload",
+} as const;
 
 const shellStyle: CSSProperties = {
   width: "100vw",
@@ -31,31 +59,32 @@ const shellStyle: CSSProperties = {
 const centerButtonStyle: CSSProperties = {
   position: "relative",
   zIndex: 2,
-  width: 76,
-  height: 76,
-  borderRadius: 22,
-  border: "1px solid rgba(255,255,255,0.2)",
-  background: "linear-gradient(145deg, rgba(24,31,45,0.96), rgba(14,18,28,0.96))",
-  boxShadow: "0 14px 38px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.18)",
+  width: 148,
+  height: 132,
+  border: 0,
+  background: "transparent",
+  boxShadow: "none",
   cursor: "grab",
   display: "grid",
   placeItems: "center",
+  padding: 0,
   userSelect: "none",
-  transition: "box-shadow 180ms ease, filter 180ms ease",
+  transition: "filter 180ms ease",
   touchAction: "none",
 };
 
-const ringStyle: CSSProperties = {
+const bubbleMenuStyle: CSSProperties = {
   position: "absolute",
-  width: 232,
-  height: 232,
-  borderRadius: "50%",
-  background:
-    "radial-gradient(circle, rgba(12,16,24,0.76) 0 32%, rgba(12,16,24,0.94) 33% 65%, rgba(255,255,255,0.08) 66% 67%, transparent 68%)",
-  border: "1px solid rgba(255,255,255,0.12)",
-  boxShadow: "0 18px 46px rgba(0,0,0,0.38)",
+  left: "50%",
+  top: 2,
+  width: 194,
+  height: 42,
+  borderRadius: 6,
+  background: "rgba(12, 18, 28, 0.96)",
+  border: "2px solid rgba(248, 250, 252, 0.72)",
+  boxShadow: "0 4px 0 rgba(0,0,0,0.32), inset 0 -2px 0 rgba(15,23,42,0.72)",
   opacity: 0,
-  transform: "scale(0.72)",
+  transform: "translateX(-50%) translateY(6px) scale(0.94)",
   pointerEvents: "none",
   overflow: "visible",
 };
@@ -64,40 +93,50 @@ const actionButtonStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
   top: "50%",
-  width: 60,
-  height: 60,
-  borderRadius: "50%",
-  border: "1px solid rgba(255,255,255,0.16)",
-  background: "rgba(22,27,38,0.96)",
+  width: 32,
+  height: 32,
+  borderRadius: 5,
+  border: "2px solid rgba(226,232,240,0.68)",
+  background: "rgba(30, 41, 59, 0.98)",
   color: "rgba(255,255,255,0.9)",
   cursor: "pointer",
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 800,
   padding: 0,
   outline: "none",
   display: "grid",
   placeItems: "center",
-  boxShadow: "0 10px 24px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.12)",
-  transform: "translate(-50%, -50%) scale(0.55)",
+  boxShadow: "0 3px 0 rgba(0,0,0,0.35)",
+  transform: "translate(-50%, -50%) scale(0.72)",
   opacity: 0,
   transition: "background 120ms ease, box-shadow 160ms ease, filter 160ms ease",
 };
 
 const menuItems = [
-  { label: "搜索", title: "打开搜索", x: 0, y: -92, action: "search" },
-  { label: "报告", title: "打开截图报告", x: 92, y: 0, action: "report" },
-  { label: "剪贴", title: "打开剪贴板", x: 0, y: 92, action: "clip" },
-  { label: "键盘", title: "切换到键盘模式", x: -92, y: 0, action: "keyboard" },
+  { label: "搜索", title: "打开搜索", x: -72, y: 0, action: "search" },
+  { label: "报告", title: "打开截图报告", x: -36, y: 0, action: "report" },
+  { label: "剪贴", title: "打开剪贴板", x: 0, y: 0, action: "clip" },
+  { label: "键盘", title: "切换到键盘模式", x: 36, y: 0, action: "keyboard" },
+  { label: "动作", title: "自定义动作图片入口", x: 72, y: 0, action: "custom-action" },
 ] as const;
 
 type PetAction = (typeof menuItems)[number]["action"];
 
 function PetActionIcon({ action }: { action: PetAction }) {
-  const iconProps = { size: 28, decorative: true };
+  const iconProps = { size: 20, decorative: true };
   if (action === "search") return <SearchIcon {...iconProps} />;
   if (action === "report") return <ReportIcon {...iconProps} />;
   if (action === "clip") return <ClipIcon {...iconProps} />;
-  return <KeyboardIcon {...iconProps} />;
+  if (action === "keyboard") return <KeyboardIcon {...iconProps} />;
+  return <span className="pet-action-plus" aria-hidden="true">+</span>;
+}
+
+function PixelSiamesePet({ frameSrc, actionLabel }: { frameSrc: string; actionLabel: string }) {
+  return (
+    <span className="pet-siamese-frame" aria-hidden="true">
+      <img src={frameSrc} alt="" draggable={false} data-action-label={actionLabel} />
+    </span>
+  );
 }
 
 async function readCurrentPosition(): Promise<EntryWindowPosition> {
@@ -120,22 +159,29 @@ async function restorePetPosition() {
 export function PetEntryApp() {
   const [open, setOpen] = useState(false);
   const [modeTransition, setModeTransition] = useState<"idle" | "to-keyboard">("idle");
+  const [spriteActionId, setSpriteActionId] = useState<PetSpriteActionId>("keyboardJump");
+  const [spriteFrameIndex, setSpriteFrameIndex] = useState(0);
+  const [customHintVisible, setCustomHintVisible] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
-  const ringRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const centerButtonRef = useRef<HTMLButtonElement>(null);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
+  const spriteTimerRef = useRef<number | null>(null);
+  const customHintTimerRef = useRef<number | null>(null);
   const reducedMotion = useReducedMotion();
+  const spriteAction = petActionRegistry[spriteActionId];
+  const spriteFrameSrc = spriteAction.frames[spriteFrameIndex] ?? spriteAction.frames[0];
 
   const resetPetVisualState = () => {
     const shell = shellRef.current;
-    const ring = ringRef.current;
+    const menu = menuRef.current;
     const centerButton = centerButtonRef.current;
 
-    gsap.killTweensOf([shell, ring, centerButton]);
+    gsap.killTweensOf([shell, menu, centerButton]);
     gsap.set(shell, { autoAlpha: 1, scale: 1, filter: "none", clearProps: "transform" });
-    gsap.set(ring, { scaleX: 1, scaleY: 1 });
-    gsap.set(centerButton, { autoAlpha: 1, scale: open ? 0.92 : 1, rotation: open ? 45 : 0, filter: "none" });
+    gsap.set(menu, { scaleX: 1, scaleY: 1 });
+    gsap.set(centerButton, { autoAlpha: 1, scale: 1, rotation: 0, filter: "none" });
   };
 
   const playPetReturnTimeline = () => {
@@ -167,13 +213,62 @@ export function PetEntryApp() {
         filter: "brightness(1.36) saturate(1.3)",
       }, {
         autoAlpha: 1,
-        scale: open ? 0.92 : 1,
+        scale: 1,
         rotation: 0,
         filter: "none",
         duration: motionDuration.playful,
         ease: motionEase.enter,
       }, 0.04);
   };
+
+  const stopSpriteTimer = () => {
+    if (spriteTimerRef.current === null) return;
+    window.clearTimeout(spriteTimerRef.current);
+    spriteTimerRef.current = null;
+  };
+
+  const playSpriteAction = (actionId: PetSpriteActionId) => {
+    const action = petActionRegistry[actionId];
+    stopSpriteTimer();
+    setSpriteActionId(actionId);
+    setSpriteFrameIndex(0);
+
+    if (reducedMotion) return;
+
+    let nextFrame = 1;
+    const tick = () => {
+      if (nextFrame >= action.frames.length) {
+        spriteTimerRef.current = window.setTimeout(() => {
+          setSpriteFrameIndex(0);
+          spriteTimerRef.current = null;
+        }, action.frameMs);
+        return;
+      }
+
+      setSpriteFrameIndex(nextFrame);
+      nextFrame += 1;
+      spriteTimerRef.current = window.setTimeout(tick, action.frameMs);
+    };
+
+    spriteTimerRef.current = window.setTimeout(tick, action.frameMs);
+  };
+
+  const showCustomActionHint = () => {
+    window.localStorage.setItem(customActionUploadEntry.storageKey, JSON.stringify(customActionUploadEntry));
+    setCustomHintVisible(true);
+    if (customHintTimerRef.current !== null) window.clearTimeout(customHintTimerRef.current);
+    customHintTimerRef.current = window.setTimeout(() => {
+      setCustomHintVisible(false);
+      customHintTimerRef.current = null;
+    }, 1800);
+  };
+
+  useEffect(() => {
+    return () => {
+      stopSpriteTimer();
+      if (customHintTimerRef.current !== null) window.clearTimeout(customHintTimerRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -235,28 +330,28 @@ export function PetEntryApp() {
     );
   }, [reducedMotion]);
 
-  useGsapContext(ringRef, () => {
-    const ring = ringRef.current;
+  useGsapContext(menuRef, () => {
+    const menu = menuRef.current;
     const centerButton = centerButtonRef.current;
-    if (!ring || !centerButton) return;
+    if (!menu || !centerButton) return;
 
     const actionButtons = menuItems
-      .map((item) => ring.querySelector<HTMLButtonElement>(`[data-pet-action="${item.action}"]`))
+      .map((item) => menu.querySelector<HTMLButtonElement>(`[data-pet-action="${item.action}"]`))
       .filter((button): button is HTMLButtonElement => Boolean(button));
 
     const tl = gsap.timeline({ defaults: { overwrite: "auto" } });
     if (open) {
-      tl.to(ring, {
+      tl.to(menu, {
         autoAlpha: 1,
         scale: 1,
+        y: 0,
         duration: reducedMotion ? 0 : motionDuration.quick,
-        ease: motionEase.standard,
+        ease: reducedMotion ? motionEase.standard : motionEase.enter,
       }, 0)
         .to(centerButton, {
-          scale: 0.92,
-          rotation: reducedMotion ? 0 : 45,
-          duration: reducedMotion ? 0 : motionDuration.quick,
-          ease: motionEase.standard,
+          scale: 1,
+          rotation: 0,
+          duration: 0,
         }, 0)
         .to(actionButtons, {
           autoAlpha: 1,
@@ -272,7 +367,7 @@ export function PetEntryApp() {
     } else {
       tl.to(actionButtons, {
         autoAlpha: 0,
-        scale: 0.55,
+        scale: 0.72,
         x: 0,
         y: 0,
         xPercent: -50,
@@ -284,9 +379,10 @@ export function PetEntryApp() {
           from: "end",
         },
       }, 0)
-        .to(ring, {
+        .to(menu, {
           autoAlpha: 0,
-          scale: 0.72,
+          scale: 0.94,
+          y: 8,
           duration: reducedMotion ? 0 : motionDuration.quick,
           ease: motionEase.exit,
         }, reducedMotion ? 0 : 0.06)
@@ -314,59 +410,61 @@ export function PetEntryApp() {
 
   async function switchToKeyboard() {
     if (modeTransition !== "idle") return;
+    playSpriteAction("keyboardJump");
     setModeTransition("to-keyboard");
     await savePetPosition();
     const duration = reducedMotion ? 0 : motionDuration.playful;
     const durationMs = Math.round(duration * 1000);
     const shell = shellRef.current;
-    const ring = ringRef.current;
+    const menu = menuRef.current;
     const centerButton = centerButtonRef.current;
-    const actionButtons = ring
+    const actionButtons = menu
       ? menuItems
-          .map((item) => ring.querySelector<HTMLButtonElement>(`[data-pet-action="${item.action}"]`))
+          .map((item) => menu.querySelector<HTMLButtonElement>(`[data-pet-action="${item.action}"]`))
           .filter((button): button is HTMLButtonElement => Boolean(button))
       : [];
     const tl = gsap.timeline({ defaults: { overwrite: "auto" } });
 
     tl.to(shell, {
-      autoAlpha: reducedMotion ? 1 : 0,
-      scale: reducedMotion ? 1 : 1.08,
-      filter: reducedMotion ? "none" : "blur(1px) brightness(1.22) saturate(1.16)",
+      autoAlpha: 1,
+      scale: 1,
+      filter: reducedMotion ? "none" : "brightness(1.08) saturate(1.08)",
       duration,
       ease: reducedMotion ? motionEase.standard : motionEase.morph,
     }, 0)
       .to(actionButtons, {
-      autoAlpha: 0,
-      scale: reducedMotion ? 1 : 0.82,
-      x: 0,
-      y: 0,
-      xPercent: -50,
-      yPercent: -50,
+        autoAlpha: 0,
+        scale: reducedMotion ? 1 : 0.82,
+        x: 0,
+        y: 0,
+        xPercent: -50,
+        yPercent: -50,
         duration: reducedMotion ? 0 : motionDuration.panel,
         ease: motionEase.exit,
-      stagger: reducedMotion ? 0 : {
-        each: motionStagger.tight,
-        from: "end",
-      },
+        stagger: reducedMotion ? 0 : {
+          each: motionStagger.tight,
+          from: "end",
+        },
       }, 0)
-      .to(ring, {
-        autoAlpha: reducedMotion ? 0 : 0.18,
-        scale: reducedMotion ? 0.72 : 1.08,
+      .to(menu, {
+        autoAlpha: 0,
+        scale: reducedMotion ? 0.94 : 0.98,
+        y: reducedMotion ? 8 : 14,
         duration,
-        ease: motionEase.morph,
+        ease: motionEase.exit,
       }, 0)
       .to(centerButton, {
-        autoAlpha: reducedMotion ? 1 : 0,
-        scale: reducedMotion ? 1 : 1.12,
-        rotation: reducedMotion ? 0 : 18,
-        filter: reducedMotion ? "none" : "brightness(1.35) saturate(1.35)",
+        autoAlpha: 1,
+        scale: reducedMotion ? 1 : 0.96,
+        rotation: 0,
+        filter: reducedMotion ? "none" : "brightness(1.12) saturate(1.12)",
         duration,
         ease: motionEase.morph,
       }, 0);
 
     window.setTimeout(() => {
       gsap.set(shell, { autoAlpha: 1, scale: 1, filter: "none", clearProps: "transform" });
-      gsap.set(ring, { scaleX: 1, scaleY: 1, scale: 0.72, autoAlpha: 0 });
+      gsap.set(menu, { scaleX: 1, scaleY: 1, scale: 0.94, y: 8, autoAlpha: 0 });
       gsap.set(centerButton, { scale: 1, rotation: 0, filter: "none", autoAlpha: 1 });
       window.localStorage.setItem(KEYBOARD_RETURN_ANIMATION_KEY, "1");
       invoke("switch_to_keyboard_mode", { position: getStoredEntryPosition("main") })
@@ -384,6 +482,7 @@ export function PetEntryApp() {
     if (action === "report") await openScreenshotReport();
     if (action === "clip") await openClipboard();
     if (action === "keyboard") await switchToKeyboard();
+    if (action === "custom-action") showCustomActionHint();
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -416,16 +515,17 @@ export function PetEntryApp() {
       suppressClickRef.current = false;
       return;
     }
+    playSpriteAction("keyboardJump");
     setOpen((value) => !value);
   }
 
   return (
     <div ref={shellRef} className="pet-shell" style={shellStyle}>
       <div
-        ref={ringRef}
-        className={`pet-ring ${open ? "is-open" : ""} ${modeTransition === "to-keyboard" ? "is-switching" : ""}`}
+        ref={menuRef}
+        className={`pet-bubble-menu ${open ? "is-open" : ""} ${modeTransition === "to-keyboard" ? "is-switching" : ""}`}
         style={{
-          ...ringStyle,
+          ...bubbleMenuStyle,
           pointerEvents: open ? "auto" : "none",
         }}
       >
@@ -457,15 +557,16 @@ export function PetEntryApp() {
         style={{
           ...centerButtonStyle,
           cursor: open ? "pointer" : "grab",
-          boxShadow: open
-            ? "0 8px 24px rgba(0,0,0,0.32), inset 0 1px 0 rgba(255,255,255,0.18)"
-            : centerButtonStyle.boxShadow,
+          filter: open ? "drop-shadow(0 5px 0 rgba(0,0,0,0.18))" : "none",
         }}
         title={open ? "收起菜单" : "展开快捷入口"}
         type="button"
       >
-        <PixelPetIcon size={42} decorative />
+        <PixelSiamesePet frameSrc={spriteFrameSrc} actionLabel={spriteAction.label} />
       </button>
+      <div className={`pet-custom-action-hint ${customHintVisible ? "is-visible" : ""}`} role="status">
+        已预留上传动作图片入口
+      </div>
     </div>
   );
 }

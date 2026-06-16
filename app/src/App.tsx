@@ -18,6 +18,7 @@ import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
 import { motionDuration, motionEase } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
+import { getGlobalShortcuts, keyIdToShortcut } from "@/platform/shortcuts";
 import "./index.css";
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
@@ -25,18 +26,7 @@ const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
 const MAIN_WINDOW_WIDTH = 920;
 const MAIN_WINDOW_HEIGHT = 540;
 const PET_WINDOW_SIZE = 284;
-const GLOBAL_SHORTCUTS = {
-  keyboard: "Ctrl+Alt+Space",
-  clipboard: "Ctrl+Alt+V",
-  search: "Ctrl+Alt+K",
-  pet: "Ctrl+Alt+P",
-} as const;
-
-// Convert KeyId to global shortcut string (hotkey crate format)
-function keyIdToShortcut(keyId: string): string {
-  if (/^\d$/.test(keyId)) return `Alt+Digit${keyId}`;
-  return `Alt+Key${keyId}`;
-}
+const GLOBAL_SHORTCUTS = getGlobalShortcuts();
 
 function builtinToggleCommand(feature: BuiltinAction["feature"]): string {
   return feature === "json" ? "toggle_json_helper_window" : `toggle_${feature}_window`;
@@ -325,7 +315,12 @@ export default function App() {
     // Handle builtin actions locally
     if (action.type === "builtin") {
       const b = action as BuiltinAction;
-      invoke(builtinToggleCommand(b.feature)).catch(console.error);
+      invoke(builtinToggleCommand(b.feature)).catch((e) => {
+        console.error("builtin action failed:", e);
+        if (b.feature === "screenshot") {
+          window.alert(`截图失败：${String(e)}`);
+        }
+      });
       return;
     }
     try {
@@ -373,7 +368,13 @@ export default function App() {
         const capturedAction = action;
         const handler = makeDebounced(async () => {
           if (capturedAction.type === "builtin") {
-            invoke(builtinToggleCommand((capturedAction as BuiltinAction).feature)).catch(console.error);
+            const feature = (capturedAction as BuiltinAction).feature;
+            invoke(builtinToggleCommand(feature)).catch((e) => {
+              console.error("builtin shortcut failed:", e);
+              if (feature === "screenshot") {
+                window.alert(`截图失败：${String(e)}`);
+              }
+            });
             return;
           }
           invoke("execute_action", { action: capturedAction }).catch(console.error);
