@@ -1,774 +1,125 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
-
-type MemoryKind = "command" | "shortcut";
-
-interface MemoryItem {
-  id: string;
-  category: CategoryId;
-  title: string;
-  value: string;
-  detail: string;
-  kind: MemoryKind;
-  tags: string[];
-  priority?: boolean;
-}
-
-type CategoryId = "linux" | "git" | "vscode" | "docker" | "node";
-
-const CATEGORIES: { id: CategoryId; name: string; subtitle: string; accent: string }[] = [
-  { id: "linux", name: "Linux / Shell", subtitle: "文件、进程、网络、排障", accent: "#5eead4" },
-  { id: "git", name: "Git", subtitle: "分支、提交、回滚、协作", accent: "#f97316" },
-  { id: "vscode", name: "VS Code", subtitle: "导航、编辑、重构、终端", accent: "#38bdf8" },
-  { id: "docker", name: "Docker", subtitle: "容器、镜像、日志、清理", accent: "#60a5fa" },
-  { id: "node", name: "Node / Package", subtitle: "npm、pnpm、调试、依赖", accent: "#a3e635" },
-];
-
-const MEMORY_ITEMS: MemoryItem[] = [
-  {
-    id: "linux-ls",
-    category: "linux",
-    title: "查看目录详情",
-    value: "ls -lah",
-    detail: "显示隐藏文件、权限、大小和修改时间，排查路径内容最常用。",
-    kind: "command",
-    tags: ["file", "inspect"],
-    priority: true,
-  },
-  {
-    id: "linux-find-name",
-    category: "linux",
-    title: "按文件名搜索",
-    value: "find . -name \"*.log\" -type f",
-    detail: "从当前目录递归查找指定模式文件，适合没有 rg/fd 的环境。",
-    kind: "command",
-    tags: ["file", "search"],
-  },
-  {
-    id: "linux-grep",
-    category: "linux",
-    title: "文本检索",
-    value: "grep -R \"TODO\" .",
-    detail: "递归搜索文本；大仓库优先用 rg，这条用于基础环境兜底。",
-    kind: "command",
-    tags: ["search", "text"],
-  },
-  {
-    id: "linux-ps",
-    category: "linux",
-    title: "查进程",
-    value: "ps aux | grep node",
-    detail: "确认服务是否仍在运行，定位 PID 后可结合 kill 使用。",
-    kind: "command",
-    tags: ["process"],
-    priority: true,
-  },
-  {
-    id: "linux-ports",
-    category: "linux",
-    title: "查看端口占用",
-    value: "lsof -i :3000",
-    detail: "确认本地端口被哪个进程占用，开发服务器冲突时高频使用。",
-    kind: "command",
-    tags: ["network", "process"],
-  },
-  {
-    id: "linux-tail",
-    category: "linux",
-    title: "实时看日志",
-    value: "tail -f app.log",
-    detail: "跟随日志输出，适合观察请求、错误和后台任务。",
-    kind: "command",
-    tags: ["log"],
-  },
-  {
-    id: "git-status",
-    category: "git",
-    title: "查看工作区状态",
-    value: "git status --short",
-    detail: "用紧凑格式确认修改、暂存和未跟踪文件。",
-    kind: "command",
-    tags: ["status"],
-    priority: true,
-  },
-  {
-    id: "git-diff",
-    category: "git",
-    title: "查看未暂存改动",
-    value: "git diff",
-    detail: "提交前检查实际代码差异，避免把临时调试改动带进去。",
-    kind: "command",
-    tags: ["review"],
-  },
-  {
-    id: "git-log",
-    category: "git",
-    title: "查看提交线",
-    value: "git log --oneline --graph --decorate -n 20",
-    detail: "快速理解分支历史和最近提交关系。",
-    kind: "command",
-    tags: ["history"],
-  },
-  {
-    id: "git-switch",
-    category: "git",
-    title: "创建并切换分支",
-    value: "git switch -c feature/name",
-    detail: "从当前 HEAD 创建新分支并进入工作。",
-    kind: "command",
-    tags: ["branch"],
-  },
-  {
-    id: "git-restore",
-    category: "git",
-    title: "撤销单个文件改动",
-    value: "git restore path/to/file",
-    detail: "只回退指定文件的未暂存改动，使用前先确认 diff。",
-    kind: "command",
-    tags: ["restore"],
-  },
-  {
-    id: "git-stash",
-    category: "git",
-    title: "临时保存现场",
-    value: "git stash push -m \"wip\"",
-    detail: "切分支或拉取前临时收起未完成改动。",
-    kind: "command",
-    tags: ["wip"],
-  },
-  {
-    id: "vscode-command-palette",
-    category: "vscode",
-    title: "命令面板",
-    value: "Ctrl+Shift+P",
-    detail: "执行所有 VS Code 命令，找不到入口时先用它。",
-    kind: "shortcut",
-    tags: ["navigate"],
-    priority: true,
-  },
-  {
-    id: "vscode-file",
-    category: "vscode",
-    title: "快速打开文件",
-    value: "Ctrl+P",
-    detail: "按文件名跳转，是大项目里最高频的导航快捷键。",
-    kind: "shortcut",
-    tags: ["navigate"],
-    priority: true,
-  },
-  {
-    id: "vscode-symbol",
-    category: "vscode",
-    title: "文件内符号跳转",
-    value: "Ctrl+Shift+O",
-    detail: "在当前文件内跳转函数、类、常量。",
-    kind: "shortcut",
-    tags: ["navigate"],
-  },
-  {
-    id: "vscode-terminal",
-    category: "vscode",
-    title: "切换终端",
-    value: "Ctrl+`",
-    detail: "打开或隐藏集成终端，适合边改边跑命令。",
-    kind: "shortcut",
-    tags: ["terminal"],
-  },
-  {
-    id: "vscode-rename",
-    category: "vscode",
-    title: "重命名符号",
-    value: "F2",
-    detail: "基于语言服务安全重命名变量、函数和类型。",
-    kind: "shortcut",
-    tags: ["refactor"],
-  },
-  {
-    id: "vscode-multi-cursor",
-    category: "vscode",
-    title: "选择下一个匹配项",
-    value: "Ctrl+D",
-    detail: "逐个选择相同文本，多光标编辑小范围重复内容。",
-    kind: "shortcut",
-    tags: ["edit"],
-  },
-  {
-    id: "docker-ps",
-    category: "docker",
-    title: "查看运行容器",
-    value: "docker ps",
-    detail: "确认容器、端口映射、状态和名称。",
-    kind: "command",
-    tags: ["container"],
-    priority: true,
-  },
-  {
-    id: "docker-logs",
-    category: "docker",
-    title: "跟随容器日志",
-    value: "docker logs -f container_name",
-    detail: "排查服务启动失败、请求错误和后台任务。",
-    kind: "command",
-    tags: ["log"],
-  },
-  {
-    id: "docker-exec",
-    category: "docker",
-    title: "进入容器 Shell",
-    value: "docker exec -it container_name sh",
-    detail: "进入容器内部检查文件、环境变量和网络。",
-    kind: "command",
-    tags: ["debug"],
-  },
-  {
-    id: "docker-compose",
-    category: "docker",
-    title: "启动 Compose 服务",
-    value: "docker compose up -d",
-    detail: "后台启动 compose.yml 中定义的开发依赖。",
-    kind: "command",
-    tags: ["compose"],
-    priority: true,
-  },
-  {
-    id: "docker-prune",
-    category: "docker",
-    title: "清理未使用资源",
-    value: "docker system prune",
-    detail: "释放磁盘前先确认不会删除仍需要的缓存和停止容器。",
-    kind: "command",
-    tags: ["clean"],
-  },
-  {
-    id: "node-install",
-    category: "node",
-    title: "安装依赖",
-    value: "npm install",
-    detail: "根据 package.json / lockfile 安装当前项目依赖。",
-    kind: "command",
-    tags: ["deps"],
-    priority: true,
-  },
-  {
-    id: "node-run",
-    category: "node",
-    title: "查看可运行脚本",
-    value: "npm run",
-    detail: "列出 package.json scripts，接手项目时先看这里。",
-    kind: "command",
-    tags: ["scripts"],
-  },
-  {
-    id: "node-dev",
-    category: "node",
-    title: "启动开发服务",
-    value: "npm run dev",
-    detail: "大多数 Vite/Next/前端项目的本地开发入口。",
-    kind: "command",
-    tags: ["dev"],
-    priority: true,
-  },
-  {
-    id: "node-outdated",
-    category: "node",
-    title: "检查过期依赖",
-    value: "npm outdated",
-    detail: "查看 current、wanted、latest 三列，判断升级范围。",
-    kind: "command",
-    tags: ["deps"],
-  },
-  {
-    id: "node-why",
-    category: "node",
-    title: "定位依赖来源",
-    value: "npm explain package-name",
-    detail: "查某个包为什么会出现在依赖树中。",
-    kind: "command",
-    tags: ["deps", "debug"],
-  },
-  {
-    id: "linux-pwd",
-    category: "linux",
-    title: "显示当前目录",
-    value: "pwd",
-    detail: "确认自己现在在哪个路径，执行删除、移动、构建命令前先看一眼。",
-    kind: "command",
-    tags: ["path", "beginner"],
-    priority: true,
-  },
-  {
-    id: "linux-cd-home",
-    category: "linux",
-    title: "回到用户目录",
-    value: "cd ~",
-    detail: "快速回到当前用户的 home 目录，适合从很深的路径退出来。",
-    kind: "command",
-    tags: ["path", "beginner"],
-  },
-  {
-    id: "linux-mkdir",
-    category: "linux",
-    title: "创建多级目录",
-    value: "mkdir -p logs/app",
-    detail: "-p 会自动创建不存在的上级目录，目录已存在也不会报错。",
-    kind: "command",
-    tags: ["file", "directory"],
-  },
-  {
-    id: "linux-cp-dir",
-    category: "linux",
-    title: "复制目录",
-    value: "cp -r source_dir target_dir",
-    detail: "递归复制目录及其内容，复制前确认目标路径。",
-    kind: "command",
-    tags: ["file", "copy"],
-  },
-  {
-    id: "linux-mv",
-    category: "linux",
-    title: "移动或重命名",
-    value: "mv old_name new_name",
-    detail: "同目录下是重命名，不同目录下是移动。",
-    kind: "command",
-    tags: ["file", "rename"],
-  },
-  {
-    id: "linux-rm-safe",
-    category: "linux",
-    title: "删除文件",
-    value: "rm file.txt",
-    detail: "删除不可恢复，递归删除目录前先用 ls 确认路径。",
-    kind: "command",
-    tags: ["file", "delete"],
-  },
-  {
-    id: "linux-du",
-    category: "linux",
-    title: "查看目录大小",
-    value: "du -sh *",
-    detail: "查看当前目录下各项占用，排查磁盘空间最常用。",
-    kind: "command",
-    tags: ["disk"],
-  },
-  {
-    id: "linux-df",
-    category: "linux",
-    title: "查看磁盘空间",
-    value: "df -h",
-    detail: "显示各分区剩余空间，服务器构建失败时常用。",
-    kind: "command",
-    tags: ["disk"],
-  },
-  {
-    id: "linux-chmod",
-    category: "linux",
-    title: "增加执行权限",
-    value: "chmod +x script.sh",
-    detail: "脚本提示 permission denied 时，常需要先加执行权限。",
-    kind: "command",
-    tags: ["permission"],
-  },
-  {
-    id: "linux-curl-head",
-    category: "linux",
-    title: "检查 URL 响应头",
-    value: "curl -I https://example.com",
-    detail: "快速看 HTTP 状态码、重定向和缓存头。",
-    kind: "command",
-    tags: ["network", "http"],
-  },
-  {
-    id: "linux-tar",
-    category: "linux",
-    title: "解压 tar.gz",
-    value: "tar -xzvf archive.tar.gz",
-    detail: "解压常见 Linux 压缩包，x 解包、z gzip、v 显示过程、f 指定文件。",
-    kind: "command",
-    tags: ["archive"],
-  },
-  {
-    id: "git-add-patch",
-    category: "git",
-    title: "交互式暂存部分改动",
-    value: "git add -p",
-    detail: "把同一文件里的改动拆开暂存，适合提交保持干净。",
-    kind: "command",
-    tags: ["stage", "review"],
-  },
-  {
-    id: "git-commit",
-    category: "git",
-    title: "提交改动",
-    value: "git commit -m \"message\"",
-    detail: "把已暂存内容生成提交；message 写清楚为什么改。",
-    kind: "command",
-    tags: ["commit"],
-    priority: true,
-  },
-  {
-    id: "git-pull-rebase",
-    category: "git",
-    title: "拉取并变基",
-    value: "git pull --rebase",
-    detail: "更新当前分支并尽量保持提交历史线性。",
-    kind: "command",
-    tags: ["sync"],
-  },
-  {
-    id: "git-fetch",
-    category: "git",
-    title: "获取远端更新",
-    value: "git fetch --all --prune",
-    detail: "同步远端分支信息并清理已删除的远端引用。",
-    kind: "command",
-    tags: ["sync", "remote"],
-  },
-  {
-    id: "git-branch",
-    category: "git",
-    title: "查看分支",
-    value: "git branch -vv",
-    detail: "查看本地分支、上游分支和领先/落后状态。",
-    kind: "command",
-    tags: ["branch"],
-  },
-  {
-    id: "git-show",
-    category: "git",
-    title: "查看某次提交",
-    value: "git show --stat HEAD",
-    detail: "快速看最近提交改了哪些文件和摘要。",
-    kind: "command",
-    tags: ["history"],
-  },
-  {
-    id: "git-blame",
-    category: "git",
-    title: "查看每行来源",
-    value: "git blame path/to/file",
-    detail: "定位某行是谁在什么时候改的，用于理解历史背景。",
-    kind: "command",
-    tags: ["history", "debug"],
-  },
-  {
-    id: "git-cherry-pick",
-    category: "git",
-    title: "摘取提交",
-    value: "git cherry-pick <commit>",
-    detail: "把另一个分支上的某个提交应用到当前分支。",
-    kind: "command",
-    tags: ["branch"],
-  },
-  {
-    id: "vscode-go-definition",
-    category: "vscode",
-    title: "跳转到定义",
-    value: "F12",
-    detail: "跳到函数、类型、变量的定义位置。",
-    kind: "shortcut",
-    tags: ["navigate"],
-    priority: true,
-  },
-  {
-    id: "vscode-peek-definition",
-    category: "vscode",
-    title: "预览定义",
-    value: "Alt+F12",
-    detail: "在当前文件内弹出定义预览，不打断上下文。",
-    kind: "shortcut",
-    tags: ["navigate"],
-  },
-  {
-    id: "vscode-find-file",
-    category: "vscode",
-    title: "文件内搜索",
-    value: "Ctrl+F",
-    detail: "在当前文件查找文本。",
-    kind: "shortcut",
-    tags: ["search"],
-  },
-  {
-    id: "vscode-find-workspace",
-    category: "vscode",
-    title: "全局搜索",
-    value: "Ctrl+Shift+F",
-    detail: "在整个工作区搜索文本，理解代码调用关系时高频使用。",
-    kind: "shortcut",
-    tags: ["search"],
-    priority: true,
-  },
-  {
-    id: "vscode-format",
-    category: "vscode",
-    title: "格式化当前文件",
-    value: "Shift+Alt+F",
-    detail: "用配置好的 formatter 格式化当前文件。",
-    kind: "shortcut",
-    tags: ["format"],
-  },
-  {
-    id: "vscode-comment",
-    category: "vscode",
-    title: "切换行注释",
-    value: "Ctrl+/",
-    detail: "快速注释或取消注释当前行/选中区域。",
-    kind: "shortcut",
-    tags: ["edit"],
-  },
-  {
-    id: "vscode-debug",
-    category: "vscode",
-    title: "开始调试",
-    value: "F5",
-    detail: "按当前 launch 配置启动调试。",
-    kind: "shortcut",
-    tags: ["debug"],
-  },
-  {
-    id: "vscode-sidebar",
-    category: "vscode",
-    title: "切换侧边栏",
-    value: "Ctrl+B",
-    detail: "隐藏或显示左侧栏，给编辑器更多空间。",
-    kind: "shortcut",
-    tags: ["layout"],
-  },
-  {
-    id: "docker-images",
-    category: "docker",
-    title: "查看镜像",
-    value: "docker images",
-    detail: "列出本地镜像、标签和大小。",
-    kind: "command",
-    tags: ["image"],
-  },
-  {
-    id: "docker-stop",
-    category: "docker",
-    title: "停止容器",
-    value: "docker stop container_name",
-    detail: "优雅停止正在运行的容器。",
-    kind: "command",
-    tags: ["container"],
-  },
-  {
-    id: "docker-rm",
-    category: "docker",
-    title: "删除已停止容器",
-    value: "docker rm container_name",
-    detail: "删除不再需要的停止容器，不会删除镜像。",
-    kind: "command",
-    tags: ["container", "clean"],
-  },
-  {
-    id: "docker-build",
-    category: "docker",
-    title: "构建镜像",
-    value: "docker build -t app:dev .",
-    detail: "基于当前目录 Dockerfile 构建镜像并打标签。",
-    kind: "command",
-    tags: ["image", "build"],
-  },
-  {
-    id: "docker-pull",
-    category: "docker",
-    title: "拉取镜像",
-    value: "docker pull postgres:16",
-    detail: "从镜像仓库下载指定版本镜像。",
-    kind: "command",
-    tags: ["image"],
-  },
-  {
-    id: "docker-compose-down",
-    category: "docker",
-    title: "停止 Compose 服务",
-    value: "docker compose down",
-    detail: "停止并移除 compose 创建的容器和默认网络。",
-    kind: "command",
-    tags: ["compose"],
-  },
-  {
-    id: "docker-compose-logs",
-    category: "docker",
-    title: "查看 Compose 日志",
-    value: "docker compose logs -f service_name",
-    detail: "跟随某个 compose 服务日志。",
-    kind: "command",
-    tags: ["compose", "log"],
-  },
-  {
-    id: "docker-stats",
-    category: "docker",
-    title: "查看容器资源",
-    value: "docker stats",
-    detail: "实时查看容器 CPU、内存、网络和磁盘 IO。",
-    kind: "command",
-    tags: ["monitor"],
-  },
-  {
-    id: "node-ci",
-    category: "node",
-    title: "按 lockfile 干净安装",
-    value: "npm ci",
-    detail: "CI 或干净环境中按 lockfile 精确安装依赖。",
-    kind: "command",
-    tags: ["deps", "ci"],
-  },
-  {
-    id: "node-test",
-    category: "node",
-    title: "运行测试脚本",
-    value: "npm test",
-    detail: "执行 package.json 中的 test 脚本。",
-    kind: "command",
-    tags: ["test"],
-    priority: true,
-  },
-  {
-    id: "node-build",
-    category: "node",
-    title: "运行构建脚本",
-    value: "npm run build",
-    detail: "构建生产包，也是提交前常用验证命令。",
-    kind: "command",
-    tags: ["build"],
-    priority: true,
-  },
-  {
-    id: "node-lint",
-    category: "node",
-    title: "运行 lint",
-    value: "npm run lint",
-    detail: "检查代码风格和常见错误，具体规则由项目配置决定。",
-    kind: "command",
-    tags: ["lint"],
-  },
-  {
-    id: "node-pnpm-install",
-    category: "node",
-    title: "pnpm 安装依赖",
-    value: "pnpm install",
-    detail: "使用 pnpm 根据 lockfile 安装依赖。",
-    kind: "command",
-    tags: ["deps", "pnpm"],
-  },
-  {
-    id: "node-pnpm-dev",
-    category: "node",
-    title: "pnpm 启动开发服务",
-    value: "pnpm dev",
-    detail: "很多 pnpm 项目的本地开发入口。",
-    kind: "command",
-    tags: ["dev", "pnpm"],
-  },
-  {
-    id: "node-cache",
-    category: "node",
-    title: "清理 npm 缓存",
-    value: "npm cache verify",
-    detail: "检查并修复 npm 缓存，安装异常时可先尝试。",
-    kind: "command",
-    tags: ["cache", "deps"],
-  },
-  {
-    id: "node-npx",
-    category: "node",
-    title: "临时运行包命令",
-    value: "npx package-name",
-    detail: "不全局安装也能执行包提供的 CLI。",
-    kind: "command",
-    tags: ["cli"],
-  },
-];
-
-const COPY_COUNT_STORAGE_KEY = "devlauncher.quickmemory.copyCounts";
-const ORDER_STORAGE_KEY = "devlauncher.quickmemory.order";
-
-const kindLabel: Record<MemoryKind, string> = {
-  command: "命令",
-  shortcut: "快捷键",
-};
+import {
+  createQuickMemoryId,
+  deleteCustomCategory,
+  deleteCustomItem,
+  filterMemoryItems,
+  getOrderedCategoryItems,
+  mergeQuickMemoryData,
+  parseTags,
+  validateCategoryDraft,
+  validateItemDraft,
+  type CategoryDraft,
+  type ItemDraft,
+} from "./data";
+import {
+  EMPTY_QUICKMEMORY_DATA,
+  kindLabel,
+  type CategoryId,
+  type MemoryCategory,
+  type MemoryItem,
+  type PointerDragState,
+  type QuickMemoryData,
+} from "./model";
+import { loadQuickMemoryData, saveQuickMemoryData } from "./storage";
 
 async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
-function loadCopyCounts(): Record<string, number> {
-  try {
-    const raw = window.localStorage.getItem(COPY_COUNT_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    return Object.fromEntries(
-      Object.entries(parsed)
-        .filter(([, value]) => typeof value === "number" && Number.isFinite(value))
-        .map(([key, value]) => [key, Math.max(0, value as number)])
-    );
-  } catch {
-    return {};
-  }
-}
+type ItemFormDraft = ItemDraft & {
+  category: CategoryId;
+  priority: boolean;
+};
 
-function saveCopyCounts(counts: Record<string, number>) {
-  window.localStorage.setItem(COPY_COUNT_STORAGE_KEY, JSON.stringify(counts));
-}
+const miniButtonStyle: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.10)",
+  background: "rgba(255,255,255,0.06)",
+  color: "rgba(248,250,252,0.76)",
+  borderRadius: 6,
+  padding: "2px 5px",
+  fontSize: 10,
+  cursor: "pointer",
+};
 
-type OrderState = Partial<Record<CategoryId, string[]>>;
-interface PointerDragState {
-  itemId: string;
-  startX: number;
-  startY: number;
-  isDragging: boolean;
-}
+const categoryActionButtonStyle: CSSProperties = {
+  width: "100%",
+  height: 32,
+  borderRadius: 8,
+  border: "1px solid rgba(255,255,255,0.10)",
+  background: "rgba(255,255,255,0.06)",
+  color: "#f8fafc",
+  cursor: "pointer",
+  fontSize: 12,
+  fontWeight: 700,
+};
 
-function loadOrderState(): OrderState {
-  try {
-    const raw = window.localStorage.getItem(ORDER_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return {};
-    const next: OrderState = {};
-    for (const category of CATEGORIES) {
-      const value = (parsed as Record<string, unknown>)[category.id];
-      if (Array.isArray(value)) {
-        next[category.id] = value.filter((id): id is string => typeof id === "string");
-      }
-    }
-    return next;
-  } catch {
-    return {};
-  }
-}
+const primaryActionButtonStyle: CSSProperties = {
+  height: 32,
+  borderRadius: 8,
+  border: "1px solid rgba(94,234,212,0.38)",
+  background: "rgba(94,234,212,0.12)",
+  color: "#ccfbf1",
+  cursor: "pointer",
+  padding: "0 10px",
+  fontSize: 12,
+  fontWeight: 700,
+};
 
-function saveOrderState(order: OrderState) {
-  window.localStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(order));
-}
+const dialogBackdropStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  display: "grid",
+  placeItems: "center",
+  background: "rgba(2,6,23,0.62)",
+  zIndex: 9000,
+};
 
-function getOrderedCategoryItems(category: CategoryId, orderState: OrderState): MemoryItem[] {
-  const baseItems = MEMORY_ITEMS
-    .map((item, index) => ({ item, index }))
-    .filter(({ item }) => item.category === category)
-    .sort((a, b) => {
-      const priorityDiff = Number(Boolean(b.item.priority)) - Number(Boolean(a.item.priority));
-      if (priorityDiff !== 0) return priorityDiff;
-      return a.index - b.index;
-    })
-    .map(({ item }) => item);
-  const savedOrder = orderState[category]?.filter((id) => baseItems.some((item) => item.id === id)) ?? [];
-  if (savedOrder.length === 0) return baseItems;
+const dialogStyle: CSSProperties = {
+  width: 420,
+  maxWidth: "calc(100vw - 36px)",
+  borderRadius: 10,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(15,23,42,0.98)",
+  boxShadow: "0 24px 60px rgba(0,0,0,0.42)",
+  padding: 14,
+  display: "grid",
+  gap: 10,
+};
 
-  const byId = new Map(baseItems.map((item) => [item.id, item]));
-  const ordered = savedOrder.flatMap((id) => {
-    const item = byId.get(id);
-    return item ? [item] : [];
-  });
-  const missing = baseItems.filter((item) => !savedOrder.includes(item.id));
-  return [...ordered, ...missing];
-}
+const dialogTitleStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 15,
+  color: "#f8fafc",
+};
+
+const dialogInputStyle: CSSProperties = {
+  width: "100%",
+  borderRadius: 8,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.06)",
+  color: "#f8fafc",
+  outline: "none",
+  padding: "8px 10px",
+  fontSize: 12,
+  boxSizing: "border-box",
+};
+
+const dialogErrorStyle: CSSProperties = {
+  fontSize: 12,
+  color: "#fca5a5",
+};
+
+const dialogActionsStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 8,
+};
 
 export function QuickMemoryApp() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -776,8 +127,22 @@ export function QuickMemoryApp() {
   const [activeCategory, setActiveCategory] = useState<CategoryId>("linux");
   const [query, setQuery] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copyCounts, setCopyCounts] = useState<Record<string, number>>(() => loadCopyCounts());
-  const [orderState, setOrderState] = useState<OrderState>(() => loadOrderState());
+  const [quickMemoryData, setQuickMemoryData] = useState<QuickMemoryData>(EMPTY_QUICKMEMORY_DATA);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [categoryDialog, setCategoryDialog] = useState<{ mode: "create" | "edit"; categoryId?: string } | null>(null);
+  const [categoryDraft, setCategoryDraft] = useState<CategoryDraft>({ name: "", subtitle: "", accent: "#5eead4" });
+  const [itemDialog, setItemDialog] = useState<{ mode: "create" | "edit"; itemId?: string } | null>(null);
+  const [itemDraft, setItemDraft] = useState<ItemFormDraft>({
+    title: "",
+    value: "",
+    detail: "",
+    kind: "command",
+    tagsText: "",
+    priority: false,
+    category: activeCategory,
+  });
+  const [formError, setFormError] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
@@ -785,10 +150,32 @@ export function QuickMemoryApp() {
   const pointerDragRef = useRef<PointerDragState | null>(null);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
   const reducedMotion = useReducedMotion();
+  const mergedData = useMemo(() => mergeQuickMemoryData(quickMemoryData), [quickMemoryData]);
+  const categories = mergedData.categories;
+  const memoryItems = mergedData.items;
+  const orderState = mergedData.order;
+  const copyCounts = mergedData.copyCounts;
 
   useEffect(() => {
     applyThemeFromConfig();
     getCurrentWindow().setAlwaysOnTop(false).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadQuickMemoryData()
+      .then((data) => {
+        if (cancelled) return;
+        setQuickMemoryData(data);
+        setLoadError(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setLoadError(error instanceof Error ? error.message : String(error));
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -803,22 +190,11 @@ export function QuickMemoryApp() {
 
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    return getOrderedCategoryItems(activeCategory, orderState)
-      .filter((item) => {
-        if (!normalized) return true;
-        const haystack = [
-          item.title,
-          item.value,
-          item.detail,
-          item.kind,
-          ...item.tags,
-        ].join(" ").toLowerCase();
-        return haystack.includes(normalized);
-      })
-  }, [activeCategory, orderState, query]);
+    return filterMemoryItems(getOrderedCategoryItems(activeCategory, memoryItems, orderState), normalized);
+  }, [activeCategory, memoryItems, orderState, query]);
 
-  const activeMeta = CATEGORIES.find((category) => category.id === activeCategory) ?? CATEGORIES[0];
-  const categoryCount = MEMORY_ITEMS.filter((item) => item.category === activeCategory).length;
+  const activeMeta = categories.find((category) => category.id === activeCategory) ?? categories[0];
+  const categoryCount = memoryItems.filter((item) => item.category === activeCategory).length;
 
   useGsapContext(rootRef, () => {
     if (!rootRef.current) return;
@@ -851,15 +227,152 @@ export function QuickMemoryApp() {
     });
   };
 
+  const persistQuickMemoryData = async (next: QuickMemoryData) => {
+    setQuickMemoryData(next);
+    try {
+      await saveQuickMemoryData(next);
+      setSaveError(null);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openCreateCategory = () => {
+    setCategoryDraft({ name: "", subtitle: "", accent: "#5eead4" });
+    setFormError(null);
+    setCategoryDialog({ mode: "create" });
+  };
+
+  const openEditCategory = (category: MemoryCategory) => {
+    if (category.source !== "custom") return;
+    setCategoryDraft({ name: category.name, subtitle: category.subtitle, accent: category.accent });
+    setFormError(null);
+    setCategoryDialog({ mode: "edit", categoryId: category.id });
+  };
+
+  const openCreateItem = () => {
+    setItemDraft({
+      title: "",
+      value: "",
+      detail: "",
+      kind: "command",
+      tagsText: "",
+      priority: false,
+      category: activeCategory,
+    });
+    setFormError(null);
+    setItemDialog({ mode: "create" });
+  };
+
+  const openEditItem = (item: MemoryItem) => {
+    if (item.source !== "custom") return;
+    setItemDraft({
+      title: item.title,
+      value: item.value,
+      detail: item.detail,
+      kind: item.kind,
+      tagsText: item.tags.join(", "),
+      priority: Boolean(item.priority),
+      category: item.category,
+    });
+    setFormError(null);
+    setItemDialog({ mode: "edit", itemId: item.id });
+  };
+
+  const saveCategoryDraft = async () => {
+    const error = validateCategoryDraft(categoryDraft);
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    const now = new Date().toISOString();
+    const nextCategories = categoryDialog?.mode === "edit" && categoryDialog.categoryId
+      ? quickMemoryData.customCategories.map((category) =>
+          category.id === categoryDialog.categoryId
+            ? {
+                ...category,
+                name: categoryDraft.name.trim(),
+                subtitle: categoryDraft.subtitle.trim(),
+                accent: categoryDraft.accent.trim(),
+                updatedAt: now,
+              }
+            : category
+        )
+      : [
+          ...quickMemoryData.customCategories,
+          {
+            id: createQuickMemoryId("category"),
+            name: categoryDraft.name.trim(),
+            subtitle: categoryDraft.subtitle.trim(),
+            accent: categoryDraft.accent.trim(),
+            createdAt: now,
+            updatedAt: now,
+          },
+        ];
+    await persistQuickMemoryData({ ...quickMemoryData, customCategories: nextCategories });
+    setCategoryDialog(null);
+  };
+
+  const saveItemDraft = async () => {
+    const error = validateItemDraft(itemDraft);
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    const now = new Date().toISOString();
+    const normalized = {
+      category: itemDraft.category,
+      title: itemDraft.title.trim(),
+      value: itemDraft.value.trim(),
+      detail: itemDraft.detail.trim(),
+      kind: itemDraft.kind,
+      tags: parseTags(itemDraft.tagsText),
+      priority: itemDraft.priority,
+      updatedAt: now,
+    };
+    const nextItems = itemDialog?.mode === "edit" && itemDialog.itemId
+      ? quickMemoryData.customItems.map((item) =>
+          item.id === itemDialog.itemId ? { ...item, ...normalized } : item
+        )
+      : [
+          ...quickMemoryData.customItems,
+          {
+            id: createQuickMemoryId("memory"),
+            ...normalized,
+            createdAt: now,
+          },
+        ];
+    await persistQuickMemoryData({ ...quickMemoryData, customItems: nextItems });
+    setItemDialog(null);
+  };
+
+  const removeCustomCategory = async (categoryId: string) => {
+    const category = categories.find((entry) => entry.id === categoryId);
+    if (!category || category.source !== "custom") return;
+    const confirmed = window.confirm(`删除分类“${category.name}”及其自定义记忆？`);
+    if (!confirmed) return;
+    const next = deleteCustomCategory(quickMemoryData, categoryId);
+    await persistQuickMemoryData(next);
+    setActiveCategory("linux");
+  };
+
+  const removeCustomItem = async (itemId: string) => {
+    const item = memoryItems.find((entry) => entry.id === itemId);
+    if (!item || item.source !== "custom") return;
+    const confirmed = window.confirm(`删除记忆“${item.title}”？`);
+    if (!confirmed) return;
+    await persistQuickMemoryData(deleteCustomItem(quickMemoryData, itemId));
+  };
+
   const handleCopy = async (item: MemoryItem) => {
     try {
       await copyText(item.value);
       setCopiedId(item.id);
-      setCopyCounts((current) => {
-        const next = { ...current, [item.id]: (current[item.id] ?? 0) + 1 };
-        saveCopyCounts(next);
-        return next;
-      });
+      const next = {
+        ...quickMemoryData,
+        copyCounts: { ...copyCounts, [item.id]: (copyCounts[item.id] ?? 0) + 1 },
+      };
+      void persistQuickMemoryData(next);
       window.setTimeout(() => setCopiedId((current) => current === item.id ? null : current), 1200);
     } catch (error) {
       console.error("copy quick memory failed", error);
@@ -876,12 +389,12 @@ export function QuickMemoryApp() {
 
   const swapCards = (draggedItemId: string, targetItemId: string) => {
     if (draggedItemId === targetItemId) return;
-    const draggedItem = MEMORY_ITEMS.find((item) => item.id === draggedItemId);
-    const targetItem = MEMORY_ITEMS.find((item) => item.id === targetItemId);
+    const draggedItem = memoryItems.find((item) => item.id === draggedItemId);
+    const targetItem = memoryItems.find((item) => item.id === targetItemId);
     if (!draggedItem || !targetItem || draggedItem.category !== targetItem.category) return;
 
     const category = draggedItem.category;
-    const currentIds = getOrderedCategoryItems(category, orderState).map((item) => item.id);
+    const currentIds = getOrderedCategoryItems(category, memoryItems, orderState).map((item) => item.id);
     const draggedIndex = currentIds.indexOf(draggedItemId);
     const targetIndex = currentIds.indexOf(targetItemId);
     if (draggedIndex < 0 || targetIndex < 0) return;
@@ -889,8 +402,7 @@ export function QuickMemoryApp() {
     nextIds[draggedIndex] = targetItemId;
     nextIds[targetIndex] = draggedItemId;
     const nextOrder = { ...orderState, [category]: nextIds };
-    setOrderState(nextOrder);
-    saveOrderState(nextOrder);
+    void persistQuickMemoryData({ ...quickMemoryData, order: nextOrder });
   };
 
   const resetPointerDrag = () => {
@@ -963,7 +475,7 @@ export function QuickMemoryApp() {
 
   const renderDragGhost = () => {
     if (!draggingId || !dragPos) return null;
-    const item = MEMORY_ITEMS.find((entry) => entry.id === draggingId);
+    const item = memoryItems.find((entry) => entry.id === draggingId);
     if (!item) return null;
     return (
       <div
@@ -1095,6 +607,11 @@ export function QuickMemoryApp() {
               <div style={{ fontSize: 11, color: "rgba(226,232,240,0.56)", marginTop: 2 }}>
                 开发常用命令与快捷键速查
               </div>
+              {(loadError || saveError) && (
+                <div style={{ fontSize: 11, color: "#fca5a5", marginTop: 2 }}>
+                  {loadError ? `加载失败：${loadError}` : `保存失败：${saveError}`}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1153,13 +670,28 @@ export function QuickMemoryApp() {
               background: "rgba(255,255,255,0.025)",
             }}
           >
-            {CATEGORIES.map((category) => {
+            <button
+              onClick={openCreateCategory}
+              onMouseDown={(event) => event.stopPropagation()}
+              style={categoryActionButtonStyle}
+            >
+              新增类别
+            </button>
+            {categories.map((category) => {
               const selected = category.id === activeCategory;
-              const count = MEMORY_ITEMS.filter((item) => item.category === category.id).length;
+              const count = memoryItems.filter((item) => item.category === category.id).length;
               return (
-                <button
+                <div
                   key={category.id}
                   onClick={() => setActiveCategory(category.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setActiveCategory(category.id);
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                   style={{
                     width: "100%",
                     minHeight: 50,
@@ -1173,18 +705,43 @@ export function QuickMemoryApp() {
                     display: "grid",
                     gap: 3,
                     boxShadow: selected ? `inset 3px 0 0 ${category.accent}` : "none",
+                    outline: "none",
                   }}
                 >
                   <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 700 }}>{category.name}</span>
+                    <span style={{ fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{category.name}</span>
                     <span style={{ fontSize: 11, color: selected ? category.accent : "rgba(226,232,240,0.42)" }}>
                       {count}
                     </span>
                   </span>
+                  {category.source === "custom" && (
+                    <span style={{ display: "flex", gap: 4 }}>
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openEditCategory(category);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        style={miniButtonStyle}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void removeCustomCategory(category.id);
+                        }}
+                        onMouseDown={(event) => event.stopPropagation()}
+                        style={miniButtonStyle}
+                      >
+                        删除
+                      </button>
+                    </span>
+                  )}
                   <span style={{ fontSize: 10, color: "rgba(226,232,240,0.52)", lineHeight: 1.3 }}>
                     {category.subtitle}
                   </span>
-                </button>
+                </div>
               );
             })}
           </aside>
@@ -1223,8 +780,17 @@ export function QuickMemoryApp() {
                 </p>
               </div>
 
-              <div style={{ fontSize: 11, color: "rgba(226,232,240,0.42)" }}>
-                {query ? `匹配 ${filteredItems.length} 条` : "拖拽卡片交换排序"}
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 11, color: "rgba(226,232,240,0.42)" }}>
+                  {query ? `匹配 ${filteredItems.length} 条` : "拖拽卡片交换排序"}
+                </span>
+                <button
+                  onClick={openCreateItem}
+                  onMouseDown={(event) => event.stopPropagation()}
+                  style={primaryActionButtonStyle}
+                >
+                  新增记忆
+                </button>
               </div>
             </section>
 
@@ -1345,6 +911,30 @@ export function QuickMemoryApp() {
                         </span>
                       ))}
                     </div>
+                    {item.source === "custom" && (
+                      <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openEditItem(item);
+                          }}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          style={miniButtonStyle}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void removeCustomItem(item.id);
+                          }}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          style={miniButtonStyle}
+                        >
+                          删除
+                        </button>
+                      </span>
+                    )}
                     <span style={{ fontSize: 10, color: copiedId === item.id ? activeMeta.accent : "rgba(226,232,240,0.38)", flexShrink: 0 }}>
                       {copiedId === item.id ? "已复制" : `复制 ${copyCounts[item.id] ?? 0} 次`}
                     </span>
@@ -1369,6 +959,97 @@ export function QuickMemoryApp() {
                 </div>
               )}
               {renderDragGhost()}
+              {categoryDialog && (
+                <div style={dialogBackdropStyle}>
+                  <div style={dialogStyle}>
+                    <h2 style={dialogTitleStyle}>{categoryDialog.mode === "create" ? "新增类别" : "编辑类别"}</h2>
+                    <input
+                      value={categoryDraft.name}
+                      onChange={(event) => setCategoryDraft((draft) => ({ ...draft, name: event.target.value }))}
+                      placeholder="类别名称"
+                      style={dialogInputStyle}
+                    />
+                    <input
+                      value={categoryDraft.subtitle}
+                      onChange={(event) => setCategoryDraft((draft) => ({ ...draft, subtitle: event.target.value }))}
+                      placeholder="说明"
+                      style={dialogInputStyle}
+                    />
+                    <input
+                      value={categoryDraft.accent}
+                      onChange={(event) => setCategoryDraft((draft) => ({ ...draft, accent: event.target.value }))}
+                      placeholder="#5eead4"
+                      style={dialogInputStyle}
+                    />
+                    {formError && <div style={dialogErrorStyle}>{formError}</div>}
+                    <div style={dialogActionsStyle}>
+                      <button onClick={() => setCategoryDialog(null)} style={miniButtonStyle}>取消</button>
+                      <button onClick={() => void saveCategoryDraft()} style={primaryActionButtonStyle}>保存</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {itemDialog && (
+                <div style={dialogBackdropStyle}>
+                  <div style={dialogStyle}>
+                    <h2 style={dialogTitleStyle}>{itemDialog.mode === "create" ? "新增记忆" : "编辑记忆"}</h2>
+                    <select
+                      value={itemDraft.category}
+                      onChange={(event) => setItemDraft((draft) => ({ ...draft, category: event.target.value }))}
+                      style={dialogInputStyle}
+                    >
+                      {categories.map((category) => (
+                        <option key={category.id} value={category.id}>{category.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      value={itemDraft.title}
+                      onChange={(event) => setItemDraft((draft) => ({ ...draft, title: event.target.value }))}
+                      placeholder="标题"
+                      style={dialogInputStyle}
+                    />
+                    <textarea
+                      value={itemDraft.value}
+                      onChange={(event) => setItemDraft((draft) => ({ ...draft, value: event.target.value }))}
+                      placeholder="命令或快捷键"
+                      style={{ ...dialogInputStyle, minHeight: 70, resize: "vertical" }}
+                    />
+                    <textarea
+                      value={itemDraft.detail}
+                      onChange={(event) => setItemDraft((draft) => ({ ...draft, detail: event.target.value }))}
+                      placeholder="说明"
+                      style={{ ...dialogInputStyle, minHeight: 60, resize: "vertical" }}
+                    />
+                    <select
+                      value={itemDraft.kind}
+                      onChange={(event) => setItemDraft((draft) => ({ ...draft, kind: event.target.value as "command" | "shortcut" }))}
+                      style={dialogInputStyle}
+                    >
+                      <option value="command">命令</option>
+                      <option value="shortcut">快捷键</option>
+                    </select>
+                    <input
+                      value={itemDraft.tagsText}
+                      onChange={(event) => setItemDraft((draft) => ({ ...draft, tagsText: event.target.value }))}
+                      placeholder="标签，用逗号或空格分隔"
+                      style={dialogInputStyle}
+                    />
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "rgba(226,232,240,0.72)" }}>
+                      <input
+                        type="checkbox"
+                        checked={itemDraft.priority}
+                        onChange={(event) => setItemDraft((draft) => ({ ...draft, priority: event.target.checked }))}
+                      />
+                      置顶
+                    </label>
+                    {formError && <div style={dialogErrorStyle}>{formError}</div>}
+                    <div style={dialogActionsStyle}>
+                      <button onClick={() => setItemDialog(null)} style={miniButtonStyle}>取消</button>
+                      <button onClick={() => void saveItemDraft()} style={primaryActionButtonStyle}>保存</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </section>
           </main>
         </div>

@@ -115,6 +115,8 @@ pub fn run() {
             builtins::screenshot::get_pending_screenshot,
             builtins::screenshot::screenshot_write_file,
             builtins::webaccounts::toggle_webaccounts_window,
+            builtins::quickmemory::load_quickmemory_data,
+            builtins::quickmemory::save_quickmemory_data,
             builtins::quickmemory::toggle_quickmemory_window,
             entries::toggle_search_window,
             entries::show_search_window,
