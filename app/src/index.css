@@ -210,20 +210,6 @@
     transform-origin: center;
   }
 
-  .pet-bubble-menu::before {
-    content: "";
-    position: absolute;
-    left: 50%;
-    bottom: -6px;
-    width: 10px;
-    height: 10px;
-    border-right: 2px solid rgba(248, 250, 252, 0.72);
-    border-bottom: 2px solid rgba(248, 250, 252, 0.72);
-    background: rgba(12, 18, 28, 0.96);
-    transform: translateX(-50%) rotate(45deg);
-    box-shadow: 2px 2px 0 rgba(0,0,0,0.24);
-  }
-
   .pet-bubble-menu {
     image-rendering: pixelated;
     transition:
@@ -260,17 +246,10 @@
     overflow: visible;
   }
 
-  .pet-action-plus {
-    font-size: 22px;
-    font-weight: 900;
-    line-height: 1;
-    transform: translateY(-2px);
-  }
-
   .pet-siamese-frame {
     position: relative;
-    width: 148px;
-    height: 132px;
+    width: 116px;
+    height: 102px;
     display: block;
     overflow: visible;
     image-rendering: pixelated;
@@ -281,7 +260,7 @@
     position: absolute;
     left: 50%;
     top: 50%;
-    width: 168px;
+    width: 132px;
     height: auto;
     transform: translate(-50%, -51%);
     image-rendering: pixelated;
@@ -290,34 +269,8 @@
   }
 
   .pet-siamese-frame[data-pet-sprite-action="keyboardJump"] img {
-    width: 188px;
-    transform: translate(-50%, -53%);
-  }
-
-  .pet-custom-action-hint {
-    position: absolute;
-    left: 50%;
-    bottom: 8px;
-    max-width: 152px;
-    padding: 7px 10px;
-    border: 1px solid rgba(125, 211, 252, 0.28);
-    border-radius: 8px;
-    background: rgba(15, 23, 42, 0.94);
-    color: rgba(226, 232, 240, 0.92);
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 1.35;
-    text-align: center;
-    box-shadow: 0 12px 28px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.12);
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(-50%, 8px);
-    transition: opacity 160ms ease, transform 180ms var(--motion-soft);
-  }
-
-  .pet-custom-action-hint.is-visible {
-    opacity: 1;
-    transform: translate(-50%, 0);
+    width: 148px;
+    transform: translate(-50%, -52%);
   }
 
   .pet-action-button .pet-icon-line,
