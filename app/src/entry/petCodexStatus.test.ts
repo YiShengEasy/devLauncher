@@ -8,6 +8,7 @@ import {
 
 describe("pet Codex status model", () => {
   it("accepts known statuses", () => {
+    expect(isPetCodexStatus("thinking")).toBe(true);
     expect(isPetCodexStatus("working")).toBe(true);
     expect(isPetCodexStatus("missing")).toBe(false);
   });
@@ -25,6 +26,7 @@ describe("pet Codex status model", () => {
   });
 
   it("has user-facing labels for status display", () => {
+    expect(getPetCodexStatusLabel("thinking")).toBe("思考中");
     expect(getPetCodexStatusLabel("disconnected")).toBe("未连接");
   });
 });

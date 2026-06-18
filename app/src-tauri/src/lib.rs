@@ -126,6 +126,7 @@ pub fn run() {
             entries::switch_to_keyboard_mode,
             entries::toggle_pet_window,
             entries::set_pet_codex_status,
+            entries::take_pet_mcp_events,
             ocr::ocr_recognize_image,
             utils::icon::extract_app_icons,
             utils::favicon::get_cached_favicons,
