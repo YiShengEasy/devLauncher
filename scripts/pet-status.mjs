@@ -5,18 +5,21 @@ import path from "node:path";
 
 const STATUSES = new Set(["idle", "thinking", "working", "waiting", "success", "error", "disconnected"]);
 
-function defaultInboxPath() {
+function defaultInboxPaths() {
   if (process.env.DEVLAUNCHER_PET_MCP_INBOX) {
-    return process.env.DEVLAUNCHER_PET_MCP_INBOX;
+    return [process.env.DEVLAUNCHER_PET_MCP_INBOX];
   }
   if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support", "com.yisheng.app", "pet-mcp-events.jsonl");
+    return [
+      path.join(os.homedir(), "Library", "Application Support", "com.yisheng.app", "pet-mcp-events.jsonl"),
+      path.join(os.homedir(), "Library", "Application Support", "com.yisheng.devlauncher.dev", "pet-mcp-events.jsonl"),
+    ];
   }
   if (process.platform === "win32") {
     const base = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-    return path.join(base, "com.yisheng.app", "pet-mcp-events.jsonl");
+    return [path.join(base, "com.yisheng.app", "pet-mcp-events.jsonl")];
   }
-  return path.join(os.homedir(), ".local", "share", "com.yisheng.app", "pet-mcp-events.jsonl");
+  return [path.join(os.homedir(), ".local", "share", "com.yisheng.app", "pet-mcp-events.jsonl")];
 }
 
 function normalizeMessage(parts) {
@@ -29,7 +32,7 @@ function printUsage() {
 }
 
 if (process.argv.includes("--print-config")) {
-  console.log(JSON.stringify({ inbox: defaultInboxPath(), statuses: Array.from(STATUSES) }, null, 2));
+  console.log(JSON.stringify({ inboxes: defaultInboxPaths(), statuses: Array.from(STATUSES) }, null, 2));
   process.exit(0);
 }
 
@@ -40,17 +43,16 @@ if (!STATUSES.has(status)) {
 }
 
 const message = normalizeMessage(messageParts);
-const inbox = defaultInboxPath();
-fs.mkdirSync(path.dirname(inbox), { recursive: true });
-fs.appendFileSync(
-  inbox,
-  `${JSON.stringify({
+const event = JSON.stringify({
     status,
     ...(message ? { message } : {}),
     createdAt: new Date().toISOString(),
     source: "devlauncher-pet-status-script",
-  })}\n`,
-  "utf8",
-);
+  });
+const inboxes = defaultInboxPaths();
+for (const inbox of inboxes) {
+  fs.mkdirSync(path.dirname(inbox), { recursive: true });
+  fs.appendFileSync(inbox, `${event}\n`, "utf8");
+}
 
-console.log(`pet status queued: ${status}${message ? ` / ${message}` : ""}`);
+console.log(`pet status queued: ${status}${message ? ` / ${message}` : ""} (${inboxes.length} inbox${inboxes.length === 1 ? "" : "es"})`);

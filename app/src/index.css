@@ -273,6 +273,16 @@
     transform: translate(-50%, -52%);
   }
 
+
+  .pet-siamese-frame[data-pet-sprite-action="thinking"] img,
+  .pet-siamese-frame[data-pet-sprite-action="working"] img,
+  .pet-siamese-frame[data-pet-sprite-action="waiting"] img,
+  .pet-siamese-frame[data-pet-sprite-action="error"] img,
+  .pet-siamese-frame[data-pet-sprite-action="success"] img {
+    width: 172px;
+    transform: translate(-50%, -52%);
+  }
+
   .pet-action-button .pet-icon-line,
   .pet-action-button .pet-icon-ring,
   .pet-action-button .pet-icon-sheet,

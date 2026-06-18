@@ -11,18 +11,21 @@ const LEVEL_TO_STATUS = {
   error: "error",
 };
 
-function defaultInboxPath() {
+function defaultInboxPaths() {
   if (process.env.DEVLAUNCHER_PET_MCP_INBOX) {
-    return process.env.DEVLAUNCHER_PET_MCP_INBOX;
+    return [process.env.DEVLAUNCHER_PET_MCP_INBOX];
   }
   if (process.platform === "darwin") {
-    return path.join(os.homedir(), "Library", "Application Support", "com.yisheng.app", "pet-mcp-events.jsonl");
+    return [
+      path.join(os.homedir(), "Library", "Application Support", "com.yisheng.app", "pet-mcp-events.jsonl"),
+      path.join(os.homedir(), "Library", "Application Support", "com.yisheng.devlauncher.dev", "pet-mcp-events.jsonl"),
+    ];
   }
   if (process.platform === "win32") {
     const base = process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming");
-    return path.join(base, "com.yisheng.app", "pet-mcp-events.jsonl");
+    return [path.join(base, "com.yisheng.app", "pet-mcp-events.jsonl")];
   }
-  return path.join(os.homedir(), ".local", "share", "com.yisheng.app", "pet-mcp-events.jsonl");
+  return [path.join(os.homedir(), ".local", "share", "com.yisheng.app", "pet-mcp-events.jsonl")];
 }
 
 function normalizeMessage(value) {
@@ -30,10 +33,13 @@ function normalizeMessage(value) {
 }
 
 function appendPetEvent(event) {
-  const inbox = defaultInboxPath();
-  fs.mkdirSync(path.dirname(inbox), { recursive: true });
-  fs.appendFileSync(inbox, `${JSON.stringify({ ...event, createdAt: new Date().toISOString() })}\n`, "utf8");
-  return inbox;
+  const inboxes = defaultInboxPaths();
+  const line = `${JSON.stringify({ ...event, createdAt: new Date().toISOString() })}\n`;
+  for (const inbox of inboxes) {
+    fs.mkdirSync(path.dirname(inbox), { recursive: true });
+    fs.appendFileSync(inbox, line, "utf8");
+  }
+  return inboxes;
 }
 
 function contentText(text) {
@@ -100,11 +106,11 @@ function handleToolCall(params = {}) {
       return errorResult("Invalid status.");
     }
     const message = normalizeMessage(args.message);
-    const inbox = appendPetEvent({
+    const inboxes = appendPetEvent({
       status: args.status,
       ...(message ? { message } : {}),
     });
-    return toolResult(`Pet status queued: ${args.status} (${inbox})`);
+    return toolResult(`Pet status queued: ${args.status} (${inboxes.join(", ")})`);
   }
 
   if (name === "pet_notify") {
@@ -114,8 +120,8 @@ function handleToolCall(params = {}) {
     }
     const level = typeof args.level === "string" && LEVEL_TO_STATUS[args.level] ? args.level : "info";
     const status = LEVEL_TO_STATUS[level];
-    const inbox = appendPetEvent({ status, message });
-    return toolResult(`Pet notification queued: ${level} (${inbox})`);
+    const inboxes = appendPetEvent({ status, message });
+    return toolResult(`Pet notification queued: ${level} (${inboxes.join(", ")})`);
   }
 
   return errorResult(`Unknown tool: ${name}`);
@@ -196,7 +202,7 @@ function consumeInput() {
 }
 
 if (process.argv.includes("--print-config")) {
-  process.stdout.write(`${JSON.stringify({ inbox: defaultInboxPath(), tools: tools.map((tool) => tool.name) }, null, 2)}\n`);
+  process.stdout.write(`${JSON.stringify({ inboxes: defaultInboxPaths(), tools: tools.map((tool) => tool.name) }, null, 2)}\n`);
   process.exit(0);
 }
 
