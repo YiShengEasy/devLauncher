@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { KeyboardConfig, Action, ThemeConfig } from "@/types/actions";
-import { DEFAULT_THEME } from "@/types/actions";
+import type { KeyboardConfig, Action, PetConfig, ThemeConfig } from "@/types/actions";
+import { DEFAULT_PET_CONFIG, DEFAULT_THEME } from "@/types/actions";
 
 // 从 Rust 序列化的 Page 结构，keys 是 Record<string, Action>
 interface RawPage {
@@ -10,6 +10,7 @@ interface RawPage {
 interface RawConfig {
   pages: RawPage[];
   theme?: ThemeConfig;
+  pet?: PetConfig;
 }
 
 // 将 Rust 返回的原始 config 转换为前端 KeyboardConfig 格式
@@ -22,6 +23,14 @@ function normalizeConfig(raw: RawConfig): KeyboardConfig {
       ),
     })),
     theme: raw.theme ?? { ...DEFAULT_THEME },
+    pet: {
+      ...DEFAULT_PET_CONFIG,
+      ...raw.pet,
+      codex: {
+        enabled: false,
+        ...raw.pet?.codex,
+      },
+    },
   };
 }
 
@@ -42,6 +51,7 @@ export async function saveConfig(config: KeyboardConfig): Promise<void> {
       ),
     })),
     theme: config.theme,
+    pet: config.pet,
   };
   await invoke("save_config", { config: raw });
 }

@@ -15,6 +15,7 @@ pub fn default_config() -> KeyboardConfig {
     KeyboardConfig {
         pages: vec![],
         theme: Default::default(),
+        pet: Default::default(),
     }
 }
 

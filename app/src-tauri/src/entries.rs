@@ -1,3 +1,4 @@
+use crate::config;
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -9,6 +10,14 @@ pub struct EntryWindowPosition {
 const KEYBOARD_PET_DOCK_OFFSET_X: i32 = -18;
 const KEYBOARD_PET_DOCK_OFFSET_Y: i32 = -150;
 const PET_ACTION_EVENT: &str = "pet-action-state";
+const PET_CODEX_STATUS_EVENT: &str = "pet-codex-status";
+
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+pub struct PetCodexStatusPayload {
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
 
 #[cfg(target_os = "macos")]
 fn ns_window(win: &tauri::WebviewWindow) -> Result<&objc2_app_kit::NSWindow, String> {
@@ -139,6 +148,19 @@ fn hide_window_if_present(app: &tauri::AppHandle, label: &str) -> Result<(), Str
 
 pub fn set_pet_action(app: &tauri::AppHandle, action: &str) {
     let _ = app.emit(PET_ACTION_EVENT, action);
+}
+
+#[tauri::command]
+pub fn set_pet_codex_status(
+    app: tauri::AppHandle,
+    payload: PetCodexStatusPayload,
+) -> Result<(), String> {
+    let config = config::load_config(app.clone())?;
+    if !config.pet.codex.enabled {
+        return Ok(());
+    }
+    app.emit(PET_CODEX_STATUS_EVENT, payload)
+        .map_err(|e| e.to_string())
 }
 
 fn show_entry_mode_window(

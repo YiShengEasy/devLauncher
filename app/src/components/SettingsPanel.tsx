@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { CSSProperties } from "react";
 import { saveConfig } from "@/api/config";
 import { MacWindowControls } from "@/components/MacWindowControls";
+import { writePetCodexEnabled } from "@/entry/petCodexStatus";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -203,6 +204,23 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       const cfg = useKeyboardStore.getState().config;
       if (cfg) await saveConfig(cfg);
     }, 0);
+  };
+
+  const setPetCodexEnabled = async (enabled: boolean) => {
+    if (!config) return;
+    const next: KeyboardConfig = {
+      ...config,
+      pet: {
+        ...config.pet,
+        codex: {
+          ...config.pet?.codex,
+          enabled,
+        },
+      },
+    };
+    writePetCodexEnabled(enabled);
+    await persistConfig(next);
+    setStatus(enabled ? "Codex 联动已开启。未检测到状态事件时，宠物会显示未连接。" : "Codex 联动已关闭。");
   };
 
   const beginEdit = (entry: WebAccountEntry) => {
@@ -516,10 +534,39 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 </div>
               </div>
               <div style={{ ...panelStyle, padding: 12 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>Desktop pet</div>
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: "rgba(255,255,255,0.66)",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: config ? "pointer" : "default",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={Boolean(config?.pet?.codex?.enabled)}
+                      disabled={!config}
+                      onChange={(event) => setPetCodexEnabled(event.target.checked).catch((error) => setStatus(String(error)))}
+                    />
+                    Codex 联动
+                  </label>
+                </div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
                   快捷键：{shortcutLabels.pet}。打开搜索、截图报告、剪切板、键盘模式和隐藏操作；可拖动并保存位置。
                 </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", marginTop: 8, lineHeight: 1.6 }}>
+                  关闭时不会连接或探测 Codex。开启后只接收状态事件；未安装或未启动 Codex 时显示未连接，不影响启动。
+                </div>
+                {status && (
+                  <div style={{ marginTop: 8, color: status.includes("已") ? "rgba(74,222,128,0.86)" : "rgba(248,113,113,0.9)", fontSize: 11 }}>
+                    {status}
+                  </div>
+                )}
               </div>
             </section>
           ) : (
