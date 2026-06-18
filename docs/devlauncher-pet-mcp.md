@@ -15,10 +15,11 @@ Add a stdio MCP server that runs:
 node /path/to/devLauncher/mcp/devlauncher-pet-mcp.mjs
 ```
 
-The server writes events to the DevLauncher app data inbox. On macOS the default inbox is:
+The server writes events to the DevLauncher app data inbox. On macOS it writes both the release and development inboxes by default:
 
 ```text
 ~/Library/Application Support/com.yisheng.app/pet-mcp-events.jsonl
+~/Library/Application Support/com.yisheng.devlauncher.dev/pet-mcp-events.jsonl
 ```
 
 You can override it:

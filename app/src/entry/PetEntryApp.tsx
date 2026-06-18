@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -32,14 +32,17 @@ import {
   getPetCodexStatusLabel,
   normalizePetCodexStatusPayload,
   readPetCodexEnabled,
+  type PetCodexStatus,
   type PetCodexStatusPayload,
 } from "./petCodexStatus";
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
 const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
 const PET_ACTION_STATE_KEY = "devlauncher:pet-action-state";
+const PET_SPRITE_ASSET_VERSION = "20260619-status-sprites-v2";
+const PET_THINKING_STATUS_TIMEOUT_MS = 30_000;
 
-type PetSpriteActionId = "cozy" | "keyboardJump";
+type PetSpriteActionId = "cozy" | "keyboardJump" | "thinking" | "working" | "waiting" | "error" | "success";
 
 type PetSpriteAction = {
   id: PetSpriteActionId;
@@ -49,28 +52,73 @@ type PetSpriteAction = {
   loop: boolean;
 };
 
+function petFrames(folder: string) {
+  return Array.from(
+    { length: 8 },
+    (_, index) => `/pet/siamese/${folder}/${String(index + 1).padStart(4, "0")}.png?v=${PET_SPRITE_ASSET_VERSION}`,
+  );
+}
+
 const petActionRegistry: Record<PetSpriteActionId, PetSpriteAction> = {
   cozy: {
     id: "cozy",
     label: "悠闲待机",
     frameMs: 140,
     loop: true,
-    frames: Array.from(
-      { length: 8 },
-      (_, index) => `/pet/siamese/cozy-tail-ear-wiggle/${String(index + 1).padStart(4, "0")}.png`,
-    ),
+    frames: petFrames("cozy-tail-ear-wiggle"),
   },
   keyboardJump: {
     id: "keyboardJump",
     label: "键盘跳跃",
     frameMs: 90,
     loop: true,
-    frames: Array.from(
-      { length: 8 },
-      (_, index) => `/pet/siamese/keyboard-jump/${String(index + 1).padStart(4, "0")}.png`,
-    ),
+    frames: petFrames("keyboard-jump"),
+  },
+  thinking: {
+    id: "thinking",
+    label: "思考中",
+    frameMs: 150,
+    loop: true,
+    frames: petFrames("status-thinking"),
+  },
+  working: {
+    id: "working",
+    label: "执行中",
+    frameMs: 115,
+    loop: true,
+    frames: petFrames("status-working"),
+  },
+  waiting: {
+    id: "waiting",
+    label: "等待确认",
+    frameMs: 160,
+    loop: true,
+    frames: petFrames("status-waiting"),
+  },
+  error: {
+    id: "error",
+    label: "失败",
+    frameMs: 135,
+    loop: true,
+    frames: petFrames("status-error"),
+  },
+  success: {
+    id: "success",
+    label: "已完成",
+    frameMs: 145,
+    loop: true,
+    frames: petFrames("status-success"),
   },
 };
+
+function getPetSpriteActionForCodexStatus(status: PetCodexStatus): PetSpriteActionId {
+  if (status === "thinking") return "thinking";
+  if (status === "working") return "working";
+  if (status === "waiting") return "waiting";
+  if (status === "error") return "error";
+  if (status === "success") return "success";
+  return "cozy";
+}
 
 const shellStyle: CSSProperties = {
   position: "relative",
@@ -263,6 +311,7 @@ export function PetEntryApp() {
   const suppressClickRef = useRef(false);
   const closeLayoutTimerRef = useRef<number | null>(null);
   const spriteTimerRef = useRef<number | null>(null);
+  const thinkingStatusTimerRef = useRef<number | null>(null);
   const reducedMotion = useReducedMotion();
   const spriteAction = petActionRegistry[spriteActionId];
   const spriteFrameSrc = spriteAction.frames[spriteFrameIndex] ?? spriteAction.frames[0];
@@ -270,20 +319,48 @@ export function PetEntryApp() {
   const codexMessageKey = codexStatus.message ? `${codexStatus.status}:${codexStatus.message}` : "";
   const codexMessageVisible = Boolean(codexStatus.message && codexMessageKey !== dismissedCodexMessageKey);
 
+  const clearThinkingStatusTimer = useCallback(() => {
+    if (thinkingStatusTimerRef.current === null) return;
+    window.clearTimeout(thinkingStatusTimerRef.current);
+    thinkingStatusTimerRef.current = null;
+  }, []);
+
+  const applyCodexStatus = useCallback((payload: unknown) => {
+    const nextStatus = normalizePetCodexStatusPayload(payload);
+    clearThinkingStatusTimer();
+    setCodexStatus(nextStatus);
+
+    if (nextStatus.status !== "thinking") return;
+    thinkingStatusTimerRef.current = window.setTimeout(() => {
+      thinkingStatusTimerRef.current = null;
+      setCodexStatus(DEFAULT_PET_CODEX_STATUS);
+    }, PET_THINKING_STATUS_TIMEOUT_MS);
+  }, [clearThinkingStatusTimer]);
+
   useEffect(() => {
     codexEnabledRef.current = codexEnabled;
     if (!codexEnabled) {
+      clearThinkingStatusTimer();
       setCodexStatus(DEFAULT_PET_CODEX_STATUS);
       return;
     }
     setCodexStatus((current) => current.status === "idle" ? { status: "disconnected" } : current);
-  }, [codexEnabled]);
+  }, [clearThinkingStatusTimer, codexEnabled]);
 
   useEffect(() => {
     if (!codexStatus.message) {
       setDismissedCodexMessageKey(null);
     }
   }, [codexStatus.message]);
+
+
+  useEffect(() => {
+    if (!codexEnabled) {
+      playDefaultSpriteAction();
+      return;
+    }
+    playSpriteAction(getPetSpriteActionForCodexStatus(codexStatus.status));
+  }, [codexEnabled, codexStatus.status, reducedMotion]);
 
   const resetPetVisualState = () => {
     const shell = shellRef.current;
@@ -465,7 +542,7 @@ export function PetEntryApp() {
 
     listen<unknown>(PET_CODEX_STATUS_EVENT, (event) => {
       if (!codexEnabledRef.current) return;
-      setCodexStatus(normalizePetCodexStatusPayload(event.payload));
+      applyCodexStatus(event.payload);
     })
       .then((unlisten) => {
         unlistenCodexStatus = unlisten;
@@ -476,8 +553,9 @@ export function PetEntryApp() {
     return () => {
       if (unlistenCodexStatus) unlistenCodexStatus();
       window.removeEventListener("storage", handleStorage);
+      clearThinkingStatusTimer();
     };
-  }, []);
+  }, [applyCodexStatus, clearThinkingStatusTimer]);
 
   useEffect(() => {
     if (!codexEnabled) return;
@@ -488,7 +566,7 @@ export function PetEntryApp() {
         .then((events) => {
           if (stopped || events.length === 0) return;
           const next = events[events.length - 1];
-          setCodexStatus(normalizePetCodexStatusPayload(next));
+          applyCodexStatus(next);
         })
         .catch(() => {});
     };
@@ -499,7 +577,7 @@ export function PetEntryApp() {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [codexEnabled]);
+  }, [applyCodexStatus, codexEnabled]);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
