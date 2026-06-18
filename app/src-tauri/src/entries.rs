@@ -1,4 +1,6 @@
 use crate::config;
+use std::fs;
+use std::path::PathBuf;
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -17,6 +19,35 @@ pub struct PetCodexStatusPayload {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+fn pet_mcp_inbox_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    Ok(data_dir.join("pet-mcp-events.jsonl"))
+}
+
+fn is_valid_pet_codex_status(status: &str) -> bool {
+    matches!(
+        status,
+        "idle" | "thinking" | "working" | "waiting" | "success" | "error" | "disconnected"
+    )
+}
+
+fn normalize_pet_codex_payload(payload: PetCodexStatusPayload) -> Option<PetCodexStatusPayload> {
+    if !is_valid_pet_codex_status(&payload.status) {
+        return None;
+    }
+    let message = payload
+        .message
+        .map(|value| value.trim().chars().take(60).collect::<String>())
+        .filter(|value| !value.is_empty());
+    Some(PetCodexStatusPayload {
+        status: payload.status,
+        message,
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -159,8 +190,40 @@ pub fn set_pet_codex_status(
     if !config.pet.codex.enabled {
         return Ok(());
     }
+    let Some(payload) = normalize_pet_codex_payload(payload) else {
+        return Err("invalid pet Codex status".to_string());
+    };
     app.emit(PET_CODEX_STATUS_EVENT, payload)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn take_pet_mcp_events(app: tauri::AppHandle) -> Result<Vec<PetCodexStatusPayload>, String> {
+    let path = pet_mcp_inbox_path(&app)?;
+    let config = config::load_config(app)?;
+
+    if !config.pet.codex.enabled {
+        let _ = fs::remove_file(path);
+        return Ok(Vec::new());
+    }
+
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let _ = fs::remove_file(&path);
+
+    Ok(content
+        .lines()
+        .rev()
+        .take(20)
+        .filter_map(|line| serde_json::from_str::<PetCodexStatusPayload>(line).ok())
+        .filter_map(normalize_pet_codex_payload)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect())
 }
 
 fn show_entry_mode_window(

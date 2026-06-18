@@ -16,3 +16,29 @@ Useful validation command:
 ```powershell
 .\scripts\check-utf8.ps1
 ```
+
+## DevLauncher Pet Status Reporting
+
+For coding, debugging, implementation, verification, and other multi-step work in this repository, keep the DevLauncher desktop pet updated with short status summaries.
+
+Prefer the `devlauncher_pet` MCP tools when they are available:
+
+- `pet_set_status`
+- `pet_notify`
+
+If those tools are not visible in the current Codex thread, use the local fallback script:
+
+```bash
+node scripts/pet-status.mjs working "正在处理：简短任务名"
+```
+
+Status mapping:
+
+- Start thinking, analysis, or planning: `thinking`
+- Start editing, command work, or verification: `working`
+- Waiting for user approval, permission, or clarification: `waiting`
+- Task completed and verified: `success`
+- Command, build, or verification failed: `error`
+- No active work remains: `idle`
+
+Only send a concise summary, not full conversation text, secrets, credentials, or long command output. Keep messages short enough for the pet badge, roughly 60 characters or less.

@@ -1,5 +1,6 @@
 export type PetCodexStatus =
   | "idle"
+  | "thinking"
   | "working"
   | "waiting"
   | "success"
@@ -20,6 +21,7 @@ export const DEFAULT_PET_CODEX_STATUS: PetCodexStatusPayload = {
 
 const PET_CODEX_STATUS_LABELS: Record<PetCodexStatus, string> = {
   idle: "空闲",
+  thinking: "思考中",
   working: "执行中",
   waiting: "等待确认",
   success: "已完成",
@@ -29,6 +31,7 @@ const PET_CODEX_STATUS_LABELS: Record<PetCodexStatus, string> = {
 
 const PET_CODEX_STATUS_COLORS: Record<PetCodexStatus, string> = {
   idle: "#94a3b8",
+  thinking: "#818cf8",
   working: "#38bdf8",
   waiting: "#facc15",
   success: "#4ade80",
@@ -39,6 +42,7 @@ const PET_CODEX_STATUS_COLORS: Record<PetCodexStatus, string> = {
 export function isPetCodexStatus(value: unknown): value is PetCodexStatus {
   return (
     value === "idle" ||
+    value === "thinking" ||
     value === "working" ||
     value === "waiting" ||
     value === "success" ||

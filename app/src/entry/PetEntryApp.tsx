@@ -172,7 +172,8 @@ const codexMessageStyle: CSSProperties = {
   left: "50%",
   top: -20,
   zIndex: 7,
-  maxWidth: 128,
+  minWidth: 128,
+  maxWidth: 180,
   padding: "5px 7px",
   borderRadius: 7,
   border: "1px solid rgba(255,255,255,0.18)",
@@ -181,8 +182,11 @@ const codexMessageStyle: CSSProperties = {
   fontSize: 10,
   fontWeight: 700,
   lineHeight: 1.35,
+  textAlign: "center",
+  overflowWrap: "anywhere",
   transform: "translateX(-50%)",
-  pointerEvents: "none",
+  pointerEvents: "auto",
+  cursor: "pointer",
   boxShadow: "0 6px 16px rgba(0,0,0,0.26)",
 };
 
@@ -250,6 +254,7 @@ export function PetEntryApp() {
   const [spriteFrameIndex, setSpriteFrameIndex] = useState(0);
   const [codexEnabled, setCodexEnabled] = useState(readPetCodexEnabled);
   const [codexStatus, setCodexStatus] = useState<PetCodexStatusPayload>(DEFAULT_PET_CODEX_STATUS);
+  const [dismissedCodexMessageKey, setDismissedCodexMessageKey] = useState<string | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const centerButtonRef = useRef<HTMLButtonElement>(null);
@@ -262,6 +267,8 @@ export function PetEntryApp() {
   const spriteAction = petActionRegistry[spriteActionId];
   const spriteFrameSrc = spriteAction.frames[spriteFrameIndex] ?? spriteAction.frames[0];
   const codexStatusColor = getPetCodexStatusColor(codexStatus.status);
+  const codexMessageKey = codexStatus.message ? `${codexStatus.status}:${codexStatus.message}` : "";
+  const codexMessageVisible = Boolean(codexStatus.message && codexMessageKey !== dismissedCodexMessageKey);
 
   useEffect(() => {
     codexEnabledRef.current = codexEnabled;
@@ -271,6 +278,12 @@ export function PetEntryApp() {
     }
     setCodexStatus((current) => current.status === "idle" ? { status: "disconnected" } : current);
   }, [codexEnabled]);
+
+  useEffect(() => {
+    if (!codexStatus.message) {
+      setDismissedCodexMessageKey(null);
+    }
+  }, [codexStatus.message]);
 
   const resetPetVisualState = () => {
     const shell = shellRef.current;
@@ -465,6 +478,28 @@ export function PetEntryApp() {
       window.removeEventListener("storage", handleStorage);
     };
   }, []);
+
+  useEffect(() => {
+    if (!codexEnabled) return;
+
+    let stopped = false;
+    const pollMcpEvents = () => {
+      invoke<PetCodexStatusPayload[]>("take_pet_mcp_events")
+        .then((events) => {
+          if (stopped || events.length === 0) return;
+          const next = events[events.length - 1];
+          setCodexStatus(normalizePetCodexStatusPayload(next));
+        })
+        .catch(() => {});
+    };
+
+    pollMcpEvents();
+    const timer = window.setInterval(pollMcpEvents, 1000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [codexEnabled]);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -717,6 +752,11 @@ export function PetEntryApp() {
     openPetMenu();
   }
 
+  function dismissCodexMessage() {
+    if (!codexMessageKey) return;
+    setDismissedCodexMessageKey(codexMessageKey);
+  }
+
   return (
     <div ref={shellRef} className="pet-shell" style={shellStyle}>
       <div
@@ -771,7 +811,30 @@ export function PetEntryApp() {
         <PixelSiamesePet actionId={spriteAction.id} frameSrc={spriteFrameSrc} actionLabel={spriteAction.label} />
         {codexEnabled && (
           <>
-            {codexStatus.message && <span style={codexMessageStyle}>{codexStatus.message}</span>}
+            {codexMessageVisible && (
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label="关闭宠物提示"
+                title="点击标记为已读"
+                style={codexMessageStyle}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  dismissCodexMessage();
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  dismissCodexMessage();
+                }}
+              >
+                {codexStatus.message}
+              </span>
+            )}
             <span style={codexBadgeStyle} title={`Codex ${getPetCodexStatusLabel(codexStatus.status)}`}>
               <span
                 aria-hidden="true"
