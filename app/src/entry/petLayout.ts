@@ -23,10 +23,10 @@ export const PET_KEYBOARD_IMAGE_WIDTH = 148;
 export const PET_MENU_CLOSE_DELAY_MS = 180;
 
 export const PET_MENU_ITEMS: PetMenuItem[] = [
-  { label: "搜索", title: "打开搜索", left: 33, top: 29, action: "search" },
-  { label: "报告", title: "打开截图报告", left: 139, top: 29, action: "report" },
-  { label: "剪贴", title: "打开剪贴板", left: 33, top: 123, action: "clip" },
-  { label: "键盘", title: "切换到键盘模式", left: 139, top: 123, action: "keyboard" },
+  { label: "搜索", title: "打开搜索", left: 42, top: 36, action: "search" },
+  { label: "报告", title: "打开截图报告", left: 130, top: 36, action: "report" },
+  { label: "剪贴", title: "打开剪贴板", left: 42, top: 116, action: "clip" },
+  { label: "键盘", title: "切换到键盘模式", left: 130, top: 116, action: "keyboard" },
 ];
 
 export function getPetWindowArea(size: PetWindowSize): number {

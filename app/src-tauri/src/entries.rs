@@ -207,7 +207,6 @@ pub fn show_keyboard_window(
     app: tauri::AppHandle,
     position: Option<EntryWindowPosition>,
 ) -> Result<(), String> {
-    set_pet_action(&app, "keyboardJump");
     if let Some(position) = position {
         set_position_if_present(&app, "main", Some(position))?;
         restore_main_window(&app)?;

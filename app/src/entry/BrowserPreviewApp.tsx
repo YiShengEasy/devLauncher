@@ -57,7 +57,7 @@ export function BrowserPreviewApp() {
         </section>
 
         <section style={{ minHeight: 440, display: "grid", placeItems: "center", position: "relative", overflow: "hidden" }}>
-          <div className={`pet-bubble-menu ${open ? "is-open" : ""}`} style={{ position: "absolute", left: "50%", top: 144, width: PET_OPEN_WINDOW_SIZE.width, height: PET_OPEN_WINDOW_SIZE.height, transform: open ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -50%) scale(0.94)", opacity: open ? 1 : 0, pointerEvents: open ? "auto" : "none", transition: "opacity 180ms ease, transform 220ms cubic-bezier(.16,1,.3,1)" }}>
+          <div className={`pet-bubble-menu ${open ? "is-open" : ""}`} style={{ position: "absolute", left: "50%", top: 144, width: PET_OPEN_WINDOW_SIZE.width, height: PET_OPEN_WINDOW_SIZE.height, transform: open ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -50%) scale(0.94)", opacity: open ? 1 : 0, pointerEvents: "none", transition: "opacity 180ms ease, transform 220ms cubic-bezier(.16,1,.3,1)" }}>
             {PET_MENU_ITEMS.map((item) => (
               <button
                 key={item.action}

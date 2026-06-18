@@ -306,11 +306,6 @@ export function PetEntryApp() {
     spriteTimerRef.current = window.setTimeout(tick, action.frameMs);
   };
 
-  const setPetSpriteAction = (actionId: PetSpriteActionId) => {
-    window.localStorage.setItem(PET_ACTION_STATE_KEY, actionId);
-    playSpriteAction(actionId);
-  };
-
   const syncPetSpriteActionFromStorage = () => {
     const nextAction = window.localStorage.getItem(PET_ACTION_STATE_KEY);
     if (nextAction === "keyboardJump" || nextAction === "cozy") {
@@ -510,7 +505,6 @@ export function PetEntryApp() {
 
   async function switchToKeyboard() {
     if (modeTransition !== "idle") return;
-    setPetSpriteAction("keyboardJump");
     setModeTransition("to-keyboard");
     await savePetPosition();
     const duration = reducedMotion ? 0 : motionDuration.playful;
@@ -631,7 +625,7 @@ export function PetEntryApp() {
           opacity: open ? 1 : 0,
           visibility: open ? "visible" : "hidden",
           transform: open ? "scale(1)" : bubbleMenuStyle.transform,
-          pointerEvents: open ? "auto" : "none",
+          pointerEvents: "none",
         }}
       >
         {PET_MENU_ITEMS.map((item) => (
