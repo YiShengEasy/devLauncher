@@ -170,7 +170,7 @@ const codexBadgeStyle: CSSProperties = {
 const codexMessageStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
-  bottom: 24,
+  top: 18,
   zIndex: 7,
   minWidth: 112,
   maxWidth: 158,
