@@ -41,10 +41,10 @@ describe("pet compact layout", () => {
   it("places menu buttons near the four pet corners", () => {
     expect(PET_MENU_BUTTON_SIZE).toEqual({ width: 34, height: 30 });
     expect(PET_MENU_ITEMS.map((item) => [item.action, item.left, item.top])).toEqual([
-      ["search", 33, 29],
-      ["report", 139, 29],
-      ["clip", 33, 123],
-      ["keyboard", 139, 123],
+      ["search", 42, 36],
+      ["report", 130, 36],
+      ["clip", 42, 116],
+      ["keyboard", 130, 116],
     ]);
   });
 
