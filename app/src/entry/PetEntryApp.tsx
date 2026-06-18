@@ -3,6 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
+import { loadConfig } from "@/api/config";
 import gsap from "gsap";
 import { ClipIcon, KeyboardIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
 import { motionDuration, motionEase, motionStagger } from "@/motion/tokens";
@@ -23,6 +24,16 @@ import {
   getCenteredResizeOffset,
   type PetAction,
 } from "./petLayout";
+import {
+  DEFAULT_PET_CODEX_STATUS,
+  PET_CODEX_ENABLED_STORAGE_KEY,
+  PET_CODEX_STATUS_EVENT,
+  getPetCodexStatusColor,
+  getPetCodexStatusLabel,
+  normalizePetCodexStatusPayload,
+  readPetCodexEnabled,
+  type PetCodexStatusPayload,
+} from "./petCodexStatus";
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
 const PET_RETURN_ANIMATION_KEY = "devlauncher:pet-return-animation";
@@ -131,6 +142,50 @@ const actionButtonStyle: CSSProperties = {
   pointerEvents: "auto",
 };
 
+const codexBadgeStyle: CSSProperties = {
+  position: "absolute",
+  right: 2,
+  bottom: 0,
+  zIndex: 8,
+  minWidth: 46,
+  maxWidth: 86,
+  height: 20,
+  padding: "0 7px",
+  borderRadius: 6,
+  border: "1px solid rgba(255,255,255,0.32)",
+  background: "rgba(15,23,42,0.92)",
+  color: "rgba(255,255,255,0.9)",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: 5,
+  fontSize: 10,
+  fontWeight: 800,
+  lineHeight: 1,
+  whiteSpace: "nowrap",
+  pointerEvents: "none",
+  boxShadow: "0 2px 0 rgba(0,0,0,0.28)",
+};
+
+const codexMessageStyle: CSSProperties = {
+  position: "absolute",
+  left: "50%",
+  top: -20,
+  zIndex: 7,
+  maxWidth: 128,
+  padding: "5px 7px",
+  borderRadius: 7,
+  border: "1px solid rgba(255,255,255,0.18)",
+  background: "rgba(15,23,42,0.94)",
+  color: "rgba(255,255,255,0.82)",
+  fontSize: 10,
+  fontWeight: 700,
+  lineHeight: 1.35,
+  transform: "translateX(-50%)",
+  pointerEvents: "none",
+  boxShadow: "0 6px 16px rgba(0,0,0,0.26)",
+};
+
 function PetActionIcon({ action }: { action: PetAction }) {
   const iconProps = { size: 19, decorative: true };
   if (action === "search") return <SearchIcon {...iconProps} />;
@@ -193,9 +248,12 @@ export function PetEntryApp() {
   const [modeTransition, setModeTransition] = useState<"idle" | "to-keyboard">("idle");
   const [spriteActionId, setSpriteActionId] = useState<PetSpriteActionId>("cozy");
   const [spriteFrameIndex, setSpriteFrameIndex] = useState(0);
+  const [codexEnabled, setCodexEnabled] = useState(readPetCodexEnabled);
+  const [codexStatus, setCodexStatus] = useState<PetCodexStatusPayload>(DEFAULT_PET_CODEX_STATUS);
   const shellRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const centerButtonRef = useRef<HTMLButtonElement>(null);
+  const codexEnabledRef = useRef(codexEnabled);
   const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
   const suppressClickRef = useRef(false);
   const closeLayoutTimerRef = useRef<number | null>(null);
@@ -203,6 +261,16 @@ export function PetEntryApp() {
   const reducedMotion = useReducedMotion();
   const spriteAction = petActionRegistry[spriteActionId];
   const spriteFrameSrc = spriteAction.frames[spriteFrameIndex] ?? spriteAction.frames[0];
+  const codexStatusColor = getPetCodexStatusColor(codexStatus.status);
+
+  useEffect(() => {
+    codexEnabledRef.current = codexEnabled;
+    if (!codexEnabled) {
+      setCodexStatus(DEFAULT_PET_CODEX_STATUS);
+      return;
+    }
+    setCodexStatus((current) => current.status === "idle" ? { status: "disconnected" } : current);
+  }, [codexEnabled]);
 
   const resetPetVisualState = () => {
     const shell = shellRef.current;
@@ -363,6 +431,40 @@ export function PetEntryApp() {
       clearCloseLayoutTimer();
     };
   }, [reducedMotion]);
+
+  useEffect(() => {
+    let unlistenCodexStatus: (() => void) | null = null;
+
+    loadConfig()
+      .then((config) => {
+        const enabled = Boolean(config.pet?.codex?.enabled);
+        window.localStorage.setItem(PET_CODEX_ENABLED_STORAGE_KEY, enabled ? "1" : "0");
+        setCodexEnabled(enabled);
+      })
+      .catch(() => {
+        setCodexEnabled(false);
+      });
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== PET_CODEX_ENABLED_STORAGE_KEY) return;
+      setCodexEnabled(readPetCodexEnabled());
+    };
+
+    listen<unknown>(PET_CODEX_STATUS_EVENT, (event) => {
+      if (!codexEnabledRef.current) return;
+      setCodexStatus(normalizePetCodexStatusPayload(event.payload));
+    })
+      .then((unlisten) => {
+        unlistenCodexStatus = unlisten;
+      })
+      .catch(console.error);
+
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      if (unlistenCodexStatus) unlistenCodexStatus();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -667,6 +769,25 @@ export function PetEntryApp() {
         type="button"
       >
         <PixelSiamesePet actionId={spriteAction.id} frameSrc={spriteFrameSrc} actionLabel={spriteAction.label} />
+        {codexEnabled && (
+          <>
+            {codexStatus.message && <span style={codexMessageStyle}>{codexStatus.message}</span>}
+            <span style={codexBadgeStyle} title={`Codex ${getPetCodexStatusLabel(codexStatus.status)}`}>
+              <span
+                aria-hidden="true"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: 999,
+                  background: codexStatusColor,
+                  boxShadow: `0 0 8px ${codexStatusColor}`,
+                  flexShrink: 0,
+                }}
+              />
+              {getPetCodexStatusLabel(codexStatus.status)}
+            </span>
+          </>
+        )}
       </button>
     </div>
   );

@@ -168,6 +168,12 @@ export interface ThemeConfig {
   keyBgOpacity: number;  // unbound key background opacity 0-1
 }
 
+export interface PetConfig {
+  codex: {
+    enabled: boolean;
+  };
+}
+
 export const DEFAULT_THEME: ThemeConfig = {
   bgColor: "#101622",
   bgOpacity: 0.92,
@@ -176,9 +182,16 @@ export const DEFAULT_THEME: ThemeConfig = {
   keyBgOpacity: 0.055,
 };
 
+export const DEFAULT_PET_CONFIG: PetConfig = {
+  codex: {
+    enabled: false,
+  },
+};
+
 export interface KeyboardConfig {
   pages: Page[];
   theme?: ThemeConfig;
+  pet?: PetConfig;
 }
 
 // -----------------------------------------------

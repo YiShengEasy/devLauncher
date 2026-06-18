@@ -184,10 +184,30 @@ impl Default for ThemeConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PetCodexConfig {
+    #[serde(default)]
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct PetConfig {
+    #[serde(default)]
+    pub codex: PetCodexConfig,
+}
+
+impl Default for PetCodexConfig {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KeyboardConfig {
     pub pages: Vec<Page>,
     #[serde(default)]
     pub theme: ThemeConfig,
+    #[serde(default)]
+    pub pet: PetConfig,
 }
 
 // -----------------------------------------------
