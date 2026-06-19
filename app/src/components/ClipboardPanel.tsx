@@ -32,8 +32,8 @@ const shellStyle: CSSProperties = {
   height: "100%",
   borderRadius: "24px 24px 0 0",
   display: "grid",
-  gridTemplateRows: "82px minmax(0, 1fr) 26px",
-  padding: "24px 16px 36px",
+  gridTemplateRows: "70px minmax(0, 1fr) 28px",
+  padding: "22px 20px 16px",
   position: "relative",
   overflow: "hidden",
   boxSizing: "border-box",
@@ -288,10 +288,13 @@ export function ClipboardPanel({
           display: "flex",
           gap: 18,
           minWidth: 0,
+          minHeight: 0,
+          height: "100%",
           overflowX: "auto",
           overflowY: "hidden",
-          padding: "34px 0 0",
+          padding: "18px 0 0",
           alignItems: "stretch",
+          boxSizing: "border-box",
         }}
         onScroll={updateScrollProgress}
         data-tauri-drag-region="false"
@@ -426,7 +429,7 @@ function ClipboardCard({
       style={{
         width: 394,
         height: "100%",
-        minHeight: 338,
+        minHeight: 0,
         flex: "0 0 394px",
         borderRadius: 16,
         border: `1px solid ${selected ? "rgba(86,143,255,0.96)" : favorite ? "rgba(250,204,21,0.30)" : "rgba(255,255,255,0.12)"}`,
