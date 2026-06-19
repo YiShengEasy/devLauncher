@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ClipboardEntry } from "@/types/actions";
+import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { WindowPinButton } from "@/components/WindowPinButton";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
+import { getWindowPinState, WINDOW_PIN_CHANGED_EVENT, type WindowPinState } from "@/windowPinning";
 import {
   clipboardEntryMeta,
   clipboardEntryPreview,
@@ -32,8 +37,8 @@ const shellStyle: CSSProperties = {
   height: "100%",
   borderRadius: "24px 24px 0 0",
   display: "grid",
-  gridTemplateRows: "48px minmax(0, 1fr) 24px",
-  padding: "16px 18px 14px",
+  gridTemplateRows: "40px minmax(0, 1fr) 22px",
+  padding: "14px 18px 12px",
   position: "relative",
   overflow: "hidden",
   boxSizing: "border-box",
@@ -47,7 +52,7 @@ const shellStyle: CSSProperties = {
 
 const iconButtonStyle: CSSProperties = {
   minWidth: 46,
-  height: 32,
+  height: 28,
   borderRadius: 9,
   border: "1px solid transparent",
   background: "transparent",
@@ -55,7 +60,7 @@ const iconButtonStyle: CSSProperties = {
   cursor: "pointer",
   display: "grid",
   placeItems: "center",
-  fontSize: 13,
+  fontSize: 12,
   fontWeight: 700,
   lineHeight: 1,
   padding: "0 12px",
@@ -94,6 +99,7 @@ export function ClipboardPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const windowLabel = getCurrentWindow().label;
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
@@ -160,6 +166,31 @@ export function ClipboardPanel({
     return () => window.removeEventListener("blur", handleBlur);
   }, [onClose, pinned]);
 
+  useEffect(() => {
+    let cancelled = false;
+    getWindowPinState(windowLabel)
+      .then((state) => {
+        if (!cancelled) setPinned(state.pinned);
+      })
+      .catch(() => {});
+
+    let unlisten: (() => void) | null = null;
+    listen<WindowPinState>(WINDOW_PIN_CHANGED_EVENT, (event) => {
+      if (event.payload.label === windowLabel) {
+        setPinned(event.payload.pinned);
+      }
+    })
+      .then((nextUnlisten) => {
+        unlisten = nextUnlisten;
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [windowLabel]);
+
   const copyEntry = (entry: ClipboardEntry) => {
     setCopiedId(entry.id);
     window.setTimeout(() => setCopiedId(null), 950);
@@ -183,46 +214,35 @@ export function ClipboardPanel({
       <header
         style={{
           display: "grid",
-          gridTemplateColumns: "44px minmax(500px, 720px) minmax(124px, 1fr)",
-          gap: 12,
+          gridTemplateColumns: "36px minmax(480px, 680px) minmax(96px, 1fr)",
+          gap: 10,
           alignItems: "center",
           minWidth: 0,
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: 0 }}>
-          <img
-            src="/devlauncher-icon.png"
-            alt="DevLauncher"
-            draggable={false}
-            style={{
-              width: 36,
-              height: 36,
-              objectFit: "contain",
-              opacity: 0.92,
-              filter: "drop-shadow(0 0 10px rgba(61,216,255,0.25))",
-            }}
-          />
+          <BuiltinIcon feature="clipboard" size={27} title="剪贴板历史" />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, minWidth: 0 }} data-tauri-drag-region="false">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, minWidth: 0 }} data-tauri-drag-region="false">
           <label
             style={{
-              height: 36,
-              minWidth: 280,
-              maxWidth: 320,
-              flex: "0 1 320px",
+              height: 32,
+              minWidth: 260,
+              maxWidth: 300,
+              flex: "0 1 300px",
               display: "flex",
               alignItems: "center",
               gap: 8,
               padding: "0 12px",
-              borderRadius: 10,
+              borderRadius: 9,
               border: "1px solid rgba(255,255,255,0.14)",
               background: "rgba(255,255,255,0.09)",
               color: "rgba(232,234,240,0.46)",
               boxSizing: "border-box",
             }}
           >
-            <span style={{ fontSize: 16, lineHeight: 1 }}>⌕</span>
+            <span style={{ fontSize: 15, lineHeight: 1 }}>⌕</span>
             <input
               placeholder="搜索"
               value={search}
@@ -235,13 +255,13 @@ export function ClipboardPanel({
                 outline: "none",
                 background: "transparent",
                 color: "rgba(245,247,252,0.92)",
-                fontSize: 13,
+                fontSize: 12,
                 fontWeight: 600,
               }}
             />
           </label>
 
-          <nav style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <nav style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
             <FilterButton active={filter === "all"} label="全部" count={items.length} onClick={() => setFilter("all")} />
             <FilterButton active={filter === "text"} label="文本" count={textCount} onClick={() => setFilter("text")} />
             <FilterButton active={filter === "image"} label="图片" count={imageCount} onClick={() => setFilter("image")} />
@@ -250,7 +270,7 @@ export function ClipboardPanel({
           </nav>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, minWidth: 0, paddingRight: 4 }} data-tauri-drag-region="false">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, minWidth: 0, paddingRight: 4 }} data-tauri-drag-region="false">
           <button
             type="button"
             title={filter === "favorites" ? "清空收藏" : "清空历史"}
@@ -265,19 +285,7 @@ export function ClipboardPanel({
           >
             清空
           </button>
-          <button
-            type="button"
-            title={pinned ? "取消固定，复制后关闭" : "固定，连续复制"}
-            onClick={() => setPinned((value) => !value)}
-            style={{
-              ...iconButtonStyle,
-              color: pinned ? "rgba(255,255,255,0.90)" : "rgba(232,234,240,0.56)",
-              borderColor: pinned ? "rgba(255,255,255,0.16)" : "transparent",
-              background: pinned ? "rgba(255,255,255,0.10)" : "transparent",
-            }}
-          >
-            {pinned ? "已固定" : "固定"}
-          </button>
+          <WindowPinButton />
         </div>
       </header>
 
@@ -371,14 +379,14 @@ function FilterButton({
       onClick={onClick}
       disabled={disabled}
       style={{
-        height: active ? 44 : 34,
-        padding: active ? "0 14px" : "0 10px",
+        height: active ? 32 : 28,
+        padding: active ? "0 12px" : "0 9px",
         borderRadius: active ? 9 : 8,
         border: active ? "1px solid rgba(210,224,247,0.28)" : "1px solid transparent",
         background: active ? "rgba(255,255,255,0.15)" : "transparent",
         boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.16), 0 8px 18px rgba(0,0,0,0.18)" : "none",
         color: disabled ? "rgba(232,234,240,0.26)" : active ? "rgba(245,247,252,0.94)" : "rgba(232,234,240,0.52)",
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: 700,
         cursor: disabled ? "default" : "pointer",
         whiteSpace: "nowrap",
@@ -506,12 +514,12 @@ function ClipboardCard({
         <div style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-start", paddingTop: 4 }}>
           <strong
             style={{
-              fontSize: 15,
+              fontSize: 14,
               lineHeight: 1.48,
-              fontWeight: 650,
+              fontWeight: 620,
               color: "rgba(248,250,252,0.92)",
               display: "-webkit-box",
-              WebkitLineClamp: 14,
+              WebkitLineClamp: 16,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
               whiteSpace: "pre-wrap",
