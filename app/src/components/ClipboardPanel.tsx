@@ -105,6 +105,14 @@ export function ClipboardPanel({
     animateListEnter(Array.from(children), reducedMotion);
   }, [activeTab, search, filtered.length, items.length, favorites.length, reducedMotion]);
 
+  useEffect(() => {
+    const handleBlur = () => {
+      if (!pinned) onClose();
+    };
+    window.addEventListener("blur", handleBlur);
+    return () => window.removeEventListener("blur", handleBlur);
+  }, [onClose, pinned]);
+
   const copyEntry = (entry: ClipboardEntry) => {
     setCopiedId(entry.id);
     window.setTimeout(() => setCopiedId(null), 950);

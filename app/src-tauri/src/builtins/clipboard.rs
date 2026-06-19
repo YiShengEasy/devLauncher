@@ -137,7 +137,7 @@ fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
 }
 
 const CLIPBOARD_DOCK_WIDTH: u32 = 960;
-const CLIPBOARD_DOCK_HEIGHT: u32 = 260;
+const CLIPBOARD_DOCK_HEIGHT: u32 = 430;
 const CLIPBOARD_DOCK_BOTTOM_MARGIN: i32 = 28;
 
 fn bottom_dock_position(
@@ -380,12 +380,12 @@ mod tests {
         let pos = bottom_dock_position(
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1440, 900),
-            PhysicalSize::new(960, 260),
+            PhysicalSize::new(960, 430),
             28,
         );
 
         assert_eq!(pos.x, 240);
-        assert_eq!(pos.y, 612);
+        assert_eq!(pos.y, 442);
     }
 
     #[test]
@@ -393,7 +393,7 @@ mod tests {
         let pos = bottom_dock_position(
             PhysicalPosition::new(10, 40),
             PhysicalSize::new(800, 220),
-            PhysicalSize::new(960, 260),
+            PhysicalSize::new(960, 430),
             28,
         );
 
