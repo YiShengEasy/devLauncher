@@ -111,7 +111,7 @@ export function ClipboardApp() {
   };
 
   return (
-    <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "flex-end", justifyContent: "center", background: "transparent", boxSizing: "border-box", padding: "0 0 14px" }}>
+    <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "flex-end", justifyContent: "center", background: "transparent", boxSizing: "border-box" }}>
       <ClipboardPanel
         items={items}
         favorites={favorites}

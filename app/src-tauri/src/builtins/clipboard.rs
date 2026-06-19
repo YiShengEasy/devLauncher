@@ -136,9 +136,8 @@ fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
     let _ = window_pinning::apply_window_pin_state(app, label);
 }
 
-const CLIPBOARD_DOCK_WIDTH: u32 = 960;
-const CLIPBOARD_DOCK_HEIGHT: u32 = 430;
-const CLIPBOARD_DOCK_BOTTOM_MARGIN: i32 = 28;
+const CLIPBOARD_DOCK_HEIGHT: u32 = 500;
+const CLIPBOARD_DOCK_BOTTOM_MARGIN: i32 = 0;
 
 fn bottom_dock_position(
     work_area_position: PhysicalPosition<i32>,
@@ -166,7 +165,7 @@ fn position_clipboard_dock(
         return Ok(());
     };
     let area = monitor.work_area();
-    let window_size = PhysicalSize::new(CLIPBOARD_DOCK_WIDTH, CLIPBOARD_DOCK_HEIGHT);
+    let window_size = PhysicalSize::new(area.size.width, CLIPBOARD_DOCK_HEIGHT);
     let position = bottom_dock_position(
         area.position,
         area.size,
@@ -380,12 +379,12 @@ mod tests {
         let pos = bottom_dock_position(
             PhysicalPosition::new(0, 0),
             PhysicalSize::new(1440, 900),
-            PhysicalSize::new(960, 430),
-            28,
+            PhysicalSize::new(1440, 500),
+            0,
         );
 
-        assert_eq!(pos.x, 240);
-        assert_eq!(pos.y, 442);
+        assert_eq!(pos.x, 0);
+        assert_eq!(pos.y, 400);
     }
 
     #[test]
@@ -393,8 +392,8 @@ mod tests {
         let pos = bottom_dock_position(
             PhysicalPosition::new(10, 40),
             PhysicalSize::new(800, 220),
-            PhysicalSize::new(960, 430),
-            28,
+            PhysicalSize::new(800, 500),
+            0,
         );
 
         assert_eq!(pos.x, 10);
