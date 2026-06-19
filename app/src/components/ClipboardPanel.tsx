@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent } from "react";
 import type { ClipboardEntry } from "@/types/actions";
-import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -33,7 +32,7 @@ const shellStyle: CSSProperties = {
   height: "100%",
   borderRadius: "24px 24px 0 0",
   display: "grid",
-  gridTemplateRows: "82px minmax(0, 1fr)",
+  gridTemplateRows: "82px minmax(0, 1fr) 26px",
   padding: "24px 16px 36px",
   position: "relative",
   overflow: "hidden",
@@ -47,16 +46,34 @@ const shellStyle: CSSProperties = {
 };
 
 const iconButtonStyle: CSSProperties = {
-  width: 34,
-  height: 34,
+  minWidth: 52,
+  height: 40,
+  borderRadius: 12,
+  border: "1px solid transparent",
+  background: "transparent",
+  color: "rgba(232,234,240,0.56)",
+  cursor: "pointer",
+  display: "grid",
+  placeItems: "center",
+  fontSize: 15,
+  fontWeight: 850,
+  lineHeight: 1,
+  padding: "0 12px",
+  whiteSpace: "nowrap",
+};
+
+const scrollButtonStyle: CSSProperties = {
+  width: 36,
+  height: 24,
   borderRadius: 10,
-  border: "1px solid rgba(255,255,255,0.10)",
-  background: "rgba(255,255,255,0.06)",
-  color: "rgba(232,234,240,0.72)",
+  border: "1px solid rgba(255,255,255,0.14)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(245,247,252,0.72)",
   cursor: "pointer",
   display: "grid",
   placeItems: "center",
   fontSize: 18,
+  fontWeight: 850,
   lineHeight: 1,
 };
 
@@ -76,6 +93,7 @@ export function ClipboardPanel({
   const [filter, setFilter] = useState<FilterType>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
@@ -94,6 +112,22 @@ export function ClipboardPanel({
   const filtered = useMemo(() => filterClipboardEntries(typedItems, search), [typedItems, search]);
   const selectedEntry = filtered.find((entry) => entry.id === selectedId) ?? filtered[0] ?? null;
 
+  const updateScrollProgress = useCallback(() => {
+    const scroller = listRef.current;
+    if (!scroller) return;
+    const maxScroll = Math.max(1, scroller.scrollWidth - scroller.clientWidth);
+    setScrollProgress(Math.min(1, Math.max(0, scroller.scrollLeft / maxScroll)));
+  }, []);
+
+  const scrollCards = (direction: "prev" | "next") => {
+    const scroller = listRef.current;
+    if (!scroller) return;
+    const firstCard = scroller.querySelector<HTMLElement>("[data-clipboard-card]");
+    const step = firstCard ? firstCard.getBoundingClientRect().width + 18 : 412;
+    scroller.scrollBy({ left: direction === "next" ? step : -step, behavior: reducedMotion ? "auto" : "smooth" });
+    window.setTimeout(updateScrollProgress, reducedMotion ? 0 : 220);
+  };
+
   useEffect(() => {
     setSelectedId((current) => resolveSelectedEntryId(filtered, current));
   }, [filtered]);
@@ -102,6 +136,10 @@ export function ClipboardPanel({
     if (filter !== "favorites") return;
     setSelectedId((current) => resolveSelectedEntryId(filtered, current));
   }, [filter, filtered]);
+
+  useEffect(() => {
+    updateScrollProgress();
+  }, [filtered.length, updateScrollProgress]);
 
   useGsapContext(rootRef, () => {
     if (!rootRef.current) return;
@@ -145,20 +183,25 @@ export function ClipboardPanel({
       <header
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(220px, 1fr) minmax(320px, 760px) minmax(260px, 1fr)",
+          gridTemplateColumns: "56px minmax(520px, 790px) minmax(140px, 1fr)",
           gap: 16,
           alignItems: "center",
           minWidth: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          <BuiltinIcon feature="clipboard" size={28} />
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
-            <strong style={{ fontSize: 22, color: "rgba(245,247,252,0.92)", whiteSpace: "nowrap" }}>浮光剪贴</strong>
-            <span style={{ fontSize: 14, color: "rgba(232,234,240,0.42)", fontWeight: 650, whiteSpace: "nowrap" }}>
-              最近1000次，收藏永久保留
-            </span>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minWidth: 0 }}>
+          <img
+            src="/devlauncher-icon.png"
+            alt="DevLauncher"
+            draggable={false}
+            style={{
+              width: 36,
+              height: 36,
+              objectFit: "contain",
+              opacity: 0.92,
+              filter: "drop-shadow(0 0 10px rgba(61,216,255,0.25))",
+            }}
+          />
         </div>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, minWidth: 0 }} data-tauri-drag-region="false">
@@ -196,19 +239,18 @@ export function ClipboardPanel({
                 fontWeight: 650,
               }}
             />
-            <span style={{ fontSize: 14, opacity: 0.75 }}>⌘F</span>
           </label>
 
           <nav style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
             <FilterButton active={filter === "all"} label="全部" count={items.length} onClick={() => setFilter("all")} />
             <FilterButton active={filter === "text"} label="文本" count={textCount} onClick={() => setFilter("text")} />
             <FilterButton active={filter === "image"} label="图片" count={imageCount} onClick={() => setFilter("image")} />
-            <FilterButton active={filter === "all"} label="文件" count={fileCount} onClick={() => setFilter("all")} disabled />
+            <FilterButton active={false} label="文件" count={fileCount} onClick={() => setFilter("all")} disabled />
             <FilterButton active={filter === "favorites"} label="收藏" count={favorites.length} onClick={() => setFilter("favorites")} />
           </nav>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 18 }} data-tauri-drag-region="false">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 18, minWidth: 0, paddingRight: 10 }} data-tauri-drag-region="false">
           <button
             type="button"
             title={filter === "favorites" ? "清空收藏" : "清空历史"}
@@ -221,27 +263,21 @@ export function ClipboardPanel({
             }}
             style={iconButtonStyle}
           >
-            ⌫
+            清空
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(232,234,240,0.66)", fontSize: 16, fontWeight: 700 }}>
-            <span>粘贴</span>
-            <button type="button" style={{ ...modeButtonStyle, background: "rgba(255,255,255,0.13)", color: "#f4f7fb" }}>单击</button>
-            <button type="button" style={modeButtonStyle}>双击</button>
-          </div>
           <button
             type="button"
             title={pinned ? "取消固定，复制后关闭" : "固定，连续复制"}
             onClick={() => setPinned((value) => !value)}
             style={{
               ...iconButtonStyle,
-              color: pinned ? "#d8e6ff" : "rgba(232,234,240,0.70)",
-              borderColor: pinned ? "rgba(147,197,253,0.55)" : "rgba(255,255,255,0.10)",
-              background: pinned ? "rgba(96,165,250,0.18)" : "rgba(255,255,255,0.06)",
+              color: pinned ? "rgba(255,255,255,0.90)" : "rgba(232,234,240,0.56)",
+              borderColor: pinned ? "rgba(255,255,255,0.16)" : "transparent",
+              background: pinned ? "rgba(255,255,255,0.10)" : "transparent",
             }}
           >
-            {pinned ? "▣" : "□"}
+            {pinned ? "已固定" : "固定"}
           </button>
-          <button type="button" title="关闭剪贴板" onClick={onClose} style={iconButtonStyle}>×</button>
         </div>
       </header>
 
@@ -257,6 +293,7 @@ export function ClipboardPanel({
           padding: "34px 0 0",
           alignItems: "stretch",
         }}
+        onScroll={updateScrollProgress}
         data-tauri-drag-region="false"
       >
         {filtered.length === 0 ? (
@@ -280,21 +317,37 @@ export function ClipboardPanel({
           ))
         )}
       </section>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }} data-tauri-drag-region="false">
+        <button type="button" style={scrollButtonStyle} onClick={() => scrollCards("prev")} aria-label="上一组">
+          ‹
+        </button>
+        <div
+          style={{
+            width: 160,
+            height: 4,
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.12)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: `${Math.max(12, Math.min(100, 12 + scrollProgress * 88))}%`,
+              height: "100%",
+              borderRadius: 999,
+              background: "linear-gradient(90deg, rgba(91,141,255,0.95), rgba(61,216,255,0.80))",
+              transition: reducedMotion ? "none" : "width 160ms ease",
+            }}
+          />
+        </div>
+        <button type="button" style={scrollButtonStyle} onClick={() => scrollCards("next")} aria-label="下一组">
+          ›
+        </button>
+      </div>
     </div>
   );
 }
-
-const modeButtonStyle: CSSProperties = {
-  height: 34,
-  minWidth: 50,
-  borderRadius: 12,
-  border: "1px solid rgba(255,255,255,0.10)",
-  background: "rgba(255,255,255,0.06)",
-  color: "rgba(232,234,240,0.46)",
-  fontSize: 15,
-  fontWeight: 750,
-  cursor: "default",
-};
 
 function FilterButton({
   active,
@@ -316,7 +369,7 @@ function FilterButton({
       disabled={disabled}
       style={{
         height: active ? 44 : 34,
-        padding: active ? "0 18px" : "0 8px",
+        padding: active ? "0 18px" : "0 13px",
         borderRadius: active ? 12 : 10,
         border: active ? "1px solid rgba(210,224,247,0.28)" : "1px solid transparent",
         background: active ? "rgba(255,255,255,0.15)" : "transparent",
@@ -369,6 +422,7 @@ function ClipboardCard({
       onFocus={onSelect}
       onClick={onCopy}
       onKeyDown={handleKeyDown}
+      data-clipboard-card
       style={{
         width: 394,
         height: "100%",
@@ -389,7 +443,7 @@ function ClipboardCard({
         padding: 24,
         textAlign: "left",
         display: "grid",
-        gridTemplateRows: "28px minmax(0, 1fr) 26px",
+        gridTemplateRows: "30px minmax(0, 1fr) 26px",
         gap: 18,
         transform: selected && !reducedMotion ? "translateY(-4px) scale(1.018)" : "translateY(0) scale(1)",
         transition: reducedMotion
@@ -399,31 +453,32 @@ function ClipboardCard({
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <span style={{ color: "rgba(245,247,252,0.50)", fontSize: 16, fontWeight: 750 }}>{index}</span>
-          <button
-            type="button"
-            title={favorite ? "取消收藏" : "加入收藏"}
-            onClick={(event) => {
-              event.stopPropagation();
-              onToggleFavorite();
-            }}
-            style={{
-              width: 24,
-              height: 24,
-              border: "none",
-              borderRadius: 7,
-              background: selected ? "rgba(255,255,255,0.18)" : "rgba(255,255,255,0.10)",
-              color: favorite ? "#facc15" : "rgba(255,255,255,0.46)",
-              cursor: "pointer",
-              lineHeight: 1,
-              padding: 0,
-            }}
-          >
-            {favorite ? "★" : "◆"}
-          </button>
+          {copied && <span style={{ fontSize: 13, color: "#dbeafe", fontWeight: 800 }}>已复制</span>}
         </div>
-        {copied && <span style={{ fontSize: 13, color: "#dbeafe", fontWeight: 800 }}>已复制</span>}
+        <button
+          type="button"
+          title={favorite ? "取消收藏" : "加入收藏"}
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleFavorite();
+          }}
+          style={{
+            height: 30,
+            minWidth: 66,
+            borderRadius: 10,
+            border: favorite ? "1px solid rgba(250,204,21,0.48)" : "1px solid rgba(255,255,255,0.14)",
+            background: favorite ? "rgba(250,204,21,0.10)" : "rgba(255,255,255,0.06)",
+            color: favorite ? "#f4e79a" : "rgba(245,247,252,0.68)",
+            cursor: "pointer",
+            fontSize: 14,
+            fontWeight: 850,
+            padding: "0 12px",
+          }}
+        >
+          {favorite ? "已收藏" : "收藏"}
+        </button>
       </div>
 
       {entry.kind === "image" ? (
@@ -445,15 +500,15 @@ function ClipboardCard({
           <strong style={{ fontSize: 24, lineHeight: 1.25 }}>{clipboardEntryTitle(entry)}</strong>
         </div>
       ) : (
-        <div style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <div style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-start", paddingTop: 4 }}>
           <strong
             style={{
-              fontSize: 22,
-              lineHeight: 1.4,
-              fontWeight: 850,
+              fontSize: 17,
+              lineHeight: 1.48,
+              fontWeight: 780,
               color: "rgba(248,250,252,0.92)",
               display: "-webkit-box",
-              WebkitLineClamp: 7,
+              WebkitLineClamp: 10,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
               whiteSpace: "pre-wrap",
