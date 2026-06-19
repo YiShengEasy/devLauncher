@@ -10,10 +10,27 @@ export function CloseIcon(props: IconProps) {
   );
 }
 
+export function CheckIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.add)}>
+      <path d="m5.5 12.5 4.2 4.2 8.8-9.4" />
+    </IconBase>
+  );
+}
+
 export function MinimizeIcon(props: IconProps) {
   return (
     <IconBase {...withIconColor(props, iconColors.folder)}>
       <path d="M6 12h12" />
+    </IconBase>
+  );
+}
+
+export function PinIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.settings)}>
+      <path d="M8.5 4.5h7l-.9 4.6 3.2 3.2-2 2-3.2-3.2L8 12l-3.5 3.5" />
+      <path d="m9.6 14.4-3.9 3.9" opacity={0.65} />
     </IconBase>
   );
 }

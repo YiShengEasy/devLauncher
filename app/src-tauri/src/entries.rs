@@ -1,4 +1,4 @@
-use crate::config;
+use crate::{config, window_pinning};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
@@ -22,10 +22,7 @@ pub struct PetCodexStatusPayload {
 }
 
 fn pet_mcp_inbox_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| e.to_string())?;
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     Ok(data_dir.join("pet-mcp-events.jsonl"))
 }
 
@@ -105,6 +102,7 @@ fn show_window(app: &tauri::AppHandle, label: &str) -> Result<(), String> {
     let win = app
         .get_webview_window(label)
         .ok_or_else(|| format!("window not found: {}", label))?;
+    let _ = window_pinning::apply_window_pin_state(app, label);
     prepare_entry_window_for_current_space(&win)?;
     show_entry_window(&win)?;
     win.unminimize().map_err(|e| e.to_string())?;
@@ -139,6 +137,7 @@ pub fn restore_main_window(app: &tauri::AppHandle) -> Result<(), String> {
         .get_webview_window("main")
         .ok_or_else(|| "window not found: main".to_string())?;
 
+    let _ = window_pinning::apply_window_pin_state(app, "main");
     prepare_entry_window_for_current_space(&win)?;
     show_entry_window(&win)?;
     win.unminimize().map_err(|e| e.to_string())?;
@@ -260,6 +259,7 @@ fn toggle_window(app: tauri::AppHandle, label: &str) -> Result<(), String> {
         if win.is_visible().unwrap_or(false) {
             win.hide().map_err(|e| e.to_string())?;
         } else {
+            let _ = window_pinning::apply_window_pin_state(&app, label);
             prepare_entry_window_for_current_space(&win)?;
             show_entry_window(&win)?;
             focus_entry_window(&win)?;

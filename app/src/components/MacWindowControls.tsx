@@ -1,12 +1,14 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
 import { CloseIcon, MinimizeIcon } from "@/icons";
+import { WindowPinButton } from "@/components/WindowPinButton";
 
 interface MacWindowControlsProps {
   onClose: () => void;
   onMinimize?: () => void;
   closeTitle?: string;
   minimizeTitle?: string;
+  showPin?: boolean;
   style?: CSSProperties;
 }
 
@@ -33,8 +35,9 @@ function symbolStyle(visible: boolean, color: string): CSSProperties {
 export function MacWindowControls({
   onClose,
   onMinimize,
-  closeTitle = "鍏抽棴",
-  minimizeTitle = "鏈€灏忓寲",
+  closeTitle = "关闭",
+  minimizeTitle = "最小化",
+  showPin = true,
   style,
 }: MacWindowControlsProps) {
   const [hovered, setHovered] = useState<"close" | "minimize" | null>(null);
@@ -44,6 +47,7 @@ export function MacWindowControls({
       data-tauri-drag-region="false"
       style={{ display: "flex", gap: 8, alignItems: "center", ...style }}
     >
+      {showPin && <WindowPinButton style={{ marginRight: 2 }} />}
       <button
         type="button"
         aria-label={closeTitle}

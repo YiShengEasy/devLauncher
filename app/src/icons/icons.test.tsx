@@ -7,6 +7,7 @@ import {
   ClipboardIcon,
   FolderIcon,
   IconBase,
+  PinIcon,
   PixelPetIcon,
   SearchIcon,
 } from "./index";
@@ -73,10 +74,11 @@ describe("icon categories", () => {
         <SearchIcon size={16} />
         <PixelPetIcon size={28} />
         <CloseIcon size={32} />
+        <PinIcon size={32} />
       </>,
     );
 
-    expect(html.match(/viewBox="0 0 24 24"/g)).toHaveLength(3);
+    expect(html.match(/viewBox="0 0 24 24"/g)).toHaveLength(4);
     expect(html).toContain('width="16"');
     expect(html).toContain('width="28"');
     expect(html).toContain('width="32"');

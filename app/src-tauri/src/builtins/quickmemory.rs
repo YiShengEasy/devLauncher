@@ -4,6 +4,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
 
+use crate::window_pinning;
+
+fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
+    let _ = window_pinning::apply_window_pin_state(app, label);
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct QuickMemoryData {
@@ -88,6 +94,7 @@ pub fn toggle_quickmemory_window(app: tauri::AppHandle) -> Result<(), String> {
         if win.is_visible().unwrap_or(false) {
             win.hide().map_err(|e| e.to_string())?;
         } else {
+            apply_pin_state(&app, "quickmemory");
             win.show().map_err(|e| e.to_string())?;
             win.set_focus().map_err(|e| e.to_string())?;
         }

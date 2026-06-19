@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { loadConfig } from "@/api/config";
+import { ActionIcon } from "@/components/ActionIcon";
+import { WindowPinButton } from "@/components/WindowPinButton";
+import type { Action } from "@/types/actions";
 import gsap from "gsap";
-import { ClipIcon, KeyboardIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
+import { KeyboardIcon } from "@/icons/entryIcons";
+import { executeAction } from "@/launcher/actionExecutor";
 import { motionDuration, motionEase, motionStagger } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -19,10 +23,10 @@ import {
   PET_CLOSED_WINDOW_SIZE,
   PET_MENU_BUTTON_SIZE,
   PET_MENU_CLOSE_DELAY_MS,
-  PET_MENU_ITEMS,
   PET_OPEN_WINDOW_SIZE,
+  buildPetMenuItems,
   getCenteredResizeOffset,
-  type PetAction,
+  type PetMenuItem,
 } from "./petLayout";
 import {
   DEFAULT_PET_CODEX_STATUS,
@@ -238,12 +242,13 @@ const codexMessageStyle: CSSProperties = {
   boxShadow: "0 6px 16px rgba(0,0,0,0.26)",
 };
 
-function PetActionIcon({ action }: { action: PetAction }) {
-  const iconProps = { size: 19, decorative: true };
-  if (action === "search") return <SearchIcon {...iconProps} />;
-  if (action === "report") return <ReportIcon {...iconProps} />;
-  if (action === "clip") return <ClipIcon {...iconProps} />;
-  return <KeyboardIcon {...iconProps} />;
+function getPetMenuItemKey(item: PetMenuItem): string {
+  return item.kind === "keyboard" ? "keyboard" : `custom-${item.slotIndex}`;
+}
+
+function PetMenuItemIcon({ item }: { item: PetMenuItem }) {
+  if (item.kind === "keyboard") return <KeyboardIcon size={18} decorative />;
+  return <ActionIcon action={item.action} size={18} />;
 }
 
 function PixelSiamesePet({
@@ -303,6 +308,7 @@ export function PetEntryApp() {
   const [codexEnabled, setCodexEnabled] = useState(readPetCodexEnabled);
   const [codexStatus, setCodexStatus] = useState<PetCodexStatusPayload>(DEFAULT_PET_CODEX_STATUS);
   const [dismissedCodexMessageKey, setDismissedCodexMessageKey] = useState<string | null>(null);
+  const [customMenuActions, setCustomMenuActions] = useState<Array<Action | null>>([]);
   const shellRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const centerButtonRef = useRef<HTMLButtonElement>(null);
@@ -318,6 +324,7 @@ export function PetEntryApp() {
   const codexStatusColor = getPetCodexStatusColor(codexStatus.status);
   const codexMessageKey = codexStatus.message ? `${codexStatus.status}:${codexStatus.message}` : "";
   const codexMessageVisible = Boolean(codexStatus.message && codexMessageKey !== dismissedCodexMessageKey);
+  const menuItems = useMemo(() => buildPetMenuItems(customMenuActions), [customMenuActions]);
 
   const clearThinkingStatusTimer = useCallback(() => {
     if (thinkingStatusTimerRef.current === null) return;
@@ -524,15 +531,18 @@ export function PetEntryApp() {
 
   useEffect(() => {
     let unlistenCodexStatus: (() => void) | null = null;
+    let unlistenPetMenu: (() => void) | null = null;
 
     loadConfig()
       .then((config) => {
         const enabled = Boolean(config.pet?.codex?.enabled);
         window.localStorage.setItem(PET_CODEX_ENABLED_STORAGE_KEY, enabled ? "1" : "0");
         setCodexEnabled(enabled);
+        setCustomMenuActions(config.pet?.menu.customActions ?? []);
       })
       .catch(() => {
         setCodexEnabled(false);
+        setCustomMenuActions([]);
       });
 
     const handleStorage = (event: StorageEvent) => {
@@ -549,9 +559,18 @@ export function PetEntryApp() {
       })
       .catch(console.error);
 
+    listen<Array<Action | null>>("pet-menu-config-changed", (event) => {
+      setCustomMenuActions(event.payload);
+    })
+      .then((unlisten) => {
+        unlistenPetMenu = unlisten;
+      })
+      .catch(console.error);
+
     window.addEventListener("storage", handleStorage);
     return () => {
       if (unlistenCodexStatus) unlistenCodexStatus();
+      if (unlistenPetMenu) unlistenPetMenu();
       window.removeEventListener("storage", handleStorage);
       clearThinkingStatusTimer();
     };
@@ -645,8 +664,8 @@ export function PetEntryApp() {
     const centerButton = centerButtonRef.current;
     if (!menu || !centerButton) return;
 
-    const actionButtons = PET_MENU_ITEMS
-      .map((item) => menu.querySelector<HTMLButtonElement>(`[data-pet-action="${item.action}"]`))
+    const actionButtons = menuItems
+      .map((item) => menu.querySelector<HTMLButtonElement>(`[data-pet-action="${getPetMenuItemKey(item)}"]`))
       .filter((button): button is HTMLButtonElement => Boolean(button));
 
     const tl = gsap.timeline({ defaults: { overwrite: "auto" } });
@@ -704,19 +723,7 @@ export function PetEntryApp() {
           ease: motionEase.standard,
         }, 0);
     }
-  }, [open, reducedMotion]);
-
-  async function openSearch() {
-    await invoke("show_search_window");
-  }
-
-  async function openScreenshotReport() {
-    await invoke("show_screenshotai_window");
-  }
-
-  async function openClipboard() {
-    await invoke("show_clipboard_window");
-  }
+  }, [menuItems, open, reducedMotion]);
 
   async function switchToKeyboard() {
     if (modeTransition !== "idle") return;
@@ -728,8 +735,8 @@ export function PetEntryApp() {
     const menu = menuRef.current;
     const centerButton = centerButtonRef.current;
     const actionButtons = menu
-      ? PET_MENU_ITEMS
-          .map((item) => menu.querySelector<HTMLButtonElement>(`[data-pet-action="${item.action}"]`))
+      ? menuItems
+          .map((item) => menu.querySelector<HTMLButtonElement>(`[data-pet-action="${getPetMenuItemKey(item)}"]`))
           .filter((button): button is HTMLButtonElement => Boolean(button))
       : [];
     const tl = gsap.timeline({ defaults: { overwrite: "auto" } });
@@ -785,12 +792,14 @@ export function PetEntryApp() {
     }, durationMs);
   }
 
-  async function runAction(action: PetAction) {
+  async function runMenuItem(item: PetMenuItem) {
     closePetMenu();
-    if (action === "search") await openSearch();
-    if (action === "report") await openScreenshotReport();
-    if (action === "clip") await openClipboard();
-    if (action === "keyboard") await switchToKeyboard();
+    if (item.kind === "keyboard") {
+      await switchToKeyboard();
+      return;
+    }
+
+    await executeAction(item.action, { invoke });
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -848,11 +857,11 @@ export function PetEntryApp() {
           pointerEvents: "none",
         }}
       >
-        {PET_MENU_ITEMS.map((item) => (
+        {menuItems.map((item) => (
           <button
-            key={item.action}
+            key={getPetMenuItemKey(item)}
             className="pet-action-button"
-            onClick={() => runAction(item.action).catch(console.error)}
+            onClick={() => runMenuItem(item).catch(console.error)}
             style={{
               ...actionButtonStyle,
               left: item.left,
@@ -861,12 +870,12 @@ export function PetEntryApp() {
               visibility: open ? "visible" : "hidden",
               transform: open ? "translate(-50%, -50%) scale(1)" : actionButtonStyle.transform,
             }}
-            data-pet-action={item.action}
+            data-pet-action={getPetMenuItemKey(item)}
             aria-label={item.label}
             title={item.title}
             type="button"
           >
-            <PetActionIcon action={item.action} />
+            <PetMenuItemIcon item={item} />
           </button>
         ))}
       </div>
@@ -930,6 +939,17 @@ export function PetEntryApp() {
           </>
         )}
       </button>
+      <WindowPinButton
+        style={{
+          position: "absolute",
+          left: 2,
+          bottom: 0,
+          zIndex: 8,
+          width: 22,
+          height: 20,
+          pointerEvents: "auto",
+        }}
+      />
     </div>
   );
 }

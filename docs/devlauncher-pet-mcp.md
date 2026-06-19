@@ -15,6 +15,24 @@ Add a stdio MCP server that runs:
 node /path/to/devLauncher/mcp/devlauncher-pet-mcp.mjs
 ```
 
+## Codex Plugin Install
+
+This repository also includes a Codex plugin package:
+
+```text
+plugins/devlauncher-pet
+```
+
+After cloning the GitHub repository, add the repository root as a local Codex plugin marketplace and install the plugin:
+
+```bash
+cd /path/to/devLauncher
+codex plugin marketplace add "$PWD"
+codex plugin add devlauncher-pet@devlauncher
+```
+
+Start a new Codex thread after installation so the `pet_set_status` and `pet_notify` MCP tools are loaded.
+
 The server writes events to the DevLauncher app data inbox. On macOS it writes both the release and development inboxes by default:
 
 ```text

@@ -168,10 +168,17 @@ export interface ThemeConfig {
   keyBgOpacity: number;  // unbound key background opacity 0-1
 }
 
+export const PET_CUSTOM_ACTION_SLOT_COUNT = 3;
+
+export interface PetMenuConfig {
+  customActions: Array<Action | null>;
+}
+
 export interface PetConfig {
   codex: {
     enabled: boolean;
   };
+  menu: PetMenuConfig;
 }
 
 export const DEFAULT_THEME: ThemeConfig = {
@@ -185,6 +192,9 @@ export const DEFAULT_THEME: ThemeConfig = {
 export const DEFAULT_PET_CONFIG: PetConfig = {
   codex: {
     enabled: false,
+  },
+  menu: {
+    customActions: Array.from({ length: PET_CUSTOM_ACTION_SLOT_COUNT }, () => null),
   },
 };
 

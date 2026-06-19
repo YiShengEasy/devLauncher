@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Action } from "@/types/actions";
 import {
   CURRENT_PET_WINDOW_SIZE,
   PET_BUTTON_SIZE,
@@ -6,11 +7,30 @@ import {
   PET_IMAGE_WIDTH,
   PET_KEYBOARD_IMAGE_WIDTH,
   PET_MENU_BUTTON_SIZE,
-  PET_MENU_ITEMS,
+  PET_KEYBOARD_MENU_ITEM,
   PET_OPEN_WINDOW_SIZE,
+  buildPetMenuItems,
   getCenteredResizeOffset,
   getPetWindowArea,
 } from "./petLayout";
+
+const clipboardAction: Action = {
+  type: "builtin",
+  name: "剪切板",
+  feature: "clipboard",
+};
+
+const jsonAction: Action = {
+  type: "builtin",
+  name: "JSON",
+  feature: "json",
+};
+
+const docsAction: Action = {
+  type: "url",
+  name: "Docs",
+  target: "https://example.com",
+};
 
 describe("pet compact layout", () => {
   it("uses a compact default window and compact expanded window", () => {
@@ -27,25 +47,31 @@ describe("pet compact layout", () => {
     expect(PET_KEYBOARD_IMAGE_WIDTH).toBe(148);
   });
 
-  it("keeps four corner menu actions and removes custom action", () => {
-    expect(PET_MENU_ITEMS.map((item) => item.action)).toEqual([
-      "search",
-      "report",
-      "clip",
-      "keyboard",
-    ]);
-    expect(PET_MENU_ITEMS).toHaveLength(4);
-    expect(PET_MENU_ITEMS.map((item) => item.action as string)).not.toContain("custom-action");
+  it("shows only fixed keyboard mode when no custom actions are configured", () => {
+    expect(buildPetMenuItems([null, null, null])).toEqual([PET_KEYBOARD_MENU_ITEM]);
   });
 
-  it("places menu buttons near the four pet corners", () => {
-    expect(PET_MENU_BUTTON_SIZE).toEqual({ width: 34, height: 30 });
-    expect(PET_MENU_ITEMS.map((item) => [item.action, item.left, item.top])).toEqual([
-      ["search", 42, 36],
-      ["report", 130, 36],
-      ["clip", 42, 116],
-      ["keyboard", 130, 116],
+  it("combines up to three custom actions with the fixed keyboard item", () => {
+    const items = buildPetMenuItems([clipboardAction, jsonAction, docsAction]);
+
+    expect(items.map((item) => item.kind)).toEqual(["custom", "custom", "custom", "keyboard"]);
+    expect(items.map((item) => item.label)).toEqual(["剪切板", "JSON", "Docs", "键盘"]);
+    expect(items.map((item) => [item.left, item.top])).toEqual([
+      [42, 36],
+      [130, 36],
+      [42, 116],
+      [130, 116],
     ]);
+  });
+
+  it("keeps the fixed keyboard button in the bottom-right position", () => {
+    expect(PET_MENU_BUTTON_SIZE).toEqual({ width: 34, height: 30 });
+    expect(PET_KEYBOARD_MENU_ITEM).toMatchObject({
+      kind: "keyboard",
+      label: "键盘",
+      left: 130,
+      top: 116,
+    });
   });
 
   it("keeps the pet centered while resizing the window", () => {

@@ -190,9 +190,17 @@ pub struct PetCodexConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct PetMenuConfig {
+    #[serde(default, rename = "customActions")]
+    pub custom_actions: Vec<Option<Action>>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PetConfig {
     #[serde(default)]
     pub codex: PetCodexConfig,
+    #[serde(default)]
+    pub menu: PetMenuConfig,
 }
 
 impl Default for PetCodexConfig {

@@ -1,17 +1,30 @@
+import type { Action } from "@/types/actions";
+
 export type PetWindowSize = {
   width: number;
   height: number;
 };
 
-export type PetAction = "search" | "report" | "clip" | "keyboard";
+export type PetFixedAction = "keyboard";
 
-export type PetMenuItem = {
-  label: string;
-  title: string;
-  left: number;
-  top: number;
-  action: PetAction;
-};
+export type PetMenuItem =
+  | {
+      kind: "custom";
+      slotIndex: number;
+      label: string;
+      title: string;
+      left: number;
+      top: number;
+      action: Action;
+    }
+  | {
+      kind: "keyboard";
+      label: string;
+      title: string;
+      left: number;
+      top: number;
+      action: PetFixedAction;
+    };
 
 export const CURRENT_PET_WINDOW_SIZE: PetWindowSize = { width: 284, height: 284 };
 export const PET_CLOSED_WINDOW_SIZE: PetWindowSize = { width: 152, height: 136 };
@@ -22,12 +35,39 @@ export const PET_IMAGE_WIDTH = 132;
 export const PET_KEYBOARD_IMAGE_WIDTH = 148;
 export const PET_MENU_CLOSE_DELAY_MS = 180;
 
-export const PET_MENU_ITEMS: PetMenuItem[] = [
-  { label: "搜索", title: "打开搜索", left: 42, top: 36, action: "search" },
-  { label: "报告", title: "打开截图报告", left: 130, top: 36, action: "report" },
-  { label: "剪贴", title: "打开剪贴板", left: 42, top: 116, action: "clip" },
-  { label: "键盘", title: "切换到键盘模式", left: 130, top: 116, action: "keyboard" },
-];
+export const PET_CUSTOM_MENU_POSITIONS = [
+  { left: 42, top: 36 },
+  { left: 130, top: 36 },
+  { left: 42, top: 116 },
+] as const;
+
+export const PET_KEYBOARD_MENU_ITEM: PetMenuItem = {
+  kind: "keyboard",
+  label: "键盘",
+  title: "切换到键盘模式",
+  left: 130,
+  top: 116,
+  action: "keyboard",
+};
+
+export function buildPetMenuItems(customActions: Array<Action | null | undefined>): PetMenuItem[] {
+  const customItems = PET_CUSTOM_MENU_POSITIONS.flatMap((position, index) => {
+    const action = customActions[index];
+    if (!action) return [];
+
+    return [{
+      kind: "custom" as const,
+      slotIndex: index,
+      label: action.name,
+      title: action.name,
+      left: position.left,
+      top: position.top,
+      action,
+    }];
+  });
+
+  return [...customItems, PET_KEYBOARD_MENU_ITEM];
+}
 
 export function getPetWindowArea(size: PetWindowSize): number {
   return size.width * size.height;

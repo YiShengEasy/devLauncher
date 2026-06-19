@@ -1,0 +1,28 @@
+{
+  "name": "devlauncher-pet",
+  "version": "0.1.0",
+  "description": "Connect Codex to the DevLauncher desktop pet with MCP status tools and concise work-state reporting.",
+  "author": {
+    "name": "Yisheng"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DevLauncher Pet",
+    "shortDescription": "Report Codex work status to the DevLauncher desktop pet.",
+    "longDescription": "DevLauncher Pet exposes local MCP tools that let Codex update the DevLauncher desktop pet with thinking, working, waiting, success, error, idle, and notification summaries. It also teaches Codex to send short status summaries during multi-step work.",
+    "developerName": "Yisheng",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "Status",
+      "Local"
+    ],
+    "defaultPrompt": [
+      "Tell the DevLauncher pet that you are working on this task.",
+      "Notify the DevLauncher pet when this task is complete.",
+      "Show a waiting status on the DevLauncher pet."
+    ],
+    "brandColor": "#818CF8"
+  }
+}

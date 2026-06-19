@@ -6,6 +6,7 @@ mod ocr;
 mod platform;
 mod types;
 mod utils;
+mod window_pinning;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -14,7 +15,7 @@ use tauri::{
 };
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
-const KEYBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+Space";
+const KEYBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+J";
 const PET_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+P";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -132,6 +133,9 @@ pub fn run() {
             utils::favicon::get_cached_favicons,
             utils::favicon::refresh_favicons,
             utils::favicon::get_favicons,
+            window_pinning::get_window_pin_state,
+            window_pinning::set_window_pin_state,
+            window_pinning::list_window_pin_states,
         ])
         .setup(|app| {
             utils::icon::setup(app);
@@ -139,6 +143,7 @@ pub fn run() {
             builtins::terminal::setup(app);
             builtins::screenshot::setup(app);
             builtins::clipboard::setup(app);
+            window_pinning::apply_all_startup_pin_states(app.handle());
             let _ = entries::show_pet_window(app.handle().clone(), None);
 
             let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
