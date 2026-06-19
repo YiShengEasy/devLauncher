@@ -32,8 +32,8 @@ const shellStyle: CSSProperties = {
   height: "100%",
   borderRadius: "24px 24px 0 0",
   display: "grid",
-  gridTemplateRows: "70px minmax(0, 1fr) 28px",
-  padding: "22px 20px 16px",
+  gridTemplateRows: "48px minmax(0, 1fr) 24px",
+  padding: "16px 18px 14px",
   position: "relative",
   overflow: "hidden",
   boxSizing: "border-box",
@@ -46,34 +46,34 @@ const shellStyle: CSSProperties = {
 };
 
 const iconButtonStyle: CSSProperties = {
-  minWidth: 52,
-  height: 40,
-  borderRadius: 12,
+  minWidth: 46,
+  height: 32,
+  borderRadius: 9,
   border: "1px solid transparent",
   background: "transparent",
   color: "rgba(232,234,240,0.56)",
   cursor: "pointer",
   display: "grid",
   placeItems: "center",
-  fontSize: 15,
-  fontWeight: 850,
+  fontSize: 13,
+  fontWeight: 700,
   lineHeight: 1,
   padding: "0 12px",
   whiteSpace: "nowrap",
 };
 
 const scrollButtonStyle: CSSProperties = {
-  width: 36,
-  height: 24,
-  borderRadius: 10,
+  width: 32,
+  height: 22,
+  borderRadius: 8,
   border: "1px solid rgba(255,255,255,0.14)",
   background: "rgba(255,255,255,0.08)",
   color: "rgba(245,247,252,0.72)",
   cursor: "pointer",
   display: "grid",
   placeItems: "center",
-  fontSize: 18,
-  fontWeight: 850,
+  fontSize: 16,
+  fontWeight: 700,
   lineHeight: 1,
 };
 
@@ -123,7 +123,7 @@ export function ClipboardPanel({
     const scroller = listRef.current;
     if (!scroller) return;
     const firstCard = scroller.querySelector<HTMLElement>("[data-clipboard-card]");
-    const step = firstCard ? firstCard.getBoundingClientRect().width + 18 : 412;
+    const step = firstCard ? firstCard.getBoundingClientRect().width + 16 : 376;
     scroller.scrollBy({ left: direction === "next" ? step : -step, behavior: reducedMotion ? "auto" : "smooth" });
     window.setTimeout(updateScrollProgress, reducedMotion ? 0 : 220);
   };
@@ -183,8 +183,8 @@ export function ClipboardPanel({
       <header
         style={{
           display: "grid",
-          gridTemplateColumns: "56px minmax(520px, 790px) minmax(140px, 1fr)",
-          gap: 16,
+          gridTemplateColumns: "44px minmax(500px, 720px) minmax(124px, 1fr)",
+          gap: 12,
           alignItems: "center",
           minWidth: 0,
         }}
@@ -204,25 +204,25 @@ export function ClipboardPanel({
           />
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, minWidth: 0 }} data-tauri-drag-region="false">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, minWidth: 0 }} data-tauri-drag-region="false">
           <label
             style={{
-              height: 46,
-              minWidth: 320,
-              maxWidth: 360,
-              flex: "0 1 360px",
+              height: 36,
+              minWidth: 280,
+              maxWidth: 320,
+              flex: "0 1 320px",
               display: "flex",
               alignItems: "center",
-              gap: 10,
-              padding: "0 14px",
-              borderRadius: 14,
+              gap: 8,
+              padding: "0 12px",
+              borderRadius: 10,
               border: "1px solid rgba(255,255,255,0.14)",
               background: "rgba(255,255,255,0.09)",
               color: "rgba(232,234,240,0.46)",
               boxSizing: "border-box",
             }}
           >
-            <span style={{ fontSize: 20, lineHeight: 1 }}>⌕</span>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>⌕</span>
             <input
               placeholder="搜索"
               value={search}
@@ -235,13 +235,13 @@ export function ClipboardPanel({
                 outline: "none",
                 background: "transparent",
                 color: "rgba(245,247,252,0.92)",
-                fontSize: 16,
-                fontWeight: 650,
+                fontSize: 13,
+                fontWeight: 600,
               }}
             />
           </label>
 
-          <nav style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <nav style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <FilterButton active={filter === "all"} label="全部" count={items.length} onClick={() => setFilter("all")} />
             <FilterButton active={filter === "text"} label="文本" count={textCount} onClick={() => setFilter("text")} />
             <FilterButton active={filter === "image"} label="图片" count={imageCount} onClick={() => setFilter("image")} />
@@ -250,7 +250,7 @@ export function ClipboardPanel({
           </nav>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 18, minWidth: 0, paddingRight: 10 }} data-tauri-drag-region="false">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, minWidth: 0, paddingRight: 4 }} data-tauri-drag-region="false">
           <button
             type="button"
             title={filter === "favorites" ? "清空收藏" : "清空历史"}
@@ -286,13 +286,13 @@ export function ClipboardPanel({
         className="motion-list motion-scroll-area"
         style={{
           display: "flex",
-          gap: 18,
+          gap: 16,
           minWidth: 0,
           minHeight: 0,
           height: "100%",
           overflowX: "auto",
           overflowY: "hidden",
-          padding: "18px 0 0",
+          padding: "14px 0 0",
           alignItems: "stretch",
           boxSizing: "border-box",
         }}
@@ -327,8 +327,8 @@ export function ClipboardPanel({
         </button>
         <div
           style={{
-            width: 160,
-            height: 4,
+            width: 150,
+            height: 3,
             borderRadius: 999,
             background: "rgba(255,255,255,0.12)",
             overflow: "hidden",
@@ -372,14 +372,14 @@ function FilterButton({
       disabled={disabled}
       style={{
         height: active ? 44 : 34,
-        padding: active ? "0 18px" : "0 13px",
-        borderRadius: active ? 12 : 10,
+        padding: active ? "0 14px" : "0 10px",
+        borderRadius: active ? 9 : 8,
         border: active ? "1px solid rgba(210,224,247,0.28)" : "1px solid transparent",
         background: active ? "rgba(255,255,255,0.15)" : "transparent",
         boxShadow: active ? "inset 0 1px 0 rgba(255,255,255,0.16), 0 8px 18px rgba(0,0,0,0.18)" : "none",
         color: disabled ? "rgba(232,234,240,0.26)" : active ? "rgba(245,247,252,0.94)" : "rgba(232,234,240,0.52)",
-        fontSize: 17,
-        fontWeight: 800,
+        fontSize: 13,
+        fontWeight: 700,
         cursor: disabled ? "default" : "pointer",
         whiteSpace: "nowrap",
       }}
@@ -427,11 +427,11 @@ function ClipboardCard({
       onKeyDown={handleKeyDown}
       data-clipboard-card
       style={{
-        width: 394,
+        width: 360,
         height: "100%",
         minHeight: 0,
-        flex: "0 0 394px",
-        borderRadius: 16,
+        flex: "0 0 360px",
+        borderRadius: 12,
         border: `1px solid ${selected ? "rgba(86,143,255,0.96)" : favorite ? "rgba(250,204,21,0.30)" : "rgba(255,255,255,0.12)"}`,
         background: copied
           ? "linear-gradient(135deg, rgba(74,126,192,0.42), rgba(126,125,178,0.48))"
@@ -443,11 +443,11 @@ function ClipboardCard({
           : "0 10px 26px rgba(0,0,0,0.20), inset 0 1px 0 rgba(255,255,255,0.08)",
         color: "rgba(245,247,252,0.90)",
         cursor: "pointer",
-        padding: 24,
+        padding: 18,
         textAlign: "left",
         display: "grid",
-        gridTemplateRows: "30px minmax(0, 1fr) 26px",
-        gap: 18,
+        gridTemplateRows: "26px minmax(0, 1fr) 22px",
+        gap: 14,
         transform: selected && !reducedMotion ? "translateY(-4px) scale(1.018)" : "translateY(0) scale(1)",
         transition: reducedMotion
           ? "background-color 120ms ease, border-color 120ms ease"
@@ -457,8 +457,8 @@ function ClipboardCard({
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-          <span style={{ color: "rgba(245,247,252,0.50)", fontSize: 16, fontWeight: 750 }}>{index}</span>
-          {copied && <span style={{ fontSize: 13, color: "#dbeafe", fontWeight: 800 }}>已复制</span>}
+          <span style={{ color: "rgba(245,247,252,0.50)", fontSize: 13, fontWeight: 700 }}>{index}</span>
+          {copied && <span style={{ fontSize: 11, color: "#dbeafe", fontWeight: 700 }}>已复制</span>}
         </div>
         <button
           type="button"
@@ -468,16 +468,16 @@ function ClipboardCard({
             onToggleFavorite();
           }}
           style={{
-            height: 30,
-            minWidth: 66,
-            borderRadius: 10,
+            height: 26,
+            minWidth: 58,
+            borderRadius: 8,
             border: favorite ? "1px solid rgba(250,204,21,0.48)" : "1px solid rgba(255,255,255,0.14)",
             background: favorite ? "rgba(250,204,21,0.10)" : "rgba(255,255,255,0.06)",
             color: favorite ? "#f4e79a" : "rgba(245,247,252,0.68)",
             cursor: "pointer",
-            fontSize: 14,
-            fontWeight: 850,
-            padding: "0 12px",
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "0 10px",
           }}
         >
           {favorite ? "已收藏" : "收藏"}
@@ -485,7 +485,7 @@ function ClipboardCard({
       </div>
 
       {entry.kind === "image" ? (
-        <div style={{ display: "grid", gridTemplateRows: "minmax(0, 1fr) auto", gap: 14, minHeight: 0 }}>
+        <div style={{ display: "grid", gridTemplateRows: "minmax(0, 1fr) auto", gap: 12, minHeight: 0 }}>
           <img
             src={`data:image/jpeg;base64,${entry.data}`}
             alt="clipboard image"
@@ -495,23 +495,23 @@ function ClipboardCard({
               height: "100%",
               minHeight: 0,
               objectFit: "contain",
-              borderRadius: 12,
+              borderRadius: 10,
               background: "rgba(255,255,255,0.08)",
             }}
             onError={(event) => { event.currentTarget.style.display = "none"; }}
           />
-          <strong style={{ fontSize: 24, lineHeight: 1.25 }}>{clipboardEntryTitle(entry)}</strong>
+          <strong style={{ fontSize: 16, lineHeight: 1.3 }}>{clipboardEntryTitle(entry)}</strong>
         </div>
       ) : (
         <div style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-start", paddingTop: 4 }}>
           <strong
             style={{
-              fontSize: 17,
+              fontSize: 15,
               lineHeight: 1.48,
-              fontWeight: 780,
+              fontWeight: 650,
               color: "rgba(248,250,252,0.92)",
               display: "-webkit-box",
-              WebkitLineClamp: 10,
+              WebkitLineClamp: 14,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
               whiteSpace: "pre-wrap",
@@ -522,7 +522,7 @@ function ClipboardCard({
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(232,234,240,0.45)", fontSize: 15, fontWeight: 800 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, color: "rgba(232,234,240,0.45)", fontSize: 12, fontWeight: 700 }}>
         <span>{entry.kind === "text" ? "最近" : "图片"}</span>
         <span>·</span>
         <span>{clipboardEntryMeta(entry)}</span>

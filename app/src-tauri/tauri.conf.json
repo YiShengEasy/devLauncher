@@ -32,7 +32,7 @@
         "url": "index.html?view=clipboard",
         "title": "DevLauncher Clipboard",
         "width": 1440,
-        "height": 500,
+        "height": 620,
         "resizable": false,
         "decorations": false,
         "transparent": true,
