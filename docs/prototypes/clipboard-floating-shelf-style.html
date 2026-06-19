@@ -1,0 +1,571 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clipboard Floating Shelf Style Prototype</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --panel-h: min(520px, 58vh);
+      --ink: rgba(247, 250, 255, 0.94);
+      --muted: rgba(232, 238, 248, 0.48);
+      --faint: rgba(232, 238, 248, 0.28);
+      --line: rgba(202, 216, 244, 0.22);
+      --blue: #5b8dff;
+      --cyan: #3dd8ff;
+      --card: rgba(255, 255, 255, 0.075);
+      --card-line: rgba(255, 255, 255, 0.13);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+      background: #121416;
+      color: var(--ink);
+    }
+
+    body {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+    }
+
+    .desktop {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(0,0,0,.36) 0 250px, transparent 250px),
+        radial-gradient(circle at 44% 28%, rgba(255,255,255,.06), transparent 18%),
+        linear-gradient(135deg, #17191d, #0e1014 52%, #15171c);
+    }
+
+    .sidebar {
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 250px;
+      border-right: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.035);
+      padding: 18px 14px;
+      color: rgba(255,255,255,.48);
+    }
+
+    .sidebar .row {
+      height: 42px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0;
+    }
+
+    .sidebar .row.active {
+      background: rgba(255,255,255,.08);
+      color: rgba(255,255,255,.74);
+    }
+
+    .code {
+      position: absolute;
+      left: 290px;
+      top: 42px;
+      width: 920px;
+      height: 330px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 12px;
+      background: rgba(255,255,255,.035);
+      overflow: hidden;
+    }
+
+    .code-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      padding: 0 28px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      font-size: 28px;
+      color: rgba(255,255,255,.88);
+    }
+
+    .code-line small { color: #37dc92; }
+    .code-line small b { color: #ff5959; }
+
+    .shelf {
+      position: relative;
+      z-index: 2;
+      width: 100vw;
+      height: var(--panel-h);
+      padding: 25px 15px 34px;
+      border: 1px solid rgba(179, 195, 230, .45);
+      border-bottom: none;
+      border-radius: 26px 26px 0 0;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 32% 95%, rgba(36, 148, 123, .38), transparent 25%),
+        radial-gradient(circle at 72% 84%, rgba(52, 88, 159, .32), transparent 25%),
+        linear-gradient(105deg, rgba(36, 38, 47, .82), rgba(23, 25, 33, .88));
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.22),
+        0 -22px 64px rgba(0,0,0,.42);
+      backdrop-filter: blur(36px) saturate(170%);
+      -webkit-backdrop-filter: blur(36px) saturate(170%);
+    }
+
+    .shelf::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,.08), transparent 24%),
+        radial-gradient(circle at 90% 74%, rgba(255, 217, 150, .14), transparent 7%);
+      opacity: .8;
+    }
+
+    .toolbar {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-columns: minmax(290px, 1fr) minmax(520px, 790px) minmax(360px, 1fr);
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+      height: 58px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+      padding-left: 8px;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      border-radius: 10px;
+      display: grid;
+      place-items: center;
+      color: var(--cyan);
+      border: 2px solid currentColor;
+      font-size: 20px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .brand-title {
+      font-size: 31px;
+      font-weight: 900;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .brand-sub {
+      min-width: 0;
+      margin-left: 8px;
+      color: var(--muted);
+      font-size: 19px;
+      font-weight: 850;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .search-and-tabs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 15px;
+      min-width: 0;
+    }
+
+    .search {
+      height: 45px;
+      width: 335px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0 15px;
+      border-radius: 15px;
+      border: 1px solid rgba(255,255,255,.20);
+      background: rgba(255,255,255,.10);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
+      color: rgba(255,255,255,.62);
+    }
+
+    .search input {
+      width: 100%;
+      min-width: 0;
+      border: 0;
+      outline: 0;
+      color: rgba(255,255,255,.92);
+      background: transparent;
+      font-size: 17px;
+      font-weight: 800;
+    }
+
+    .tabs {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+    }
+
+    .tab {
+      height: 36px;
+      padding: 0 13px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: transparent;
+      color: rgba(232,238,248,.50);
+      font-size: 17px;
+      font-weight: 900;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+
+    .tab.active {
+      height: 45px;
+      padding: 0 18px;
+      color: rgba(255,255,255,.94);
+      border-color: rgba(220,230,250,.30);
+      background: rgba(255,255,255,.15);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 10px 22px rgba(0,0,0,.18);
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 18px;
+      min-width: 0;
+      padding-right: 10px;
+      color: rgba(232,238,248,.66);
+      font-size: 17px;
+      font-weight: 850;
+    }
+
+    .icon-btn {
+      width: 40px;
+      height: 40px;
+      display: grid;
+      place-items: center;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: rgba(232,238,248,.56);
+      font-size: 26px;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .icon-btn:hover,
+    .icon-btn.active {
+      border-color: rgba(255,255,255,.16);
+      background: rgba(255,255,255,.10);
+      color: rgba(255,255,255,.9);
+    }
+
+    .mode {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+    }
+
+    .pill {
+      height: 36px;
+      padding: 0 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 13px;
+      background: rgba(255,255,255,.07);
+      color: rgba(232,238,248,.44);
+      font-size: 16px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .pill.active {
+      color: rgba(255,255,255,.94);
+      background: rgba(255,255,255,.15);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.15);
+    }
+
+    .cards {
+      position: relative;
+      z-index: 1;
+      height: calc(100% - 82px);
+      padding-top: 34px;
+      display: flex;
+      gap: 18px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      scrollbar-width: none;
+    }
+
+    .cards::-webkit-scrollbar { display: none; }
+
+    .card {
+      position: relative;
+      flex: 0 0 394px;
+      height: min(342px, 100%);
+      border-radius: 17px;
+      border: 1px solid var(--card-line);
+      padding: 26px 24px 25px;
+      background: var(--card);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.09), 0 12px 28px rgba(0,0,0,.22);
+      display: grid;
+      grid-template-rows: 28px minmax(0, 1fr) 26px;
+      gap: 19px;
+      color: rgba(249,251,255,.90);
+      cursor: pointer;
+      transition: transform .22s cubic-bezier(.2,.8,.2,1), border-color .18s, background .18s, box-shadow .22s;
+    }
+
+    .card.active {
+      border-color: rgba(91,141,255,.98);
+      background: linear-gradient(135deg, rgba(112, 141, 194, .86), rgba(145, 137, 177, .86));
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.21),
+        0 20px 44px rgba(0,0,0,.42),
+        0 0 0 1px rgba(72,135,255,.20);
+      transform: translateY(-3px);
+    }
+
+    .card:hover:not(.active) {
+      transform: translateY(-2px);
+      background: rgba(255,255,255,.105);
+      border-color: rgba(255,255,255,.20);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-width: 0;
+    }
+
+    .card-index {
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      color: rgba(249,251,255,.50);
+      font-size: 16px;
+      font-weight: 850;
+    }
+
+    .source-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      color: #9cc4ff;
+      background: rgba(255,255,255,.12);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .card.active .source-dot {
+      background: rgba(255,255,255,.20);
+      color: #f3f7ff;
+    }
+
+    .copy-state {
+      color: #dbeafe;
+      font-size: 13px;
+      font-weight: 850;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+
+    .card.copied .copy-state { opacity: 1; }
+
+    .card-body {
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .card-text {
+      margin: 0;
+      color: rgba(250,252,255,.92);
+      font-size: 23px;
+      font-weight: 900;
+      line-height: 1.38;
+      white-space: pre-wrap;
+      display: -webkit-box;
+      -webkit-line-clamp: 7;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(232,238,248,.42);
+      font-size: 15px;
+      font-weight: 850;
+    }
+
+    @media (max-width: 1200px) {
+      .toolbar {
+        grid-template-columns: 1fr;
+        height: auto;
+        gap: 12px;
+      }
+
+      .shelf {
+        height: min(650px, 72vh);
+      }
+
+      .search-and-tabs,
+      .actions {
+        justify-content: flex-start;
+        padding-left: 8px;
+      }
+
+      .brand-title { font-size: 26px; }
+      .brand-sub { font-size: 16px; }
+      .cards { height: calc(100% - 170px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="desktop" aria-hidden="true">
+    <div class="sidebar">
+      <div class="row active"><span>$brainstorming...</span><span>8 分</span></div>
+      <div class="row"><span>电子宠物 联动</span><span>1 小时</span></div>
+      <div class="row"><span>适配 Mac 运行</span><span>9 小时</span></div>
+      <div class="row"><span>已内置快捷记忆...</span><span>10 小时</span></div>
+      <div class="row"><span>项目 cat 下的...</span><span>3 天</span></div>
+    </div>
+    <div class="code">
+      <div class="code-line"><span>app/src-tauri/src/builtins/clipboard.rs</span><small>+9 <b>-10</b></small></div>
+      <div class="code-line"><span>app/src-tauri/tauri.conf.json</span><small>+2 <b>-2</b></small></div>
+      <div class="code-line"><span>app/src/builtins/clipboard/App.tsx</span><small>+1 <b>-1</b></small></div>
+      <div class="code-line"><span>再显示 1 个文件</span><small>+4 <b>-4</b></small></div>
+    </div>
+  </div>
+
+  <main class="shelf">
+    <header class="toolbar">
+      <section class="brand">
+        <div class="brand-mark">▣</div>
+        <div class="brand-title">浮光剪贴</div>
+        <div class="brand-sub">最近1000次，收藏永久保留</div>
+      </section>
+
+      <section class="search-and-tabs">
+        <label class="search">
+          <span>⌕</span>
+          <input value="" placeholder="搜索" />
+          <span>⌘F</span>
+        </label>
+        <nav class="tabs" aria-label="分类">
+          <button class="tab active" data-tab="all">全部 2</button>
+          <button class="tab" data-tab="text">文本 2</button>
+          <button class="tab" data-tab="image">图片 0</button>
+          <button class="tab" data-tab="file">文件 0</button>
+          <button class="tab" data-tab="fav">收藏 0</button>
+        </nav>
+      </section>
+
+      <section class="actions">
+        <button class="icon-btn" title="清空">⌫</button>
+        <div class="mode">
+          <span>粘贴</span>
+          <button class="pill active">单击</button>
+          <button class="pill">双击</button>
+        </div>
+        <button class="icon-btn" id="pin" title="固定窗口">□</button>
+        <button class="icon-btn" title="关闭">×</button>
+      </section>
+    </header>
+
+    <section class="cards" aria-label="剪贴板记录">
+      <article class="card">
+        <div class="card-top">
+          <div class="card-index"><span>1</span><span class="source-dot">↩</span></div>
+          <span class="copy-state">已复制</span>
+        </div>
+        <div class="card-body">
+          <p class="card-text">重做 ClipboardPanel 为底部横向卡片 + 上浮详情：91e38ef
+Rust 侧把剪切板窗口定位到屏幕底部：832bb8c
+复制行为支持未固定关闭，固定后连续复制：2448759...</p>
+        </div>
+        <div class="card-meta"><span>14 秒前</span><span>·</span><span>118 个字符</span></div>
+      </article>
+
+      <article class="card active">
+        <div class="card-top">
+          <div class="card-index"><span>↩</span><span class="source-dot">↩</span></div>
+          <span class="copy-state">已复制</span>
+        </div>
+        <div class="card-body">
+          <p class="card-text">Rust 仍有既有 warning：src/utils/icon.rs unused imports，不是这次剪切板改动引入的。工作区里还保留了原本无关的脏文件和 .superpowers/ 临时预览文件，我没有动它们。</p>
+        </div>
+        <div class="card-meta"><span>18 秒前</span><span>·</span><span>110 个字符</span></div>
+      </article>
+
+      <article class="card">
+        <div class="card-top">
+          <div class="card-index"><span>3</span><span class="source-dot">★</span></div>
+          <span class="copy-state">已复制</span>
+        </div>
+        <div class="card-body">
+          <p class="card-text">你现在的样式太差了。先做一个纯样式版本，我在浏览器里能够看，然后再决定如何落到真实剪切板功能里。</p>
+        </div>
+        <div class="card-meta"><span>刚刚</span><span>·</span><span>58 个字符</span></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const cards = [...document.querySelectorAll(".card")];
+    cards.forEach((card) => {
+      card.addEventListener("mouseenter", () => {
+        cards.forEach((item) => item.classList.remove("active"));
+        card.classList.add("active");
+      });
+      card.addEventListener("click", () => {
+        card.classList.add("copied");
+        setTimeout(() => card.classList.remove("copied"), 900);
+      });
+    });
+
+    document.querySelectorAll(".tab").forEach((tab) => {
+      tab.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((item) => item.classList.remove("active"));
+        tab.classList.add("active");
+      });
+    });
+
+    document.querySelectorAll(".pill").forEach((pill) => {
+      pill.addEventListener("click", () => {
+        document.querySelectorAll(".pill").forEach((item) => item.classList.remove("active"));
+        pill.classList.add("active");
+      });
+    });
+
+    document.getElementById("pin").addEventListener("click", (event) => {
+      const target = event.currentTarget;
+      target.classList.toggle("active");
+      target.textContent = target.classList.contains("active") ? "▣" : "□";
+    });
+  </script>
+</body>
+</html>
