@@ -3,7 +3,7 @@ use image::RgbaImage;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 use crate::types::{generate_id, ClipboardEntry};
 use crate::utils::image::encode_image_jpeg;
@@ -134,6 +134,47 @@ pub struct ClipboardFavoritesState {
 
 fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
     let _ = window_pinning::apply_window_pin_state(app, label);
+}
+
+const CLIPBOARD_DOCK_WIDTH: u32 = 960;
+const CLIPBOARD_DOCK_HEIGHT: u32 = 260;
+const CLIPBOARD_DOCK_BOTTOM_MARGIN: i32 = 28;
+
+fn bottom_dock_position(
+    work_area_position: PhysicalPosition<i32>,
+    work_area_size: PhysicalSize<u32>,
+    window_size: PhysicalSize<u32>,
+    bottom_margin: i32,
+) -> PhysicalPosition<i32> {
+    let x = work_area_position.x
+        + ((work_area_size.width as i32 - window_size.width as i32) / 2).max(0);
+    let y = work_area_position.y + work_area_size.height as i32
+        - window_size.height as i32
+        - bottom_margin;
+    PhysicalPosition::new(x, y.max(work_area_position.y))
+}
+
+fn position_clipboard_dock(
+    app: &tauri::AppHandle,
+    win: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    let monitor = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else {
+        return Ok(());
+    };
+    let area = monitor.work_area();
+    let window_size = PhysicalSize::new(CLIPBOARD_DOCK_WIDTH, CLIPBOARD_DOCK_HEIGHT);
+    let position = bottom_dock_position(
+        area.position,
+        area.size,
+        window_size,
+        CLIPBOARD_DOCK_BOTTOM_MARGIN,
+    );
+    win.set_size(window_size).map_err(|e| e.to_string())?;
+    win.set_position(position).map_err(|e| e.to_string())
 }
 
 // -----------------------------------------------
@@ -268,6 +309,7 @@ pub fn toggle_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
             win.hide().map_err(|e| e.to_string())?;
         } else {
             apply_pin_state(&app, "clipboard");
+            position_clipboard_dock(&app, &win)?;
             win.show().map_err(|e| e.to_string())?;
             win.set_focus().map_err(|e| e.to_string())?;
             let _ = app.emit_to("clipboard", "clipboard-refresh", ());
@@ -280,6 +322,7 @@ pub fn toggle_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
 pub fn show_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("clipboard") {
         apply_pin_state(&app, "clipboard");
+        position_clipboard_dock(&app, &win)?;
         win.show().map_err(|e| e.to_string())?;
         win.unminimize().map_err(|e| e.to_string())?;
         win.set_focus().map_err(|e| e.to_string())?;
@@ -326,6 +369,37 @@ pub fn remove_favorite(
     }
     favs.retain(|e| e.id() != id);
     save_clipboard_favorites(&app, &favs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bottom_dock_position_centers_window_and_uses_bottom_margin() {
+        let pos = bottom_dock_position(
+            PhysicalPosition::new(0, 0),
+            PhysicalSize::new(1440, 900),
+            PhysicalSize::new(960, 260),
+            28,
+        );
+
+        assert_eq!(pos.x, 240);
+        assert_eq!(pos.y, 612);
+    }
+
+    #[test]
+    fn bottom_dock_position_clamps_y_to_work_area_top_on_short_screen() {
+        let pos = bottom_dock_position(
+            PhysicalPosition::new(10, 40),
+            PhysicalSize::new(800, 220),
+            PhysicalSize::new(960, 260),
+            28,
+        );
+
+        assert_eq!(pos.x, 10);
+        assert_eq!(pos.y, 40);
+    }
 }
 
 #[tauri::command]
