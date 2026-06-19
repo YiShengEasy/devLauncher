@@ -1,7 +1,9 @@
 import type { CSSProperties } from "react";
 import { useState } from "react";
-import { ClipIcon, KeyboardIcon, ReportIcon, SearchIcon } from "@/icons/entryIcons";
-import { PET_BUTTON_SIZE, PET_MENU_BUTTON_SIZE, PET_MENU_ITEMS, PET_OPEN_WINDOW_SIZE, type PetAction } from "./petLayout";
+import { ActionIcon } from "@/components/ActionIcon";
+import { KeyboardIcon } from "@/icons/entryIcons";
+import type { Action } from "@/types/actions";
+import { PET_BUTTON_SIZE, PET_MENU_BUTTON_SIZE, PET_OPEN_WINDOW_SIZE, buildPetMenuItems, type PetMenuItem } from "./petLayout";
 
 const pageStyle: CSSProperties = {
   width: "100vw",
@@ -26,12 +28,21 @@ const panelStyle: CSSProperties = {
   overflow: "hidden",
 };
 
-function PreviewIcon({ action }: { action: PetAction }) {
-  const iconProps = { size: 19, decorative: true };
-  if (action === "search") return <SearchIcon {...iconProps} />;
-  if (action === "report") return <ReportIcon {...iconProps} />;
-  if (action === "clip") return <ClipIcon {...iconProps} />;
-  return <KeyboardIcon {...iconProps} />;
+const previewActions: Action[] = [
+  { type: "builtin", name: "搜索", feature: "screenshot" },
+  { type: "builtin", name: "报告", feature: "screenshotai" },
+  { type: "builtin", name: "剪贴", feature: "clipboard" },
+];
+
+const previewMenuItems = buildPetMenuItems(previewActions);
+
+function getPreviewMenuItemKey(item: PetMenuItem): string {
+  return item.kind === "keyboard" ? "keyboard" : `custom-${item.slotIndex}`;
+}
+
+function PreviewIcon({ item }: { item: PetMenuItem }) {
+  if (item.kind === "keyboard") return <KeyboardIcon size={19} decorative />;
+  return <ActionIcon action={item.action} size={19} />;
 }
 
 export function BrowserPreviewApp() {
@@ -58,13 +69,13 @@ export function BrowserPreviewApp() {
 
         <section style={{ minHeight: 440, display: "grid", placeItems: "center", position: "relative", overflow: "hidden" }}>
           <div className={`pet-bubble-menu ${open ? "is-open" : ""}`} style={{ position: "absolute", left: "50%", top: 144, width: PET_OPEN_WINDOW_SIZE.width, height: PET_OPEN_WINDOW_SIZE.height, transform: open ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -50%) scale(0.94)", opacity: open ? 1 : 0, pointerEvents: "none", transition: "opacity 180ms ease, transform 220ms cubic-bezier(.16,1,.3,1)" }}>
-            {PET_MENU_ITEMS.map((item) => (
+            {previewMenuItems.map((item) => (
               <button
-                key={item.action}
+                key={getPreviewMenuItemKey(item)}
                 className="pet-action-button"
                 type="button"
                 title={item.label}
-                data-pet-action={item.action}
+                data-pet-action={getPreviewMenuItemKey(item)}
                 style={{
                   position: "absolute",
                   left: item.left,
@@ -83,7 +94,7 @@ export function BrowserPreviewApp() {
                   opacity: open ? 1 : 0,
                 }}
               >
-                <PreviewIcon action={item.action} />
+                <PreviewIcon item={item} />
               </button>
             ))}
           </div>

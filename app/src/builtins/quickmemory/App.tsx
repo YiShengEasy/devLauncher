@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
+import { WindowPinButton } from "@/components/WindowPinButton";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -158,7 +159,6 @@ export function QuickMemoryApp() {
 
   useEffect(() => {
     applyThemeFromConfig();
-    getCurrentWindow().setAlwaysOnTop(false).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -617,7 +617,7 @@ export function QuickMemoryApp() {
 
           <div
             onMouseDown={(event) => event.stopPropagation()}
-            style={{ display: "flex", alignItems: "center", gap: 10 }}
+            style={{ display: "flex", alignItems: "center", gap: 8 }}
           >
             <input
               onMouseDown={(event) => event.stopPropagation()}
@@ -636,6 +636,7 @@ export function QuickMemoryApp() {
                 fontSize: 12,
               }}
             />
+            <WindowPinButton />
             <button
               onMouseDown={(event) => event.stopPropagation()}
               onPointerDown={(event) => event.stopPropagation()}

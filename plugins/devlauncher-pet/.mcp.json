@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "devlauncher_pet": {
+      "command": "node",
+      "args": [
+        "./mcp/devlauncher-pet-mcp.mjs"
+      ],
+      "cwd": ".",
+      "startup_timeout_sec": 30
+    }
+  }
+}

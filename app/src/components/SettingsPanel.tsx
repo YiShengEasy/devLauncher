@@ -1,7 +1,10 @@
 import { useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import type { CSSProperties } from "react";
 import { saveConfig } from "@/api/config";
+import { ActionIcon } from "@/components/ActionIcon";
+import { BindingModal } from "@/components/BindingModal";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { writePetCodexEnabled } from "@/entry/petCodexStatus";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
@@ -9,8 +12,8 @@ import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
 import { getGlobalShortcutLabels } from "@/platform/shortcuts";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
-import { DEFAULT_THEME } from "@/types/actions";
-import type { KeyId, KeyMap, KeyboardConfig, ThemeConfig, UrlAction } from "@/types/actions";
+import { ACTION_TYPE_META, DEFAULT_THEME, PET_CUSTOM_ACTION_SLOT_COUNT } from "@/types/actions";
+import type { Action, KeyId, KeyMap, KeyboardConfig, ThemeConfig, UrlAction } from "@/types/actions";
 
 const PRESET_COLORS = [
   "#101622",
@@ -172,6 +175,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
   const webAccounts = useMemo(() => getWebAccountEntries(config), [config]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [petMenuEditIndex, setPetMenuEditIndex] = useState<number | null>(null);
   const editingEntry = webAccounts.find((entry) => entry.id === editingId) ?? webAccounts[0] ?? null;
   const [editState, setEditState] = useState<EditState | null>(null);
   const [status, setStatus] = useState("");
@@ -198,6 +202,40 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     }, 0);
   };
 
+  const petMenuActions = useMemo(
+    () => Array.from(
+      { length: PET_CUSTOM_ACTION_SLOT_COUNT },
+      (_, index) => config?.pet?.menu?.customActions?.[index] ?? null,
+    ),
+    [config],
+  );
+
+  async function persistPetMenuAction(index: number, action: Action | null) {
+    if (!config) return;
+
+    const nextActions = Array.from(
+      { length: PET_CUSTOM_ACTION_SLOT_COUNT },
+      (_, slotIndex) => slotIndex === index ? action : petMenuActions[slotIndex],
+    );
+
+    const nextConfig: KeyboardConfig = {
+      ...config,
+      pet: {
+        ...config.pet,
+        codex: {
+          enabled: Boolean(config.pet?.codex?.enabled),
+        },
+        menu: {
+          customActions: nextActions,
+        },
+      },
+    };
+
+    await persistConfig(nextConfig);
+    await emit("pet-menu-config-changed", nextActions);
+    setStatus(action ? "宠物菜单已更新。" : "宠物菜单绑定已清空。");
+  }
+
   const applyPreset = (preset: ThemeConfig) => {
     setTheme({ ...preset });
     setTimeout(async () => {
@@ -215,6 +253,9 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         codex: {
           ...config.pet?.codex,
           enabled,
+        },
+        menu: {
+          customActions: petMenuActions,
         },
       },
     };
@@ -337,6 +378,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <>
     <div
       ref={rootRef}
       className="settings-panel motion-panel"
@@ -562,6 +604,56 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", marginTop: 8, lineHeight: 1.6 }}>
                   关闭时不会连接或探测 Codex。开启后只接收状态事件；未安装或未启动 Codex 时显示未连接，不影响启动。
                 </div>
+                <div style={{ marginTop: 14, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.76)", marginBottom: 8 }}>
+                    菜单快捷入口
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                    {petMenuActions.map((action, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setPetMenuEditIndex(index)}
+                        disabled={!config}
+                        title={action ? `${action.name} / ${ACTION_TYPE_META[action.type].label}` : `添加宠物菜单 ${index + 1}`}
+                        style={{
+                          minHeight: 72,
+                          borderRadius: 9,
+                          border: action ? "1px solid rgba(125,211,252,0.34)" : "1px dashed rgba(255,255,255,0.22)",
+                          background: action ? "rgba(14,165,233,0.12)" : "rgba(255,255,255,0.045)",
+                          color: "rgba(255,255,255,0.78)",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 5,
+                          cursor: config ? "pointer" : "default",
+                          overflow: "hidden",
+                        }}
+                      >
+                        {action ? (
+                          <>
+                            <ActionIcon action={action} size={24} />
+                            <span style={{ fontSize: 11, fontWeight: 800, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {action.name}
+                            </span>
+                            <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)" }}>
+                              {ACTION_TYPE_META[action.type].label}
+                            </span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>
+                            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>添加</span>
+                          </>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.42)", lineHeight: 1.6 }}>
+                    宠物菜单固定保留键盘模式；这里最多添加 3 个自定义入口。
+                  </div>
+                </div>
                 {status && (
                   <div style={{ marginTop: 8, color: status.includes("已") ? "rgba(74,222,128,0.86)" : "rgba(248,113,113,0.9)", fontSize: 11 }}>
                     {status}
@@ -669,5 +761,26 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         </div>
       </main>
     </div>
+    {petMenuEditIndex !== null && (
+      <BindingModal
+        keyId={`pet-menu-${petMenuEditIndex + 1}`}
+        bindingLabel={`宠物菜单 ${petMenuEditIndex + 1}`}
+        initialAction={petMenuActions[petMenuEditIndex]}
+        onClose={() => setPetMenuEditIndex(null)}
+        onSave={(action) => {
+          const index = petMenuEditIndex;
+          if (index === null) return;
+          setPetMenuEditIndex(null);
+          void persistPetMenuAction(index, action).catch((error) => setStatus(String(error)));
+        }}
+        onClear={() => {
+          const index = petMenuEditIndex;
+          if (index === null) return;
+          setPetMenuEditIndex(null);
+          void persistPetMenuAction(index, null).catch((error) => setStatus(String(error)));
+        }}
+      />
+    )}
+    </>
   );
 }

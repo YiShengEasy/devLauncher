@@ -7,6 +7,7 @@ use tauri::{Emitter, Manager};
 
 use crate::types::{generate_id, ClipboardEntry};
 use crate::utils::image::encode_image_jpeg;
+use crate::window_pinning;
 
 // -----------------------------------------------
 // Favorites persistence helpers
@@ -129,6 +130,10 @@ pub struct ClipboardState {
 
 pub struct ClipboardFavoritesState {
     pub favorites: Arc<Mutex<Vec<ClipboardEntry>>>,
+}
+
+fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
+    let _ = window_pinning::apply_window_pin_state(app, label);
 }
 
 // -----------------------------------------------
@@ -262,6 +267,7 @@ pub fn toggle_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
         if win.is_visible().unwrap_or(false) {
             win.hide().map_err(|e| e.to_string())?;
         } else {
+            apply_pin_state(&app, "clipboard");
             win.show().map_err(|e| e.to_string())?;
             win.set_focus().map_err(|e| e.to_string())?;
             let _ = app.emit_to("clipboard", "clipboard-refresh", ());
@@ -273,6 +279,7 @@ pub fn toggle_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn show_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("clipboard") {
+        apply_pin_state(&app, "clipboard");
         win.show().map_err(|e| e.to_string())?;
         win.unminimize().map_err(|e| e.to_string())?;
         win.set_focus().map_err(|e| e.to_string())?;

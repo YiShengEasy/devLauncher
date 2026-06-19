@@ -37,7 +37,7 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "visibleOnAllWorkspaces": true,
         "center": true,
         "skipTaskbar": true,
@@ -53,7 +53,7 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "visibleOnAllWorkspaces": true,
         "center": true,
         "skipTaskbar": true,
@@ -69,7 +69,7 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "center": true,
         "skipTaskbar": true,
         "visible": false
@@ -84,7 +84,7 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "center": true,
         "skipTaskbar": true,
         "visible": false
@@ -114,7 +114,7 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "center": true,
         "skipTaskbar": true,
         "visible": false
@@ -145,7 +145,7 @@
         "decorations": false,
         "transparent": true,
         "shadow": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "center": true,
         "skipTaskbar": true,
         "visible": false

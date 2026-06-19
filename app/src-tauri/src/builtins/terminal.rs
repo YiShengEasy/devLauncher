@@ -5,6 +5,8 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
+use crate::window_pinning;
+
 /// Safety: portable-pty's concrete MasterPty implementations
 /// (ConPtyMaster on Windows, UnixMasterPty on Unix) use thread-safe
 /// OS handles (HANDLE / fd) and are safe to move across threads.
@@ -28,6 +30,10 @@ pub fn setup(app: &mut tauri::App) {
         sessions: Arc::new(Mutex::new(HashMap::new())),
         pending_cmd: Arc::new(Mutex::new(None)),
     });
+}
+
+fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
+    let _ = window_pinning::apply_window_pin_state(app, label);
 }
 
 /// Spawn a PTY process and begin streaming its output as Tauri events.
@@ -149,6 +155,7 @@ pub fn terminal_run(
     *state.pending_cmd.lock().unwrap() = Some(cmd);
     if let Some(win) = app.get_webview_window("terminal") {
         if !win.is_visible().unwrap_or(false) {
+            apply_pin_state(&app, "terminal");
             win.show().map_err(|e| e.to_string())?;
         }
         win.set_focus().map_err(|e| e.to_string())?;
@@ -169,6 +176,7 @@ pub fn toggle_terminal_window(app: tauri::AppHandle) -> Result<(), String> {
         if win.is_visible().unwrap_or(false) {
             win.hide().map_err(|e| e.to_string())?;
         } else {
+            apply_pin_state(&app, "terminal");
             win.show().map_err(|e| e.to_string())?;
             win.set_focus().map_err(|e| e.to_string())?;
         }

@@ -1,4 +1,4 @@
-import type { BuiltinFeature } from "@/types/actions";
+import type { Action, BuiltinFeature } from "@/types/actions";
 import type { LauncherActionRecord } from "./actionIndex";
 
 export interface ActionExecutorDeps {
@@ -11,13 +11,25 @@ export function builtinToggleCommand(feature: BuiltinFeature): string {
   return feature === "json" ? "toggle_json_helper_window" : `toggle_${feature}_window`;
 }
 
+export async function executeAction(
+  action: Action,
+  deps: ActionExecutorDeps,
+): Promise<void> {
+  if (action.type === "builtin") {
+    await deps.invoke(builtinToggleCommand(action.feature));
+    return;
+  }
+
+  await deps.invoke("execute_action", { action });
+}
+
 export async function executeLauncherAction(
   record: LauncherActionRecord,
   deps: ActionExecutorDeps,
 ): Promise<void> {
   if (record.actionKind === "execute-action") {
     if (!record.action) throw new Error(`Missing action for ${record.id}`);
-    await deps.invoke("execute_action", { action: record.action });
+    await executeAction(record.action, deps);
     return;
   }
 

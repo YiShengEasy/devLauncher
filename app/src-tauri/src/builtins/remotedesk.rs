@@ -8,6 +8,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::window_pinning;
+
 // -----------------------------------------------
 // Data Structures
 // -----------------------------------------------
@@ -96,6 +98,10 @@ fn remotedesk_profiles_path(app: &tauri::AppHandle) -> PathBuf {
         .join("remotedesk_profiles.json")
 }
 
+fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
+    let _ = window_pinning::apply_window_pin_state(app, label);
+}
+
 fn local_ip() -> String {
     if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
         if socket.connect("8.8.8.8:80").is_ok() {
@@ -177,6 +183,7 @@ pub fn toggle_remotedesk_window(app: tauri::AppHandle) -> Result<(), String> {
         if win.is_visible().unwrap_or(false) {
             win.hide().map_err(|e| e.to_string())?;
         } else {
+            apply_pin_state(&app, "remotedesk");
             win.show().map_err(|e| e.to_string())?;
             win.set_focus().map_err(|e| e.to_string())?;
         }

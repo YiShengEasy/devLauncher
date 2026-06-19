@@ -1,20 +1,50 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { KeyboardConfig, Action, PetConfig, ThemeConfig } from "@/types/actions";
-import { DEFAULT_PET_CONFIG, DEFAULT_THEME } from "@/types/actions";
+import { DEFAULT_PET_CONFIG, DEFAULT_THEME, PET_CUSTOM_ACTION_SLOT_COUNT } from "@/types/actions";
 
 // 从 Rust 序列化的 Page 结构，keys 是 Record<string, Action>
 interface RawPage {
   name: string;
   keys: Record<string, Action>;
 }
+
+interface RawPetMenuConfig {
+  customActions?: Array<Action | null>;
+}
+
+interface RawPetConfig {
+  codex?: {
+    enabled?: boolean;
+  };
+  menu?: RawPetMenuConfig;
+}
+
 interface RawConfig {
   pages: RawPage[];
   theme?: ThemeConfig;
-  pet?: PetConfig;
+  pet?: RawPetConfig;
+}
+
+export function normalizePetCustomActions(actions?: Array<Action | null>): Array<Action | null> {
+  return Array.from({ length: PET_CUSTOM_ACTION_SLOT_COUNT }, (_, index) => actions?.[index] ?? null);
+}
+
+function normalizePetConfig(pet?: RawPetConfig): PetConfig {
+  return {
+    ...DEFAULT_PET_CONFIG,
+    ...pet,
+    codex: {
+      enabled: false,
+      ...pet?.codex,
+    },
+    menu: {
+      customActions: normalizePetCustomActions(pet?.menu?.customActions),
+    },
+  };
 }
 
 // 将 Rust 返回的原始 config 转换为前端 KeyboardConfig 格式
-function normalizeConfig(raw: RawConfig): KeyboardConfig {
+export function normalizeConfig(raw: RawConfig): KeyboardConfig {
   return {
     pages: raw.pages.map((p) => ({
       name: p.name,
@@ -23,25 +53,12 @@ function normalizeConfig(raw: RawConfig): KeyboardConfig {
       ),
     })),
     theme: raw.theme ?? { ...DEFAULT_THEME },
-    pet: {
-      ...DEFAULT_PET_CONFIG,
-      ...raw.pet,
-      codex: {
-        enabled: false,
-        ...raw.pet?.codex,
-      },
-    },
+    pet: normalizePetConfig(raw.pet),
   };
 }
 
-export async function loadConfig(): Promise<KeyboardConfig> {
-  const raw = await invoke<RawConfig>("load_config");
-  return normalizeConfig(raw);
-}
-
-export async function saveConfig(config: KeyboardConfig): Promise<void> {
-  // 将前端格式转回 Rust 期望的格式
-  const raw: RawConfig = {
+export function toRawConfig(config: KeyboardConfig): RawConfig {
+  return {
     pages: config.pages.map((p) => ({
       name: p.name,
       keys: Object.fromEntries(
@@ -51,9 +68,22 @@ export async function saveConfig(config: KeyboardConfig): Promise<void> {
       ),
     })),
     theme: config.theme,
-    pet: config.pet,
+    pet: config.pet ? {
+      ...config.pet,
+      menu: {
+        customActions: normalizePetCustomActions(config.pet.menu?.customActions),
+      },
+    } : normalizePetConfig(undefined),
   };
-  await invoke("save_config", { config: raw });
+}
+
+export async function loadConfig(): Promise<KeyboardConfig> {
+  const raw = await invoke<RawConfig>("load_config");
+  return normalizeConfig(raw);
+}
+
+export async function saveConfig(config: KeyboardConfig): Promise<void> {
+  await invoke("save_config", { config: toRawConfig(config) });
 }
 
 export async function getConfigPath(): Promise<string> {
