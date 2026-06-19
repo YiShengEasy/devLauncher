@@ -59,22 +59,26 @@ export function ClipboardApp() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const handleCopyText = async (text: string) => {
+  const handleCopyText = async (text: string, options?: { keepOpen?: boolean }) => {
     try {
       await invoke("set_clipboard_text", { text });
+      if (!options?.keepOpen) {
+        getCurrentWindow().hide().catch(() => {});
+      }
     } catch (e) {
       console.error(e);
     }
-    getCurrentWindow().hide().catch(() => {});
   };
 
-  const handleCopyImage = async (data: string) => {
+  const handleCopyImage = async (data: string, options?: { keepOpen?: boolean }) => {
     try {
       await invoke("set_clipboard_image", { data });
+      if (!options?.keepOpen) {
+        getCurrentWindow().hide().catch(() => {});
+      }
     } catch (e) {
       console.error(e);
     }
-    getCurrentWindow().hide().catch(() => {});
   };
 
   const handleClear = async () => {
