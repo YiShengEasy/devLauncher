@@ -1,4 +1,4 @@
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 use crate::builtins::terminal::TerminalState;
 use crate::platform::{
@@ -106,12 +106,15 @@ fn stage_terminal_command(
     term_state: &tauri::State<'_, TerminalState>,
     command: String,
 ) -> Result<(), String> {
-    *term_state.pending_cmd.lock().unwrap() = Some(command);
     if let Some(win) = app.get_webview_window("terminal") {
         if !win.is_visible().unwrap_or(false) {
             win.show().map_err(|e| e.to_string())?;
         }
         win.set_focus().map_err(|e| e.to_string())?;
+        app.emit_to("terminal", "terminal-execute", command.clone())
+            .map_err(|e| e.to_string())?;
+    } else {
+        *term_state.pending_cmd.lock().unwrap() = Some(command);
     }
     Ok(())
 }
