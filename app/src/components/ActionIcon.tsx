@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import type { Action, ActionType, AppAction, BuiltinAction, BuiltinFeature, UrlAction } from "@/types/actions";
+import type { Action, ActionType, AppAction, BuiltinAction, BuiltinFeature, ScriptAction, UrlAction } from "@/types/actions";
 import { ACTION_TYPE_META } from "@/types/actions";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
@@ -136,6 +136,14 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
     return (
       <LineIconShell size={size} color={meta.color}>
         <BuiltinIcon feature={feature} size={size} />
+      </LineIconShell>
+    );
+  }
+
+  if (action.type === "script" && (action as ScriptAction).shell === "terminal") {
+    return (
+      <LineIconShell size={size} color={meta.color}>
+        <BuiltinIcon feature="terminal" size={size} />
       </LineIconShell>
     );
   }

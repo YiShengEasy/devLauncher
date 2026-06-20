@@ -101,6 +101,8 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
   const action = binding?.action ?? null;
   const meta = action ? ACTION_TYPE_META[action.type] : null;
   const keyBgOpacity = useKeyboardStore((s) => s.theme.keyBgOpacity);
+  const showActionName = action?.type === "script";
+  const actionIconSize = showActionName ? 24 : KEY_ICON_SIZE;
 
   useEffect(() => {
     setHovered(false);
@@ -231,8 +233,29 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
               filter: `drop-shadow(0 0 5px ${accent}66) drop-shadow(0 1px 2px rgba(0,0,0,0.42))`,
             }}
           >
-            <ActionIcon action={action} size={KEY_ICON_SIZE} />
+            <ActionIcon action={action} size={actionIconSize} />
           </div>
+        )}
+        {action && showActionName && (
+          <span
+            style={{
+              maxWidth: "58px",
+              marginTop: 4,
+              padding: "0 3px",
+              fontSize: 10,
+              fontWeight: 640,
+              lineHeight: 1.15,
+              letterSpacing: 0,
+              color: "rgba(252,253,255,0.9)",
+              textAlign: "center",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              pointerEvents: "none",
+            }}
+          >
+            {action.name}
+          </span>
         )}
       </div>
       <Tooltip
