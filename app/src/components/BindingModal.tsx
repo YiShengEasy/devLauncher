@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import type {
-  Action, ActionType, KeyId,
+  Action, ActionType,
   AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith, SystemCommand
 } from "@/types/actions";
 import { ACTION_TYPE_META, SYSTEM_PRESETS, BUILTIN_FEATURES } from "@/types/actions";
@@ -13,7 +13,8 @@ import { useReducedMotion } from "@/motion/useReducedMotion";
 import { isMacPlatform } from "@/platform/shortcuts";
 
 interface BindingModalProps {
-  keyId: KeyId;
+  keyId: string;
+  bindingLabel?: string;
   initialAction?: Action | null;
   onClose: () => void;
   onSave: (action: Action) => void;
@@ -63,7 +64,9 @@ function getUrlOrigin(value: string): string | null {
   }
 }
 
-export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }: BindingModalProps) {
+export function BindingModal({ keyId, bindingLabel, initialAction, onClose, onSave, onClear }: BindingModalProps) {
+  const displayLabel = bindingLabel ?? keyId;
+  const title = bindingLabel ? "绑定" : "绑定按键";
   const isMac = isMacPlatform();
   const [activeType, setActiveType] = useState<ActionType>(initialAction?.type ?? "app");
   const [saveError, setSaveError] = useState("");
@@ -290,7 +293,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
           borderBottom: "1px solid rgba(255,255,255,0.08)",
         }}>
           <span style={{ fontSize: 14, fontWeight: 600, color: "#e8eaf0" }}>
-            绑定按键 <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>[{keyId}]</span>
+            {title} <span style={{ color: "rgba(255,255,255,0.4)", fontWeight: 400 }}>[{displayLabel}]</span>
           </span>
           <button
             onClick={onClose}
@@ -686,7 +689,7 @@ export function BindingModal({ keyId, initialAction, onClose, onSave, onClear }:
             {onClear && initialAction && (
               <button
                 onClick={async () => {
-                  if (!window.confirm(`清除 ${keyId} 的绑定？已保存的相关密码也会删除。`)) return;
+                  if (!window.confirm(`清除 ${displayLabel} 的绑定？已保存的相关密码也会删除。`)) return;
                   // Also delete stored SSH password when clearing binding
                   if (initialAction.type === "ssh" && (initialAction as SshAction).hasPassword) {
                     const a = initialAction as SshAction;

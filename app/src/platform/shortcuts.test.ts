@@ -16,7 +16,7 @@ describe("shortcut platform mapping", () => {
 
   it("keeps Windows shortcut behavior unchanged", () => {
     expect(getGlobalShortcuts("Win32")).toEqual({
-      keyboard: "Ctrl+Alt+Space",
+      keyboard: "Ctrl+Alt+J",
       clipboard: "Ctrl+Alt+V",
       search: "Ctrl+Alt+K",
       pet: "Ctrl+Alt+P",
@@ -27,7 +27,7 @@ describe("shortcut platform mapping", () => {
 
   it("uses Cmd+Opt shortcuts on macOS", () => {
     expect(getGlobalShortcuts("MacIntel")).toEqual({
-      keyboard: "CommandOrControl+Option+Space",
+      keyboard: "CommandOrControl+Option+J",
       clipboard: "CommandOrControl+Option+V",
       search: "CommandOrControl+Option+K",
       pet: "CommandOrControl+Option+P",
