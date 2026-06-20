@@ -9,7 +9,7 @@ export function isMacPlatform(platform = navigator.platform): boolean {
 export function getGlobalShortcuts(platform = navigator.platform): GlobalShortcutMap {
   if (isMacPlatform(platform)) {
     return {
-      keyboard: "CommandOrControl+Option+Space",
+      keyboard: "CommandOrControl+Option+J",
       clipboard: "CommandOrControl+Option+V",
       search: "CommandOrControl+Option+K",
       pet: "CommandOrControl+Option+P",
@@ -17,7 +17,7 @@ export function getGlobalShortcuts(platform = navigator.platform): GlobalShortcu
   }
 
   return {
-    keyboard: "Ctrl+Alt+Space",
+    keyboard: "Ctrl+Alt+J",
     clipboard: "Ctrl+Alt+V",
     search: "Ctrl+Alt+K",
     pet: "Ctrl+Alt+P",
@@ -27,7 +27,7 @@ export function getGlobalShortcuts(platform = navigator.platform): GlobalShortcu
 export function getGlobalShortcutLabels(platform = navigator.platform): GlobalShortcutMap {
   if (isMacPlatform(platform)) {
     return {
-      keyboard: "Cmd+Opt+Space",
+      keyboard: "Cmd+Opt+J",
       clipboard: "Cmd+Opt+V",
       search: "Cmd+Opt+K",
       pet: "Cmd+Opt+P",

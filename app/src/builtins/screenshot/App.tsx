@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
-import { CaptureIcon, CopyIcon, DownloadIcon, RetryIcon } from "@/icons/controlIcons";
+import { CaptureIcon, CheckIcon, CloseIcon, CopyIcon, DownloadIcon, RetryIcon } from "@/icons/controlIcons";
 import { addScreenshot, takePendingScreenshotEdit, updateScreenshot } from "../screenshotStore";
 import type { StoredScreenshotAnnotation } from "../screenshotStore";
 
@@ -29,10 +29,8 @@ type Ann =
 
 // 鈹€鈹€ Constants 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const PRESET_COLORS = [
-  "#ffffff", "#ff3b30", "#ff9500", "#ffcc00",
-  "#34c759", "#007aff", "#af52de", "#1c1c1e",
+  "#ff3b30", "#ffcc00", "#34c759", "#007aff",
 ];
-const LINE_WIDTHS = [2, 4, 6];
 const HANDLE_R = 5;
 const SEL_COLOR = "rgba(78, 186, 255, 0.9)";
 const BADGE_R = 13;
@@ -599,10 +597,8 @@ const TOOLS: { key: Tool; icon: () => ReactElement; title: string }[] = [
 interface ToolbarProps {
   activeTool: Tool | null;
   activeColor: string;
-  activeLw: number;
   onTool: (t: Tool | null) => void;
   onColor: (c: string) => void;
-  onLw: (lw: number) => void;
   onUndo: () => void;
   onCopy: () => void;
   onOcr: () => void;
@@ -615,8 +611,8 @@ interface ToolbarProps {
 }
 
 function Toolbar({
-  activeTool, activeColor, activeLw,
-  onTool, onColor, onLw,
+  activeTool, activeColor,
+  onTool, onColor,
   onUndo, onCopy, onOcr, onSave, onPin,
   onCancel, onConfirm,
   ocrBusy,
@@ -658,7 +654,8 @@ function Toolbar({
         alignItems: "center",
         gap: 2,
         padding: "7px 12px",
-        maxWidth: "calc(100vw - 24px)",
+        maxWidth: "calc(100vw - 16px)",
+        overflowX: "auto",
         overflowY: "hidden",
         background: "rgba(20, 20, 24, 0.92)",
         backdropFilter: "blur(32px)",
@@ -726,30 +723,6 @@ function Toolbar({
 
       <div style={sep} />
 
-      {/* Line width pills */}
-      {LINE_WIDTHS.map(lw => (
-        <button
-          key={lw}
-          title={`线宽 ${lw}px`}
-          onClick={() => onLw(lw)}
-          style={{
-            ...baseBtn,
-            width: 32,
-            background: activeLw === lw ? "rgba(255,255,255,0.12)" : "transparent",
-            border: activeLw === lw ? "1px solid rgba(255,255,255,0.22)" : "1px solid transparent",
-          }}
-        >
-          <div style={{
-            width: 16,
-            height: lw + 1,
-            background: "rgba(255,255,255,0.82)",
-            borderRadius: (lw + 1) / 2,
-          }} />
-        </button>
-      ))}
-
-      <div style={sep} />
-
       {/* Actions */}
       <button title="撤销 (Ctrl+Z)" onClick={onUndo} style={baseBtn}>
         <RetryIcon size={18} />
@@ -766,40 +739,20 @@ function Toolbar({
 
       <div style={sep} />
 
-      {/* Cancel 鈥?red Mac button */}
       <button
         title="取消 (Esc)"
         onClick={onCancel}
-        style={{
-          ...baseBtn,
-          width: 30,
-          height: 30,
-          borderRadius: "50%",
-          background: "rgba(255,59,48,0.85)",
-          color: "white",
-          fontSize: 13,
-          fontWeight: "bold",
-        }}
+        style={baseBtn}
       >
-        x
+        <CloseIcon size={18} />
       </button>
 
-      {/* Confirm 鈥?green Mac button */}
       <button
-        title="完成保存 (Enter)"
+        title="完成并复制 (Enter)"
         onClick={onConfirm}
-        style={{
-          ...baseBtn,
-          width: 30,
-          height: 30,
-          borderRadius: "50%",
-          background: "rgba(52,199,89,0.88)",
-          color: "white",
-          fontSize: 15,
-          fontWeight: "bold",
-        }}
+        style={baseBtn}
       >
-        ✓
+        <CheckIcon size={18} />
       </button>
     </div>
   );
@@ -818,7 +771,6 @@ export function ScreenshotApp() {
   const [selection,   setSelState]    = useState<Rect | null>(null);
   const [activeTool,  setToolState]   = useState<Tool | null>(null);
   const [activeColor, setColorState]  = useState("#ff3b30");
-  const [activeLw,    setLwState]     = useState(2);
   const [textInput,   setTextInput]   = useState<TextInputState | null>(null);
   const [toast,       setToast]       = useState<string | null>(null);
   const [cursorPos,   setCursorPos]   = useState<Pt | null>(null);
@@ -865,16 +817,6 @@ export function ScreenshotApp() {
     if (idx !== null && annsRef.current[idx] && "color" in annsRef.current[idx]) {
       undoRef.current.push([...annsRef.current]);
       annsRef.current = annsRef.current.map((ann, i) => i === idx && "color" in ann ? { ...ann, color: c } : ann);
-      doRender();
-    }
-  };
-  const setLw    = (lw: number)         => {
-    lwRef.current = lw;
-    setLwState(lw);
-    const idx = selectedAnnIndexRef.current;
-    if (idx !== null && annsRef.current[idx] && "lw" in annsRef.current[idx]) {
-      undoRef.current.push([...annsRef.current]);
-      annsRef.current = annsRef.current.map((ann, i) => i === idx && "lw" in ann ? { ...ann, lw } : ann);
       doRender();
     }
   };
@@ -1535,15 +1477,9 @@ export function ScreenshotApp() {
 
   const handleConfirm = async () => {
     commitTextInput();
-    const out = buildBaseResult();
-    if (!out) return;
-    await handleCopy();
-    const saved = await saveToScreenshotAiLibrary(out);
-    if (saved) {
-      await openScreenshotIssueReport();
+    const copied = await handleCopy();
+    if (copied) {
       handleCancel();
-    } else {
-      showToast("保存失败");
     }
   };
 
@@ -1618,17 +1554,18 @@ export function ScreenshotApp() {
     const n    = norm(selection);
     const winW = window.innerWidth;
     const winH = window.innerHeight;
-    const TB_H = 52;
-    const GAP  = 12;
-    const TB_W = Math.min(820, winW - GAP * 2);
+    const TB_H = 48;
+    const GAP  = 8;
+    const TB_W = Math.min(704, winW - GAP * 2);
 
     let top: number;
-    if (n.y + n.h + TB_H + GAP < winH)       top = n.y + n.h + GAP;
-    else if (n.y - TB_H - GAP > 0)            top = n.y - TB_H - GAP;
-    else                                       top = Math.max(GAP, n.y + n.h - TB_H - 4);
+    if (n.y + n.h + TB_H + GAP <= winH) top = n.y + n.h + GAP;
+    else if (n.y - TB_H - GAP >= 0) top = n.y - TB_H - GAP;
+    else top = n.y + n.h - TB_H - 4;
 
+    top = Math.max(GAP, Math.min(winH - TB_H - GAP, top));
     const left = Math.max(GAP, Math.min(winW - TB_W - GAP, n.x + n.w / 2 - TB_W / 2));
-    return { top, left };
+    return { top, left, width: TB_W };
   };
 
   const tbStyle = getToolbarStyle();
@@ -1734,10 +1671,8 @@ export function ScreenshotApp() {
         <Toolbar
           activeTool={activeTool}
           activeColor={activeColor}
-          activeLw={activeLw}
           onTool={setTool}
           onColor={setColor}
-          onLw={setLw}
           onUndo={handleUndo}
           onCopy={handleCopy}
           onOcr={handleOcr}

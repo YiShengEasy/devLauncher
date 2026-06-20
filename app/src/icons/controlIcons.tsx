@@ -29,8 +29,24 @@ export function MinimizeIcon(props: IconProps) {
 export function PinIcon(props: IconProps) {
   return (
     <IconBase {...withIconColor(props, iconColors.settings)}>
-      <path d="M8.5 4.5h7l-.9 4.6 3.2 3.2-2 2-3.2-3.2L8 12l-3.5 3.5" />
-      <path d="m9.6 14.4-3.9 3.9" opacity={0.65} />
+      <path
+        d="M5.4 4.6h9.2l4 4v10.2a1.4 1.4 0 0 1-1.4 1.4H5.4A1.4 1.4 0 0 1 4 18.8V6a1.4 1.4 0 0 1 1.4-1.4Z"
+        fill="#f8fafc"
+        stroke="rgba(148,163,184,0.92)"
+        strokeWidth={1.35}
+      />
+      <path d="M14.6 4.6v4h4" fill="#e2e8f0" stroke="rgba(148,163,184,0.88)" strokeWidth={1.2} />
+      <path d="M7.6 14.4h7.8M7.6 16.8h5.5" stroke="rgba(100,116,139,0.48)" strokeWidth={1.15} />
+      <path
+        d="M12.1 8.75 9.85 11l3.15 3.15 2.25-2.25Z"
+        fill="#fda4af"
+        stroke="#9f1239"
+        strokeWidth={1.15}
+      />
+      <circle cx="11.4" cy="8.05" r="2.65" fill="#fb7185" stroke="#9f1239" strokeWidth={1.15} />
+      <path d="m13.6 13.65 3 3" stroke="#334155" strokeWidth={1.7} />
+      <path d="m16.95 17 1.05 1.95" stroke="#334155" strokeWidth={1.45} />
+      <path d="M10.45 7.2c.3-.42.78-.66 1.42-.72" stroke="#fecdd3" strokeWidth={1.05} />
     </IconBase>
   );
 }

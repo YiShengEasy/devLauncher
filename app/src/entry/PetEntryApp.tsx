@@ -5,7 +5,6 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { loadConfig } from "@/api/config";
 import { ActionIcon } from "@/components/ActionIcon";
-import { WindowPinButton } from "@/components/WindowPinButton";
 import type { Action } from "@/types/actions";
 import gsap from "gsap";
 import { KeyboardIcon } from "@/icons/entryIcons";
@@ -939,17 +938,6 @@ export function PetEntryApp() {
           </>
         )}
       </button>
-      <WindowPinButton
-        style={{
-          position: "absolute",
-          left: 2,
-          bottom: 0,
-          zIndex: 8,
-          width: 22,
-          height: 20,
-          pointerEvents: "auto",
-        }}
-      />
     </div>
   );
 }
