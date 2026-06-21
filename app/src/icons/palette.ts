@@ -9,6 +9,7 @@ export const iconColors = {
   script: "#a78bfa",
   system: "#f97316",
   builtin: "#f472b6",
+  plugin: "#a7f3d0",
 
   clipboard: "#22d3ee",
   json: "#a78bfa",
