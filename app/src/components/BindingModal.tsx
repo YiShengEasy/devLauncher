@@ -1,9 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import type {
   Action, ActionType,
-  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith, SystemCommand
+  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith, SystemCommand, PluginAction
 } from "@/types/actions";
 import { ACTION_TYPE_META, SYSTEM_PRESETS, BUILTIN_FEATURES } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
@@ -11,6 +11,8 @@ import { animateDialogEnter, animateListEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
 import { isMacPlatform } from "@/platform/shortcuts";
+import { listInstalledPlugins } from "@/plugins/api";
+import type { InstalledPlugin } from "@/plugins/types";
 
 interface BindingModalProps {
   keyId: string;
@@ -21,7 +23,7 @@ interface BindingModalProps {
   onClear?: () => void;
 }
 
-const TABS: ActionType[] = ["app", "folder", "url", "ssh", "script", "system", "builtin"];
+const TABS: ActionType[] = ["app", "folder", "url", "ssh", "script", "system", "builtin", "plugin"];
 const MAC_UNSUPPORTED_SYSTEM_COMMANDS = new Set<SystemCommand>(["taskmanager", "shutdown", "restart"]);
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -110,6 +112,39 @@ export function BindingModal({ keyId, bindingLabel, initialAction, onClose, onSa
   const [builtinFeature, setBuiltinFeature] = useState<BuiltinFeature>(
     (initialAction as BuiltinAction)?.feature ?? "clipboard"
   );
+  const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
+  const [pluginLoadError, setPluginLoadError] = useState("");
+  const pluginOptions = useMemo(() => (
+    plugins
+      .filter((plugin) => plugin.enabled)
+      .flatMap((plugin) => plugin.manifest.actions.map((pluginAction) => ({
+        plugin,
+        action: pluginAction,
+        key: `${plugin.id}:${pluginAction.id}`,
+      })))
+  ), [plugins]);
+  const initialPluginAction = initialAction?.type === "plugin" ? initialAction as PluginAction : null;
+  const firstPluginOptionKey = pluginOptions[0]?.key ?? "";
+  const [pluginSelection, setPluginSelection] = useState(
+    initialPluginAction ? `${initialPluginAction.pluginId}:${initialPluginAction.actionId}` : "",
+  );
+
+  useEffect(() => {
+    listInstalledPlugins()
+      .then((items) => {
+        setPlugins(items);
+        setPluginLoadError("");
+      })
+      .catch((error) => {
+        setPlugins([]);
+        setPluginLoadError(String(error));
+      });
+  }, []);
+
+  useEffect(() => {
+    if (pluginSelection || !firstPluginOptionKey) return;
+    setPluginSelection(firstPluginOptionKey);
+  }, [firstPluginOptionKey, pluginSelection]);
 
   useGsapContext(rootRef, () => {
     if (!rootRef.current) return;
@@ -120,7 +155,7 @@ export function BindingModal({ keyId, bindingLabel, initialAction, onClose, onSa
     const children = listRef.current?.children;
     if (!children?.length) return;
     animateListEnter(Array.from(children), reducedMotion);
-  }, [activeType, folderOpenWith, webAutofill, webHasPassword, sshHasPassword, reducedMotion]);
+  }, [activeType, folderOpenWith, webAutofill, webHasPassword, sshHasPassword, pluginOptions.length, reducedMotion]);
 
   const systemPresets = isMac
     ? SYSTEM_PRESETS.filter((preset) => !MAC_UNSUPPORTED_SYSTEM_COMMANDS.has(preset.command))
@@ -231,6 +266,20 @@ export function BindingModal({ keyId, bindingLabel, initialAction, onClose, onSa
       case "builtin": {
         const feat = BUILTIN_FEATURES[builtinFeature];
         action = { type: "builtin", name: feat.name, feature: builtinFeature } as BuiltinAction;
+        break;
+      }
+      case "plugin": {
+        const selected = pluginOptions.find((option) => option.key === pluginSelection);
+        if (!selected) {
+          setSaveError("请先安装并启用插件。");
+          return;
+        }
+        action = {
+          type: "plugin",
+          name: name || selected.action.title,
+          pluginId: selected.plugin.id,
+          actionId: selected.action.id,
+        } as PluginAction;
         break;
       }
     }
@@ -673,6 +722,56 @@ export function BindingModal({ keyId, bindingLabel, initialAction, onClose, onSa
                   <BuiltinIcon feature={feat} size={30} />
                   <span style={{ fontWeight: 600 }}>{meta.name}</span>
                   <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", textAlign: "center", lineHeight: 1.4 }}>{meta.description}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Plugin */}
+          {activeType === "plugin" && (
+            <div style={{ display: "grid", gap: 8 }}>
+              {pluginLoadError && (
+                <div style={{ fontSize: 12, color: "rgba(248,113,113,0.9)", lineHeight: 1.5 }}>
+                  {pluginLoadError}
+                </div>
+              )}
+              {pluginOptions.length === 0 ? (
+                <div style={{
+                  padding: 12,
+                  borderRadius: 9,
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "rgba(255,255,255,0.04)",
+                  color: "rgba(255,255,255,0.5)",
+                  fontSize: 12,
+                  lineHeight: 1.6,
+                }}>
+                  暂无可绑定插件。请先在设置的“插件中心”安装并启用插件。
+                </div>
+              ) : pluginOptions.map(({ plugin, action: pluginAction, key }) => (
+                <button
+                  key={key}
+                  onClick={() => {
+                    setPluginSelection(key);
+                    if (!name) setName(pluginAction.title);
+                  }}
+                  type="button"
+                  style={{
+                    padding: "12px 10px",
+                    borderRadius: 10,
+                    cursor: "pointer",
+                    border: `1px solid ${pluginSelection === key ? "rgba(167,243,208,0.55)" : "rgba(255,255,255,0.08)"}`,
+                    background: pluginSelection === key ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)",
+                    color: "#e8eaf0",
+                    textAlign: "left",
+                    display: "grid",
+                    gap: 5,
+                    outline: "none",
+                  }}
+                >
+                  <span style={{ fontSize: 12, fontWeight: 800 }}>{pluginAction.title}</span>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.42)", lineHeight: 1.4 }}>
+                    {plugin.manifest.name} / {plugin.id} / {plugin.version}
+                  </span>
                 </button>
               ))}
             </div>
