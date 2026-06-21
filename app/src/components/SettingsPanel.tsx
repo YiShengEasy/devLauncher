@@ -6,6 +6,7 @@ import { saveConfig } from "@/api/config";
 import { ActionIcon } from "@/components/ActionIcon";
 import { BindingModal } from "@/components/BindingModal";
 import { MacWindowControls } from "@/components/MacWindowControls";
+import { PluginCenter } from "@/components/PluginCenter";
 import { writePetCodexEnabled } from "@/entry/petCodexStatus";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
@@ -50,7 +51,7 @@ const THEME_PRESETS: { name: string; theme: ThemeConfig }[] = [
   },
 ];
 
-type SettingsSection = "appearance" | "webaccounts" | "entries";
+type SettingsSection = "appearance" | "webaccounts" | "entries" | "plugins";
 
 interface WebAccountEntry {
   id: string;
@@ -448,6 +449,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           ["appearance", "外观"],
           ["webaccounts", "网页账号"],
           ["entries", "入口"],
+          ["plugins", "插件"],
         ].map(([id, label]) => (
           <button
             key={id}
@@ -484,7 +486,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.84)" }}>
-            {activeSection === "appearance" ? "外观设置" : activeSection === "entries" ? "入口设置" : "URL 与账号密码本"}
+            {activeSection === "appearance"
+              ? "外观设置"
+              : activeSection === "entries"
+                ? "入口设置"
+                : activeSection === "plugins"
+                  ? "插件中心"
+                  : "URL 与账号密码本"}
           </div>
           <MacWindowControls onClose={onClose} closeTitle="关闭设置" />
         </header>
@@ -661,6 +669,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             </section>
+          ) : activeSection === "plugins" ? (
+            <PluginCenter />
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 0.9fr) minmax(280px, 1.1fr)", gap: 12, minHeight: 0 }}>
               <section style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, overflow: "hidden", minHeight: 0 }}>
