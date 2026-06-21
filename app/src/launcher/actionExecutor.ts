@@ -20,6 +20,14 @@ export async function executeAction(
     return;
   }
 
+  if (action.type === "plugin") {
+    await deps.invoke("open_plugin_window", {
+      pluginId: action.pluginId,
+      actionId: action.actionId,
+    });
+    return;
+  }
+
   await deps.invoke("execute_action", { action });
 }
 

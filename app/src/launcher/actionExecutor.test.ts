@@ -30,6 +30,25 @@ describe("actionExecutor", () => {
     expect(calls).toEqual([["execute_action", { action }]]);
   });
 
+  it("opens plugin actions through the plugin window command", async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+
+    await executeAction(
+      {
+        type: "plugin",
+        name: "Open Hello",
+        pluginId: "devlauncher.tools.hello",
+        actionId: "open",
+      },
+      { invoke },
+    );
+
+    expect(invoke).toHaveBeenCalledWith("open_plugin_window", {
+      pluginId: "devlauncher.tools.hello",
+      actionId: "open",
+    });
+  });
+
   it("executes normal actions through execute_action", async () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     const record: LauncherActionRecord = {
