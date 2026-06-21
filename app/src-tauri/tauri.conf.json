@@ -166,6 +166,21 @@
         "visible": false
       },
       {
+        "label": "plugin-host",
+        "url": "index.html?entry=plugin-host",
+        "title": "DevLauncher Plugin",
+        "width": 860,
+        "height": 620,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "alwaysOnTop": false,
+        "center": true,
+        "skipTaskbar": false,
+        "visible": false
+      },
+      {
         "label": "search",
         "url": "index.html?entry=search",
         "title": "DevLauncher Search",
