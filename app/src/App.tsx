@@ -10,9 +10,10 @@ import { KeyboardPanel } from "@/components/KeyboardPanel";
 import { BindingModal } from "@/components/BindingModal";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { MacWindowControls } from "@/components/MacWindowControls";
-import type { Action, KeyId, BuiltinAction, KeyboardConfig, ThemeConfig } from "@/types/actions";
+import type { Action, KeyId, KeyboardConfig, ThemeConfig } from "@/types/actions";
 import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon } from "@/icons";
 import { PixelPetIcon, SearchIcon } from "@/icons/entryIcons";
+import { executeAction } from "@/launcher/actionExecutor";
 import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
 import { motionDuration, motionEase } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
@@ -23,10 +24,6 @@ import "./index.css";
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
 const PET_ACTION_STATE_KEY = "devlauncher:pet-action-state";
 const GLOBAL_SHORTCUTS = getGlobalShortcuts();
-
-function builtinToggleCommand(feature: BuiltinAction["feature"]): string {
-  return feature === "json" ? "toggle_json_helper_window" : `toggle_${feature}_window`;
-}
 
 function setPetActionState(action: "cozy" | "keyboardJump") {
   window.localStorage.setItem(PET_ACTION_STATE_KEY, action);
@@ -310,21 +307,14 @@ export default function App() {
     const page = config?.pages[activePageIndex];
     const action = page?.keys[keyId]?.action;
     if (!action) return;
-    // Handle builtin actions locally
-    if (action.type === "builtin") {
-      const b = action as BuiltinAction;
-      invoke(builtinToggleCommand(b.feature)).catch((e) => {
-        console.error("builtin action failed:", e);
-        if (b.feature === "screenshot") {
-          window.alert(`截图失败：${String(e)}`);
-        }
-      });
-      return;
-    }
+
     try {
-      await invoke("execute_action", { action });
+      await executeAction(action, { invoke });
     } catch (e) {
-      console.error("execute_action failed:", e);
+      console.error("action execution failed:", e);
+      if (action.type === "builtin" && action.feature === "screenshot") {
+        window.alert(`截图失败：${String(e)}`);
+      }
     }
   }, [config, activePageIndex]);
 
@@ -368,17 +358,12 @@ export default function App() {
         // Capture action value for the callback closure
         const capturedAction = action;
         const handler = makeDebounced(async () => {
-          if (capturedAction.type === "builtin") {
-            const feature = (capturedAction as BuiltinAction).feature;
-            invoke(builtinToggleCommand(feature)).catch((e) => {
-              console.error("builtin shortcut failed:", e);
-              if (feature === "screenshot") {
-                window.alert(`截图失败：${String(e)}`);
-              }
-            });
-            return;
-          }
-          invoke("execute_action", { action: capturedAction }).catch(console.error);
+          executeAction(capturedAction, { invoke }).catch((e) => {
+            console.error("shortcut action failed:", e);
+            if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
+              window.alert(`截图失败：${String(e)}`);
+            }
+          });
         });
         try {
           await registerShortcut(shortcut, handler);
