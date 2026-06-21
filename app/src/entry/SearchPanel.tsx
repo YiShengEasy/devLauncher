@@ -165,6 +165,28 @@ export function SearchPanel({
     }
   }
 
+  function renderResultIcon(record: LauncherActionRecord) {
+    if (record.source !== "plugin") return null;
+    return (
+      <div
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 8,
+          display: "grid",
+          placeItems: "center",
+          background: "rgba(16,185,129,0.16)",
+          color: "#a7f3d0",
+          fontSize: 14,
+          fontWeight: 800,
+          flexShrink: 0,
+        }}
+      >
+        P
+      </div>
+    );
+  }
+
   function renderQuickIcon(record: LauncherActionRecord) {
     if (record.action) {
       return <ActionIcon action={record.action} size={30} />;
@@ -210,9 +232,14 @@ export function SearchPanel({
               }}
               type="button"
             >
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{record.title}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>
-                {record.subtitle ?? record.source}
+              <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                {renderResultIcon(record)}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{record.title}</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", marginTop: 3 }}>
+                    {record.subtitle ?? record.source}
+                  </div>
+                </div>
               </div>
             </button>
           ))}

@@ -11,6 +11,9 @@ import {
 } from "@/launcher/actionIndex";
 import { executeLauncherAction } from "@/launcher/actionExecutor";
 import { loadRecentActions, recordRecentAction } from "@/launcher/recentActions";
+import { listInstalledPlugins } from "@/plugins/api";
+import { buildPluginActionRecords } from "@/plugins/registry";
+import type { InstalledPlugin } from "@/plugins/types";
 import { SearchPanel } from "./SearchPanel";
 import { SEARCH_PREFILL_EVENT, type SearchPrefillPayload } from "./entryEvents";
 
@@ -25,11 +28,18 @@ function mergeActionRecords(records: LauncherActionRecord[]): LauncherActionReco
 
 export function SearchEntryApp() {
   const [config, setConfig] = useState<KeyboardConfig | null>(null);
+  const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
   const [recent, setRecent] = useState<LauncherActionRecord[]>([]);
   const [initialQuery, setInitialQuery] = useState("");
 
   useEffect(() => {
     loadConfig().then(setConfig).catch(console.error);
+    listInstalledPlugins()
+      .then(setPlugins)
+      .catch((error) => {
+        console.warn("[DevLauncher] listInstalledPlugins failed:", error);
+        setPlugins([]);
+      });
     setRecent(loadRecentActions());
 
     const handler = (event: Event) => {
@@ -41,15 +51,18 @@ export function SearchEntryApp() {
     return () => window.removeEventListener(SEARCH_PREFILL_EVENT, handler);
   }, []);
 
+  const pluginRecords = useMemo(() => buildPluginActionRecords(plugins), [plugins]);
   const records = useMemo(() => mergeActionRecords([
     ...recent,
     ...buildKeyboardActionRecords(config),
     ...buildBuiltinActionRecords(BUILTIN_REGISTRY.map((item) => item.manifest)),
-  ]), [config, recent]);
+    ...pluginRecords,
+  ]), [config, pluginRecords, recent]);
   const quickActions = useMemo(() => mergeActionRecords([
     ...buildBuiltinActionRecords(BUILTIN_REGISTRY.map((item) => item.manifest)),
     ...buildKeyboardActionRecords(config),
-  ]).slice(0, 18), [config]);
+    ...pluginRecords,
+  ]).slice(0, 18), [config, pluginRecords]);
 
   async function execute(record: LauncherActionRecord) {
     await executeLauncherAction(record, {
