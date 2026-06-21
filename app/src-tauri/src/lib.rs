@@ -6,6 +6,7 @@ mod keyboard_control_tap;
 mod ocr;
 mod platform;
 mod plugin_manifest;
+mod plugin_manager;
 mod types;
 mod utils;
 mod window_pinning;
@@ -69,6 +70,14 @@ pub fn run() {
             config::get_config_path,
             platform::get_platform_capabilities,
             platform::get_default_shell,
+            plugin_manager::list_installed_plugins,
+            plugin_manager::install_plugin_from_zip,
+            plugin_manager::fetch_marketplace_index,
+            plugin_manager::install_plugin_from_market,
+            plugin_manager::set_plugin_enabled,
+            plugin_manager::uninstall_plugin,
+            plugin_manager::get_plugin_entry_url,
+            plugin_manager::open_plugin_window,
             actions::execute_action,
             actions::save_ssh_password,
             actions::delete_ssh_password,
