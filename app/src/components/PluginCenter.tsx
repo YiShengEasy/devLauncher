@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { emit } from "@tauri-apps/api/event";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import {
   fetchMarketplaceIndex,
@@ -53,6 +54,10 @@ export function PluginCenter() {
     setPlugins(await listInstalledPlugins());
   }
 
+  async function notifyPluginsChanged() {
+    await emit("plugins-changed");
+  }
+
   useEffect(() => {
     refreshInstalled().catch((error) => setStatus(String(error)));
   }, []);
@@ -84,6 +89,7 @@ export function PluginCenter() {
     try {
       await installPluginFromZip(result);
       await refreshInstalled();
+      await notifyPluginsChanged();
       setStatus("插件已安装。");
     } catch (error) {
       setStatus(String(error));
@@ -94,6 +100,7 @@ export function PluginCenter() {
     try {
       await installPluginFromMarket(entry);
       await refreshInstalled();
+      await notifyPluginsChanged();
       setStatus("插件已安装。");
     } catch (error) {
       setStatus(String(error));
@@ -103,6 +110,7 @@ export function PluginCenter() {
   async function toggle(plugin: InstalledPlugin) {
     try {
       setPlugins(await setPluginEnabled(plugin.id, !plugin.enabled));
+      await notifyPluginsChanged();
       setStatus(plugin.enabled ? "插件已禁用。" : "插件已启用。");
     } catch (error) {
       setStatus(String(error));
@@ -112,6 +120,7 @@ export function PluginCenter() {
   async function remove(plugin: InstalledPlugin) {
     try {
       setPlugins(await uninstallPlugin(plugin.id));
+      await notifyPluginsChanged();
       setStatus("插件已卸载。");
     } catch (error) {
       setStatus(String(error));
