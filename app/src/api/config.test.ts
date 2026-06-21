@@ -28,6 +28,13 @@ const scriptAction: Action = {
   content: "echo hello",
 };
 
+const pluginAction: Action = {
+  type: "plugin",
+  name: "Open Hello WebView",
+  pluginId: "devlauncher.examples.hello",
+  actionId: "open",
+};
+
 describe("config normalization", () => {
   it("adds an empty pet menu for old configs", () => {
     const config = normalizeConfig({ pages: [], pet: { codex: { enabled: true } } });
@@ -60,5 +67,34 @@ describe("config normalization", () => {
 
     expect(raw.pet?.menu?.customActions).toHaveLength(PET_CUSTOM_ACTION_SLOT_COUNT);
     expect(raw.pet?.menu?.customActions).toEqual([clipboardAction, jsonAction, urlAction]);
+  });
+
+  it("preserves plugin actions when loading and saving config", () => {
+    const config = normalizeConfig({
+      pages: [
+        {
+          name: "默认",
+          keys: {
+            Q: pluginAction,
+          },
+        },
+      ],
+      pet: {
+        menu: {
+          customActions: [pluginAction],
+        },
+      },
+    });
+
+    const page = config.pages[0]!;
+    const binding = page.keys.Q!;
+    expect(binding.action).toEqual(pluginAction);
+    expect(config.pet?.menu.customActions[0]).toEqual(pluginAction);
+
+    const raw = toRawConfig(config);
+    const rawPage = raw.pages[0]!;
+    const rawAction = rawPage.keys.Q!;
+    expect(rawAction).toEqual(pluginAction);
+    expect(raw.pet?.menu?.customActions?.[0]).toEqual(pluginAction);
   });
 });

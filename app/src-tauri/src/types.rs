@@ -132,6 +132,15 @@ pub enum Action {
         name: String,
         feature: String,
     },
+    Plugin {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+        #[serde(rename = "pluginId", alias = "plugin_id")]
+        plugin_id: String,
+        #[serde(rename = "actionId", alias = "action_id")]
+        action_id: String,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -243,5 +252,46 @@ impl ClipboardEntry {
             ClipboardEntry::Text { id, .. } => id,
             ClipboardEntry::Image { id, .. } => id,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Action, KeyboardConfig};
+
+    #[test]
+    fn preserves_plugin_actions_in_yaml_config() {
+        let yaml = r#"
+pages:
+  - name: 默认
+    keys:
+      Q:
+        type: plugin
+        name: Open Hello WebView
+        pluginId: devlauncher.examples.hello
+        actionId: open
+"#;
+
+        let config: KeyboardConfig = serde_yaml::from_str(yaml).expect("plugin config should load");
+        let action = config.pages[0].keys.get("Q").expect("Q binding should exist");
+
+        match action {
+            Action::Plugin {
+                name,
+                plugin_id,
+                action_id,
+                ..
+            } => {
+                assert_eq!(name, "Open Hello WebView");
+                assert_eq!(plugin_id, "devlauncher.examples.hello");
+                assert_eq!(action_id, "open");
+            }
+            other => panic!("expected plugin action, got {other:?}"),
+        }
+
+        let saved = serde_yaml::to_string(&config).expect("plugin config should save");
+        assert!(saved.contains("type: plugin"));
+        assert!(saved.contains("pluginId: devlauncher.examples.hello"));
+        assert!(saved.contains("actionId: open"));
     }
 }
