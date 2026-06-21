@@ -42,3 +42,8 @@ export interface MarketplaceIndex {
   version: 1;
   plugins: MarketplacePluginEntry[];
 }
+
+export interface PluginEntryContent {
+  html: string;
+  baseUrl: string;
+}

@@ -1,13 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { getPluginEntryUrl } from "./api";
+import { getPluginEntryContent } from "./api";
+
+function withBaseUrl(html: string, baseUrl: string) {
+  const base = `<base href="${convertFileSrc(baseUrl)}/">`;
+  if (/<head[^>]*>/i.test(html)) {
+    return html.replace(/<head([^>]*)>/i, `<head$1>${base}`);
+  }
+  return `${base}${html}`;
+}
 
 export function PluginHostApp() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const pluginId = params.get("pluginId") ?? "";
   const actionId = params.get("actionId") ?? "";
-  const [entryUrl, setEntryUrl] = useState("");
+  const [entryHtml, setEntryHtml] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -16,14 +24,14 @@ export function PluginHostApp() {
       return;
     }
 
-    getPluginEntryUrl(pluginId, actionId)
-      .then((path) => {
-        setEntryUrl(convertFileSrc(path));
+    getPluginEntryContent(pluginId, actionId)
+      .then((content) => {
+        setEntryHtml(withBaseUrl(content.html, content.baseUrl));
         setError("");
       })
       .catch((err) => {
         setError(String(err));
-        setEntryUrl("");
+        setEntryHtml("");
       });
   }, [pluginId, actionId]);
 
@@ -103,10 +111,10 @@ export function PluginHostApp() {
           ×
         </button>
       </header>
-      {entryUrl ? (
+      {entryHtml ? (
         <iframe
           title={pluginId}
-          src={entryUrl}
+          srcDoc={entryHtml}
           sandbox="allow-scripts allow-forms allow-modals allow-popups"
           style={{ width: "100%", height: "100%", border: 0, display: "block", background: "#fff" }}
         />
