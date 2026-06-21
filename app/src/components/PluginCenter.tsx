@@ -10,6 +10,8 @@ import {
 } from "@/plugins/api";
 import type { InstalledPlugin, MarketplacePluginEntry } from "@/plugins/types";
 
+const DEFAULT_MARKET_URL = "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/marketplace.json";
+
 const buttonStyle: React.CSSProperties = {
   padding: "6px 10px",
   borderRadius: 7,
@@ -42,7 +44,7 @@ const panelStyle: React.CSSProperties = {
 };
 
 export function PluginCenter() {
-  const [marketUrl, setMarketUrl] = useState("");
+  const [marketUrl, setMarketUrl] = useState(DEFAULT_MARKET_URL);
   const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
   const [market, setMarket] = useState<MarketplacePluginEntry[]>([]);
   const [status, setStatus] = useState("");
@@ -124,7 +126,7 @@ export function PluginCenter() {
           <input
             value={marketUrl}
             onChange={(event) => setMarketUrl(event.target.value)}
-            placeholder="https://example.com/marketplace.json"
+            placeholder={DEFAULT_MARKET_URL}
             style={inputStyle}
           />
           <button type="button" onClick={loadMarket} style={buttonStyle}>刷新</button>
