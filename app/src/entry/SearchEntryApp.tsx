@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { BUILTIN_REGISTRY } from "@/builtins/_registry";
 import { loadConfig } from "@/api/config";
@@ -32,14 +33,18 @@ export function SearchEntryApp() {
   const [recent, setRecent] = useState<LauncherActionRecord[]>([]);
   const [initialQuery, setInitialQuery] = useState("");
 
-  useEffect(() => {
-    loadConfig().then(setConfig).catch(console.error);
+  const refreshPlugins = useCallback(() => {
     listInstalledPlugins()
       .then(setPlugins)
       .catch((error) => {
         console.warn("[DevLauncher] listInstalledPlugins failed:", error);
         setPlugins([]);
       });
+  }, []);
+
+  useEffect(() => {
+    loadConfig().then(setConfig).catch(console.error);
+    refreshPlugins();
     setRecent(loadRecentActions());
 
     const handler = (event: Event) => {
@@ -49,7 +54,21 @@ export function SearchEntryApp() {
 
     window.addEventListener(SEARCH_PREFILL_EVENT, handler);
     return () => window.removeEventListener(SEARCH_PREFILL_EVENT, handler);
-  }, []);
+  }, [refreshPlugins]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    window.addEventListener("focus", refreshPlugins);
+    listen("plugins-changed", () => {
+      refreshPlugins();
+    }).then((fn) => {
+      unlisten = fn;
+    }).catch(console.error);
+    return () => {
+      unlisten?.();
+      window.removeEventListener("focus", refreshPlugins);
+    };
+  }, [refreshPlugins]);
 
   const pluginRecords = useMemo(() => buildPluginActionRecords(plugins), [plugins]);
   const records = useMemo(() => mergeActionRecords([
