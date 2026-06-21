@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getPluginEntryUrl } from "./api";
 
 export function PluginHostApp() {
@@ -16,7 +18,7 @@ export function PluginHostApp() {
 
     getPluginEntryUrl(pluginId, actionId)
       .then((path) => {
-        setEntryUrl(`file://${path}`);
+        setEntryUrl(convertFileSrc(path));
         setError("");
       })
       .catch((err) => {
@@ -43,16 +45,74 @@ export function PluginHostApp() {
     );
   }
 
-  if (!entryUrl) {
-    return <div style={{ minHeight: "100vh", background: "#101622" }} />;
-  }
+  const closeWindow = () => {
+    getCurrentWindow().close().catch(console.error);
+  };
 
   return (
-    <iframe
-      title={pluginId}
-      src={entryUrl}
-      sandbox="allow-scripts allow-forms allow-modals allow-popups"
-      style={{ width: "100vw", height: "100vh", border: 0, display: "block", background: "#fff" }}
-    />
+    <div style={{
+      minHeight: "100vh",
+      display: "grid",
+      gridTemplateRows: "44px minmax(0, 1fr)",
+      background: "#101622",
+      color: "rgba(255,255,255,0.86)",
+      fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+    }}>
+      <header
+        data-tauri-drag-region
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "0 12px 0 16px",
+          borderBottom: "1px solid rgba(255,255,255,0.1)",
+          background: "rgba(16,22,34,0.92)",
+          userSelect: "none",
+        }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            fontSize: 13,
+            fontWeight: 800,
+          }}>
+            {pluginId || "DevLauncher Plugin"}
+          </div>
+        </div>
+        <button
+          type="button"
+          aria-label="关闭插件窗口"
+          onClick={closeWindow}
+          style={{
+            width: 28,
+            height: 28,
+            border: "1px solid rgba(255,255,255,0.14)",
+            borderRadius: 8,
+            display: "grid",
+            placeItems: "center",
+            background: "rgba(255,255,255,0.08)",
+            color: "rgba(255,255,255,0.78)",
+            cursor: "pointer",
+            fontSize: 18,
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      </header>
+      {entryUrl ? (
+        <iframe
+          title={pluginId}
+          src={entryUrl}
+          sandbox="allow-scripts allow-forms allow-modals allow-popups"
+          style={{ width: "100%", height: "100%", border: 0, display: "block", background: "#fff" }}
+        />
+      ) : (
+        <div style={{ minHeight: 0, background: "#101622" }} />
+      )}
+    </div>
   );
 }
