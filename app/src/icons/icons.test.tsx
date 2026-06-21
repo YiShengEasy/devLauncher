@@ -51,6 +51,7 @@ describe("icon categories", () => {
       "script",
       "system",
       "builtin",
+      "plugin",
     ]);
   });
 

@@ -1,0 +1,15 @@
+{
+  "id": "devlauncher.examples.hello",
+  "name": "Hello WebView",
+  "version": "1.0.0",
+  "kind": "webview",
+  "description": "A minimal static WebView plugin for DevLauncher.",
+  "entry": "dist/index.html",
+  "actions": [
+    {
+      "id": "open",
+      "title": "Open Hello WebView",
+      "type": "webview"
+    }
+  ]
+}
