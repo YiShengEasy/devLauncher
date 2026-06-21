@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "devlauncher.examples.hello",
+      "name": "Hello WebView",
+      "version": "1.0.0",
+      "kind": "webview",
+      "description": "A minimal static WebView plugin for DevLauncher.",
+      "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/hello-webview-1.0.0.zip",
+      "sha256": "269d68257e24c9294bcf46982f1eb664b48d5f3c9fd9ad3552245506b834d494",
+      "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/hello-webview.svg"
+    }
+  ]
+}
