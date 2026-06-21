@@ -64,6 +64,32 @@ describe("actionIndex", () => {
     ]);
   });
 
+  it("indexes plugin actions from keyboard bindings", () => {
+    const records = buildKeyboardActionRecords({
+      pages: [{
+        name: "Main",
+        keys: {
+          A: {
+            action: {
+              type: "plugin",
+              name: "Open Hello",
+              pluginId: "devlauncher.tools.hello",
+              actionId: "open",
+            },
+          },
+        },
+      }],
+    });
+
+    expect(records[0]).toMatchObject({
+      id: "keyboard:0:A",
+      title: "Open Hello",
+      source: "keyboard",
+      actionKind: "execute-action",
+    });
+    expect(records[0].keywords).toContain("devlauncher.tools.hello");
+  });
+
   it("ranks exact and prefix matches before fuzzy matches", () => {
     const records = [
       ...buildKeyboardActionRecords(config),
