@@ -17,6 +17,12 @@ For every multi-step task:
 4. On verified completion, send `success`.
 5. On command, build, or verification failure, send `error`.
 
+Approval handoff rule:
+
+- If Codex is about to request user approval and then pause, send `waiting` before making that request.
+- This includes elevated command permissions, plugin or connector installs, GUI app launch approvals, destructive command approvals, and explicit user choices.
+- While Codex is blocked on a user approval or selection, the pet should display `waiting`, not `working`.
+
 ## How To Send Status
 
 Preferred: call the DevLauncher Pet MCP tools when visible:
@@ -48,6 +54,7 @@ Do not output status lines such as `working: 正在处理...` as ordinary assist
 - Start reasoning or planning: `thinking`
 - Start editing, executing commands, or verifying: `working`
 - Waiting for user approval, permission, or clarification: `waiting`
+- Waiting for Codex approval prompts, permission dialogs, plugin install approval, destructive command approval, or explicit user selection: `waiting`
 - Task completed and verified: `success`
 - Command, build, or verification failed: `error`
 - No active work remains: `idle`
@@ -62,6 +69,7 @@ Good messages:
 正在分析：多任务聚合
 正在执行：npm test
 等待确认：需要写入全局配置
+等待批准：需要权限
 已完成：测试通过
 失败：构建失败
 ```

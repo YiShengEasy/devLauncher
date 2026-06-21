@@ -33,7 +33,8 @@ keyring = "3"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 objc2 = "0.6.4"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSWindow"] }
+block2 = "0.6.2"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSEvent", "NSWindow", "block2"] }
 # Remote desktop: screen capture + WebSocket streaming
 # Use screenshots (GDI-based) instead of scrap (DXGI) for better Windows compatibility
 screenshots = "0.8"

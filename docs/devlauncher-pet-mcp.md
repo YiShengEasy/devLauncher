@@ -7,6 +7,10 @@ DevLauncher provides a local MCP server that lets Codex update the desktop pet.
 - `pet_set_status`: set `idle`, `thinking`, `working`, `waiting`, `success`, `error`, or `disconnected`.
 - `pet_notify`: show a short notification and map its level to a pet status.
 
+## Status Semantics
+
+Use `waiting` when Codex is blocked on the user, including permission prompts, plugin install approval, destructive command approval, GUI launch approval, clarification, or an explicit choice. While an approval prompt is open, the pet should show waiting/待批准 rather than working/执行中.
+
 ## Codex Config
 
 Add a stdio MCP server that runs:

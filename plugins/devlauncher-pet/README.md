@@ -13,6 +13,10 @@ This Codex plugin registers local MCP tools for updating the DevLauncher desktop
 - `pet_set_status`: set `idle`, `thinking`, `working`, `waiting`, `success`, `error`, or `disconnected`.
 - `pet_notify`: show a short notification and map its level to a pet status.
 
+## Status Semantics
+
+Use `waiting` whenever Codex is blocked on the user, including permission prompts, plugin install approval, destructive command approval, GUI launch approval, clarification, or an explicit choice. Do not keep the pet in `working` while Codex is waiting for approval.
+
 ## Install From A GitHub Checkout
 
 Clone the DevLauncher repository, then add the repository root as a local Codex plugin marketplace:
