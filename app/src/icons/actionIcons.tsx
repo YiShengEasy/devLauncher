@@ -85,6 +85,17 @@ export function BuiltinToolIcon(props: IconProps) {
   );
 }
 
+export function PluginIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.plugin)}>
+      <rect x="5" y="5" width="6" height="6" rx="1.6" />
+      <rect x="13" y="5" width="6" height="6" rx="1.6" />
+      <rect x="5" y="13" width="6" height="6" rx="1.6" />
+      <path d="M14 16h5M16.5 13.5v5" />
+    </IconBase>
+  );
+}
+
 export const ACTION_ICON_COMPONENTS = {
   app: AppGridIcon,
   folder: FolderIcon,
@@ -94,4 +105,5 @@ export const ACTION_ICON_COMPONENTS = {
   script: ScriptIcon,
   system: SystemIcon,
   builtin: BuiltinToolIcon,
+  plugin: PluginIcon,
 } satisfies Record<ActionType, IconComponent>;

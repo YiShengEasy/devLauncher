@@ -23,7 +23,7 @@ export const BUILTIN_FEATURES = Object.fromEntries(
   _BUILTIN_MANIFESTS.map(m => [m.id, m])
 ) as Record<BuiltinFeature, typeof _BUILTIN_MANIFESTS[number]>;
 
-export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin";
+export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin" | "plugin";
 
 interface ActionBase {
   type: ActionType;
@@ -103,6 +103,12 @@ export interface BuiltinAction extends ActionBase {
   feature: BuiltinFeature;
 }
 
+export interface PluginAction extends ActionBase {
+  type: "plugin";
+  pluginId: string;
+  actionId: string;
+}
+
 // -----------------------------------------------
 // Clipboard Entry (text + image)
 // -----------------------------------------------
@@ -130,7 +136,8 @@ export type Action =
   | SshAction
   | ScriptAction
   | SystemAction
-  | BuiltinAction;
+  | BuiltinAction
+  | PluginAction;
 
 // -----------------------------------------------
 // Page / Key layout
@@ -217,4 +224,5 @@ export const ACTION_TYPE_META: Record<ActionType, { label: string; color: string
   script: { label: "脚本",     color: "#f87171", bg: "rgba(180,30,30,0.75)" },
   system: { label: "系统",     color: "#94a3b8", bg: "rgba(60,80,120,0.75)" },
   builtin: { label: "内置",    color: "#7dd3fc", bg: "rgba(18,22,45,0.90)" },
+  plugin: { label: "插件",     color: "#a7f3d0", bg: "rgba(20,120,90,0.78)" },
 };
