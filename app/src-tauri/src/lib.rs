@@ -5,6 +5,7 @@ mod entries;
 mod keyboard_control_tap;
 mod ocr;
 mod platform;
+mod plugin_manifest;
 mod types;
 mod utils;
 mod window_pinning;
