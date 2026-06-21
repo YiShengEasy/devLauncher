@@ -5,6 +5,7 @@ import { BUILTIN_REGISTRY } from "./builtins/_registry";
 import { SearchEntryApp } from "./entry/SearchEntryApp";
 import { PetEntryApp } from "./entry/PetEntryApp";
 import { BrowserPreviewApp } from "./entry/BrowserPreviewApp";
+import { PluginHostApp } from "./plugins/PluginHostApp";
 import "./index.css";
 
 const params = new URLSearchParams(window.location.search);
@@ -18,6 +19,7 @@ function RoutedApp() {
   if (preview === "pet-motion" || (!isTauriRuntime && !entry && !view)) return <BrowserPreviewApp />;
   if (entry === "search") return <SearchEntryApp />;
   if (entry === "pet") return <PetEntryApp />;
+  if (entry === "plugin-host") return <PluginHostApp />;
 
   if (plugin) {
     return (
