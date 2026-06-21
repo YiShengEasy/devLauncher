@@ -1,7 +1,7 @@
 import type { BuiltinManifest } from "@/builtins/types";
 import type { Action, BuiltinFeature, KeyboardConfig, KeyId } from "@/types/actions";
 
-export type LauncherActionSource = "keyboard" | "builtin" | "recent";
+export type LauncherActionSource = "keyboard" | "builtin" | "recent" | "plugin";
 export type LauncherActionKind = "execute-action" | "toggle-builtin";
 
 export interface LauncherActionRecord {
@@ -57,6 +57,10 @@ function actionKeywords(action: Action): string[] {
 
   if (action.type === "builtin") {
     base.push(action.feature);
+  }
+
+  if (action.type === "plugin") {
+    base.push(action.pluginId, action.actionId);
   }
 
   return unique(base);
