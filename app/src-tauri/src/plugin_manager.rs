@@ -42,6 +42,13 @@ pub struct MarketplaceIndex {
     pub plugins: Vec<MarketplacePluginEntry>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEntryContent {
+    pub html: String,
+    pub base_url: String,
+}
+
 fn plugins_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app
         .path()
@@ -297,6 +304,23 @@ pub fn get_plugin_entry_url(
 }
 
 #[tauri::command]
+pub fn get_plugin_entry_content(
+    app: tauri::AppHandle,
+    plugin_id: String,
+    action_id: String,
+) -> Result<PluginEntryContent, String> {
+    let entry = PathBuf::from(get_plugin_entry_url(app, plugin_id, action_id)?);
+    let html = fs::read_to_string(&entry).map_err(|e| e.to_string())?;
+    let base_dir = entry
+        .parent()
+        .ok_or_else(|| "plugin entry directory does not exist".to_string())?;
+    Ok(PluginEntryContent {
+        html,
+        base_url: base_dir.to_string_lossy().to_string(),
+    })
+}
+
+#[tauri::command]
 pub fn open_plugin_window(
     app: tauri::AppHandle,
     plugin_id: String,
@@ -324,7 +348,7 @@ pub fn open_plugin_window(
         .title("DevLauncher Plugin")
         .inner_size(860.0, 620.0)
         .resizable(true)
-        .decorations(false)
+        .decorations(true)
         .visible(true)
         .build()
         .map_err(|e| e.to_string())?;

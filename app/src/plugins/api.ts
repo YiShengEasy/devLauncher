@@ -1,5 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { InstalledPlugin, MarketplaceIndex, MarketplacePluginEntry } from "./types";
+import type {
+  InstalledPlugin,
+  MarketplaceIndex,
+  MarketplacePluginEntry,
+  PluginEntryContent,
+} from "./types";
 
 export function listInstalledPlugins(): Promise<InstalledPlugin[]> {
   return invoke<InstalledPlugin[]>("list_installed_plugins");
@@ -27,4 +32,8 @@ export function uninstallPlugin(pluginId: string): Promise<InstalledPlugin[]> {
 
 export function getPluginEntryUrl(pluginId: string, actionId: string): Promise<string> {
   return invoke<string>("get_plugin_entry_url", { pluginId, actionId });
+}
+
+export function getPluginEntryContent(pluginId: string, actionId: string): Promise<PluginEntryContent> {
+  return invoke<PluginEntryContent>("get_plugin_entry_content", { pluginId, actionId });
 }

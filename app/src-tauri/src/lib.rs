@@ -77,6 +77,7 @@ pub fn run() {
             plugin_manager::set_plugin_enabled,
             plugin_manager::uninstall_plugin,
             plugin_manager::get_plugin_entry_url,
+            plugin_manager::get_plugin_entry_content,
             plugin_manager::open_plugin_window,
             actions::execute_action,
             actions::save_ssh_password,
