@@ -2,6 +2,7 @@ mod actions;
 mod builtins;
 mod config;
 mod entries;
+mod keyboard_control_tap;
 mod ocr;
 mod platform;
 mod types;
@@ -143,6 +144,7 @@ pub fn run() {
             builtins::terminal::setup(app);
             builtins::screenshot::setup(app);
             builtins::clipboard::setup(app);
+            keyboard_control_tap::setup(app.handle());
             window_pinning::apply_all_startup_pin_states(app.handle());
             let _ = entries::show_pet_window(app.handle().clone(), None);
 

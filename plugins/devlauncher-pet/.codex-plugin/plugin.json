@@ -1,6 +1,6 @@
 {
   "name": "devlauncher-pet",
-  "version": "0.1.0",
+  "version": "0.1.0+codex.20260620140445",
   "description": "Connect Codex to the DevLauncher desktop pet with MCP status tools and concise work-state reporting.",
   "author": {
     "name": "Yisheng"

@@ -37,6 +37,7 @@ Status mapping:
 - Start thinking, analysis, or planning: `thinking`
 - Start editing, command work, or verification: `working`
 - Waiting for user approval, permission, or clarification: `waiting`
+- Before any Codex tool call that will pause for user approval, such as elevated permissions, plugin install, opening a GUI app, destructive command approval, or an explicit user choice: send `waiting` first. The pet must show "待批准/等待确认" while Codex is blocked on the user, not "执行中".
 - Task completed and verified: `success`
 - Command, build, or verification failed: `error`
 - No active work remains: `idle`

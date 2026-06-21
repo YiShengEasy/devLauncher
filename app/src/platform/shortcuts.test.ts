@@ -25,9 +25,9 @@ describe("shortcut platform mapping", () => {
     expect(keyIdToShortcut("1", "Win32")).toBe("Alt+Digit1");
   });
 
-  it("uses Cmd+Opt shortcuts on macOS", () => {
+  it("uses double Control for keyboard mode on macOS while keeping key shortcuts", () => {
     expect(getGlobalShortcuts("MacIntel")).toEqual({
-      keyboard: "CommandOrControl+Option+J",
+      keyboard: "DoubleControl",
       clipboard: "CommandOrControl+Option+V",
       search: "CommandOrControl+Option+K",
       pet: "CommandOrControl+Option+P",
@@ -37,6 +37,7 @@ describe("shortcut platform mapping", () => {
   });
 
   it("returns readable labels for settings text", () => {
+    expect(getGlobalShortcutLabels("MacIntel").keyboard).toBe("双击 Ctrl / Cmd+Opt+J");
     expect(getGlobalShortcutLabels("Win32").search).toBe("Ctrl+Alt+K");
     expect(getGlobalShortcutLabels("MacIntel").search).toBe("Cmd+Opt+K");
   });
