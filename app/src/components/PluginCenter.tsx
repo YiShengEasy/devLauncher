@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import {
   fetchMarketplaceIndex,
@@ -43,6 +44,47 @@ const panelStyle: React.CSSProperties = {
   padding: 12,
   background: "rgba(255,255,255,0.035)",
 };
+
+function PluginIcon({ src, name }: { src?: string; name: string }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) {
+    return (
+      <div
+        aria-hidden="true"
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 8,
+          display: "grid",
+          placeItems: "center",
+          flex: "0 0 auto",
+          background: "rgba(255,255,255,0.08)",
+          color: "rgba(255,255,255,0.74)",
+          fontSize: 13,
+          fontWeight: 800,
+        }}
+      >
+        {name.charAt(0).toUpperCase()}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={name}
+      width={34}
+      height={34}
+      style={{
+        flex: "0 0 auto",
+        borderRadius: 8,
+        objectFit: "cover",
+        background: "rgba(255,255,255,0.08)",
+      }}
+      onError={() => setFailed(true)}
+    />
+  );
+}
 
 export function PluginCenter() {
   const [marketUrl, setMarketUrl] = useState(DEFAULT_MARKET_URL);
@@ -156,10 +198,13 @@ export function PluginCenter() {
                 borderTop: "1px solid rgba(255,255,255,0.08)",
               }}
             >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>{entry.name}</div>
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
-                  {entry.description ?? entry.id} / {entry.version}
+              <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
+                <PluginIcon src={entry.icon} name={entry.name} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{entry.name}</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
+                    {entry.description ?? entry.id} / {entry.version}
+                  </div>
                 </div>
               </div>
               <button type="button" onClick={() => installMarket(entry)} style={buttonStyle}>安装</button>
@@ -183,10 +228,16 @@ export function PluginCenter() {
               borderTop: "1px solid rgba(255,255,255,0.08)",
             }}
           >
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{plugin.manifest.name}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
-                {plugin.id} / {plugin.version} / {plugin.enabled ? "已启用" : "已禁用"}
+            <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
+              <PluginIcon
+                src={plugin.iconPath ? convertFileSrc(plugin.iconPath) : undefined}
+                name={plugin.manifest.name}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>{plugin.manifest.name}</div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
+                  {plugin.id} / {plugin.version} / {plugin.enabled ? "已启用" : "已禁用"}
+                </div>
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>

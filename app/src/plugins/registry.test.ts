@@ -8,6 +8,7 @@ const plugin: InstalledPlugin = {
   enabled: true,
   source: "local",
   installedAt: 1782030000000,
+  iconPath: "/tmp/hello/icon.svg",
   manifest: {
     id: "devlauncher.tools.hello",
     name: "Hello Plugin",
@@ -34,6 +35,7 @@ describe("plugin registry", () => {
           name: "Open Hello",
           pluginId: "devlauncher.tools.hello",
           actionId: "open",
+          icon: expect.stringContaining("/tmp/hello/icon.svg"),
         },
       },
     ]);

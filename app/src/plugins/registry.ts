@@ -1,5 +1,6 @@
 import type { LauncherActionRecord } from "@/launcher/actionIndex";
 import type { PluginAction } from "@/types/actions";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import type { InstalledPlugin } from "./types";
 
 function normalize(value: string): string {
@@ -8,6 +9,12 @@ function normalize(value: string): string {
 
 function unique(values: Array<string | undefined | null>): string[] {
   return Array.from(new Set(values.map((value) => normalize(value ?? "")).filter(Boolean)));
+}
+
+export function pluginIconSrc(iconPath?: string): string | undefined {
+  if (!iconPath) return undefined;
+  if (typeof window === "undefined") return iconPath;
+  return convertFileSrc(iconPath);
 }
 
 export function buildPluginActionRecords(plugins: InstalledPlugin[]): LauncherActionRecord[] {
@@ -20,6 +27,7 @@ export function buildPluginActionRecords(plugins: InstalledPlugin[]): LauncherAc
         name: manifestAction.title,
         pluginId: plugin.id,
         actionId: manifestAction.id,
+        icon: pluginIconSrc(plugin.iconPath),
       };
 
       return {

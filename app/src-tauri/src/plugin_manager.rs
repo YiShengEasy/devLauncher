@@ -15,6 +15,8 @@ pub struct InstalledPlugin {
     pub enabled: bool,
     pub source: String,
     pub installed_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon_path: Option<String>,
     pub manifest: PluginManifest,
 }
 
@@ -130,7 +132,9 @@ fn extract_plugin_zip(
         serde_json::from_str(&manifest_content).map_err(|e| e.to_string())?;
     validate_manifest(&manifest)?;
 
-    let plugin_dir = plugins_root(app)?.join(&manifest.id).join(&manifest.version);
+    let plugin_dir = plugins_root(app)?
+        .join(&manifest.id)
+        .join(&manifest.version);
     if plugin_dir.exists() {
         fs::remove_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
     }
@@ -155,7 +159,7 @@ fn extract_plugin_zip(
         return Err("plugin entry file does not exist".to_string());
     }
 
-    Ok(InstalledPlugin {
+    let mut plugin = InstalledPlugin {
         id: manifest.id.clone(),
         version: manifest.version.clone(),
         enabled: true,
@@ -164,8 +168,11 @@ fn extract_plugin_zip(
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|e| e.to_string())?
             .as_millis() as u64,
+        icon_path: None,
         manifest,
-    })
+    };
+    plugin.icon_path = plugin_icon_path(app, &plugin)?;
+    Ok(plugin)
 }
 
 fn upsert_installed(
@@ -179,9 +186,39 @@ fn upsert_installed(
     Ok(plugin)
 }
 
+fn plugin_icon_path(
+    app: &tauri::AppHandle,
+    plugin: &InstalledPlugin,
+) -> Result<Option<String>, String> {
+    let Some(icon) = plugin.manifest.icon.as_deref() else {
+        return Ok(None);
+    };
+
+    let plugin_dir = plugins_root(app)?.join(&plugin.id).join(&plugin.version);
+    let icon_path = safe_join(&plugin_dir, icon)?;
+    if icon_path.exists() {
+        Ok(Some(icon_path.to_string_lossy().to_string()))
+    } else {
+        Ok(None)
+    }
+}
+
+fn hydrate_plugin_icon_paths(
+    app: &tauri::AppHandle,
+    plugins: Vec<InstalledPlugin>,
+) -> Result<Vec<InstalledPlugin>, String> {
+    plugins
+        .into_iter()
+        .map(|mut plugin| {
+            plugin.icon_path = plugin_icon_path(app, &plugin)?;
+            Ok(plugin)
+        })
+        .collect()
+}
+
 #[tauri::command]
 pub fn list_installed_plugins(app: tauri::AppHandle) -> Result<Vec<InstalledPlugin>, String> {
-    Ok(read_installed_file(&app)?.plugins)
+    hydrate_plugin_icon_paths(&app, read_installed_file(&app)?.plugins)
 }
 
 #[tauri::command]
@@ -251,7 +288,7 @@ pub fn set_plugin_enabled(
 
     plugin.enabled = enabled;
     write_installed_file(&app, &file)?;
-    Ok(file.plugins)
+    hydrate_plugin_icon_paths(&app, file.plugins)
 }
 
 #[tauri::command]
@@ -260,7 +297,12 @@ pub fn uninstall_plugin(
     plugin_id: String,
 ) -> Result<Vec<InstalledPlugin>, String> {
     let mut file = read_installed_file(&app)?;
-    let Some(plugin) = file.plugins.iter().find(|item| item.id == plugin_id).cloned() else {
+    let Some(plugin) = file
+        .plugins
+        .iter()
+        .find(|item| item.id == plugin_id)
+        .cloned()
+    else {
         return Err("plugin is not installed".to_string());
     };
 
@@ -270,7 +312,7 @@ pub fn uninstall_plugin(
     }
     file.plugins.retain(|item| item.id != plugin_id);
     write_installed_file(&app, &file)?;
-    Ok(file.plugins)
+    hydrate_plugin_icon_paths(&app, file.plugins)
 }
 
 #[tauri::command]

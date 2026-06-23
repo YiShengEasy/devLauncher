@@ -24,6 +24,7 @@ export interface InstalledPlugin {
   enabled: boolean;
   source: PluginSource;
   installedAt: number;
+  iconPath?: string;
   manifest: PluginManifest;
 }
 
