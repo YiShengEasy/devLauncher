@@ -60,14 +60,29 @@ struct VideoProgressEvent {
 
 pub(crate) struct VideoToolState {
     active_child: Arc<Mutex<Option<Child>>>,
-    cancel_requested: AtomicBool,
+    cancel_requested: Arc<AtomicBool>,
+}
+
+#[derive(Clone)]
+struct VideoToolRuntime {
+    active_child: Arc<Mutex<Option<Child>>>,
+    cancel_requested: Arc<AtomicBool>,
 }
 
 pub fn setup(app: &mut tauri::App) {
     app.manage(VideoToolState {
         active_child: Arc::new(Mutex::new(None)),
-        cancel_requested: AtomicBool::new(false),
+        cancel_requested: Arc::new(AtomicBool::new(false)),
     });
+}
+
+impl VideoToolState {
+    fn runtime(&self) -> VideoToolRuntime {
+        VideoToolRuntime {
+            active_child: Arc::clone(&self.active_child),
+            cancel_requested: Arc::clone(&self.cancel_requested),
+        }
+    }
 }
 
 fn ensure_trusted_plugin(plugin_id: &str) -> Result<(), String> {
@@ -240,7 +255,7 @@ fn emit_progress(app: &tauri::AppHandle, phase: &str, message: &str, progress: f
 
 fn run_child(
     app: &tauri::AppHandle,
-    state: &VideoToolState,
+    runtime: &VideoToolRuntime,
     mut command: Command,
     phase: &str,
     start_progress: f64,
@@ -249,13 +264,13 @@ fn run_child(
     command.stdout(Stdio::null()).stderr(Stdio::null());
     let child = command.spawn().map_err(|e| e.to_string())?;
     {
-        let mut active = state.active_child.lock().map_err(|e| e.to_string())?;
+        let mut active = runtime.active_child.lock().map_err(|e| e.to_string())?;
         *active = Some(child);
     }
 
     loop {
-        if state.cancel_requested.load(Ordering::SeqCst) {
-            let mut active = state.active_child.lock().map_err(|e| e.to_string())?;
+        if runtime.cancel_requested.load(Ordering::SeqCst) {
+            let mut active = runtime.active_child.lock().map_err(|e| e.to_string())?;
             if let Some(child) = active.as_mut() {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -265,7 +280,7 @@ fn run_child(
         }
 
         let maybe_status = {
-            let mut active = state.active_child.lock().map_err(|e| e.to_string())?;
+            let mut active = runtime.active_child.lock().map_err(|e| e.to_string())?;
             let Some(child) = active.as_mut() else {
                 return Err("video process is not running".into());
             };
@@ -273,7 +288,7 @@ fn run_child(
         };
 
         if let Some(status) = maybe_status {
-            let mut active = state.active_child.lock().map_err(|e| e.to_string())?;
+            let mut active = runtime.active_child.lock().map_err(|e| e.to_string())?;
             *active = None;
             if status.success() {
                 emit_progress(app, phase, "phase completed", end_progress);
@@ -342,9 +357,22 @@ pub fn probe_video(request: VideoProbeRequest) -> Result<VideoProbeResult, Strin
 }
 
 #[tauri::command]
-pub fn sample_video_frames(
+pub async fn sample_video_frames(
     app: tauri::AppHandle,
-    state: tauri::State<VideoToolState>,
+    state: tauri::State<'_, VideoToolState>,
+    request: FrameSampleRequest,
+) -> Result<FrameSampleResult, String> {
+    let runtime = state.runtime();
+    tauri::async_runtime::spawn_blocking(move || {
+        sample_video_frames_blocking(app, runtime, request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn sample_video_frames_blocking(
+    app: tauri::AppHandle,
+    runtime: VideoToolRuntime,
     request: FrameSampleRequest,
 ) -> Result<FrameSampleResult, String> {
     ensure_trusted_plugin(&request.plugin_id)?;
@@ -374,7 +402,7 @@ pub fn sample_video_frames(
         None => None,
     };
 
-    state.cancel_requested.store(false, Ordering::SeqCst);
+    runtime.cancel_requested.store(false, Ordering::SeqCst);
     let ffmpeg = find_tool("ffmpeg")?;
     let stem = output_stem(&input_path);
     let frames_dir = output_dir.join(format!("{stem}-frames"));
@@ -394,7 +422,7 @@ pub fn sample_video_frames(
         duration_seconds,
         request.sample_interval_seconds,
     ));
-    let result = run_child(&app, &state, extract, "extract", 0.05, 0.62);
+    let result = run_child(&app, &runtime, extract, "extract", 0.05, 0.62);
     if let Err(err) = result {
         let _ = app.emit(FAILED_EVENT, &err);
         let _ = fs::remove_dir_all(&frames_dir);
@@ -425,7 +453,7 @@ pub fn sample_video_frames(
         &output_video_path,
         request.frame_display_seconds,
     ));
-    let result = run_child(&app, &state, assemble, "assemble", 0.68, 1.0);
+    let result = run_child(&app, &runtime, assemble, "assemble", 0.68, 1.0);
     if let Err(err) = result {
         let _ = app.emit(FAILED_EVENT, &err);
         if !request.keep_frames {
