@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for all windows",
-  "windows": ["main", "clipboard", "json-helper", "totp", "remotedesk", "terminal", "screenshotai", "screenshot", "webaccounts", "quickmemory", "search", "pet"],
+  "windows": ["main", "clipboard", "json-helper", "totp", "remotedesk", "terminal", "screenshotai", "screenshot", "webaccounts", "quickmemory", "plugin-host", "search", "pet"],
   "permissions": [
     "core:default",
     "opener:default",

@@ -1,0 +1,16 @@
+{
+  "id": "devlauncher.tools.video-frame-sampler",
+  "name": "Video Frame Sampler",
+  "version": "1.0.0",
+  "kind": "webview",
+  "description": "Sample local video frames and generate a quick MP4 preview without uploading files.",
+  "entry": "dist/index.html",
+  "icon": "icon.svg",
+  "actions": [
+    {
+      "id": "open",
+      "title": "Open Video Frame Sampler",
+      "type": "webview"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="Video Frame Sampler">
+  <rect width="96" height="96" rx="18" fill="#14213d"/>
+  <path d="M18 28a8 8 0 0 1 8-8h44a8 8 0 0 1 8 8v40a8 8 0 0 1-8 8H26a8 8 0 0 1-8-8V28Z" fill="#e5e9f0"/>
+  <path d="M18 36h60" stroke="#14213d" stroke-width="6"/>
+  <path d="M32 20v56M48 20v56M64 20v56" stroke="#14213d" stroke-width="4" opacity=".52"/>
+  <path d="M43 42v18l17-9-17-9Z" fill="#fca311"/>
+</svg>

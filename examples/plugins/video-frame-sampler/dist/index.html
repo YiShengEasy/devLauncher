@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Video Frame Sampler</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101622;
+        --panel: #172033;
+        --line: rgba(255, 255, 255, 0.12);
+        --text: #edf2fb;
+        --muted: rgba(237, 242, 251, 0.66);
+        --accent: #fca311;
+        --accent-2: #2ec4b6;
+        --danger: #ff6b6b;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
+        color: var(--text);
+      }
+
+      main {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+
+      header,
+      footer {
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      footer {
+        border-top: 1px solid var(--line);
+        border-bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+        gap: 18px;
+        padding: 18px;
+        min-height: 0;
+      }
+
+      section {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 16px;
+      }
+
+      .stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .row {
+        display: grid;
+        gap: 8px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      input {
+        width: 100%;
+        min-height: 38px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 6px;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--text);
+        font: inherit;
+      }
+
+      button {
+        min-height: 38px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 6px;
+        padding: 0 12px;
+        background: rgba(255, 255, 255, 0.08);
+        color: var(--text);
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      button.primary {
+        border-color: transparent;
+        background: var(--accent);
+        color: #121212;
+      }
+
+      button.danger {
+        border-color: rgba(255, 107, 107, 0.5);
+        color: #ffd7d7;
+      }
+
+      button:disabled {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .picker {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+      }
+
+      .switch {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-weight: 700;
+      }
+
+      .switch input {
+        width: 18px;
+        min-height: 18px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .stat {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 18px;
+      }
+
+      progress {
+        width: 100%;
+        height: 10px;
+        accent-color: var(--accent-2);
+      }
+
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .error {
+        color: var(--danger);
+      }
+
+      @media (max-width: 760px) {
+        .workspace,
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        footer {
+          align-items: stretch;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Video Frame Sampler</h1>
+        <p>本地抽帧并生成 MP4 预览，不上传源视频。</p>
+      </header>
+
+      <div class="workspace">
+        <section class="stack">
+          <div class="row">
+            <label for="videoPath">视频文件</label>
+            <div class="picker">
+              <input id="videoPath" readonly placeholder="选择本地视频" />
+              <button id="pickVideo" type="button">选择</button>
+            </div>
+          </div>
+
+          <div class="grid">
+            <div class="row">
+              <label for="startTime">开始时间</label>
+              <input id="startTime" value="00:30:00" />
+            </div>
+            <div class="row">
+              <label for="endTime">结束时间</label>
+              <input id="endTime" placeholder="留空直到视频结束" />
+            </div>
+            <div class="row">
+              <label for="sampleInterval">每隔多少秒抽一帧</label>
+              <input id="sampleInterval" type="number" min="0.1" step="0.1" value="5" />
+            </div>
+            <div class="row">
+              <label for="frameDisplay">每帧展示秒数</label>
+              <input id="frameDisplay" type="number" min="0.1" step="0.1" value="0.5" />
+            </div>
+          </div>
+
+          <label class="switch">
+            <input id="keepFrames" type="checkbox" />
+            保留抽出的 JPG 帧
+          </label>
+
+          <div class="row">
+            <label for="outputDir">输出文件夹</label>
+            <div class="picker">
+              <input id="outputDir" readonly placeholder="选择输出文件夹" />
+              <button id="pickOutput" type="button">选择</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="stack">
+          <div class="stats">
+            <div class="stat">
+              <span>时长</span>
+              <strong id="duration">--</strong>
+            </div>
+            <div class="stat">
+              <span>分辨率</span>
+              <strong id="resolution">--</strong>
+            </div>
+            <div class="stat">
+              <span>预计帧数</span>
+              <strong id="frames">--</strong>
+            </div>
+            <div class="stat">
+              <span>输出时长</span>
+              <strong id="outputDuration">--</strong>
+            </div>
+          </div>
+
+          <div class="row">
+            <label>进度</label>
+            <progress id="progress" value="0" max="1"></progress>
+            <div id="status" class="status">等待选择视频。</div>
+          </div>
+        </section>
+      </div>
+
+      <footer>
+        <div id="result" class="status"></div>
+        <div>
+          <button id="openOutput" type="button" disabled>打开输出</button>
+          <button id="cancel" class="danger" type="button" disabled>取消</button>
+          <button id="generate" class="primary" type="button" disabled>生成 MP4</button>
+        </div>
+      </footer>
+    </main>
+
+    <script>
+      const HOST_TARGET = "devlauncher-plugin-host";
+      const PLUGIN_TARGET = "devlauncher-plugin";
+      let requestId = 0;
+      let metadata = null;
+      let running = false;
+      let outputPath = "";
+
+      const $ = (id) => document.getElementById(id);
+
+      function callHost(method, payload = {}) {
+        const id = String(++requestId);
+        window.parent.postMessage(
+          { target: HOST_TARGET, id, capability: "videoFrameSampler", method, payload },
+          "*",
+        );
+        return new Promise((resolve, reject) => {
+          const onMessage = (event) => {
+            const data = event.data || {};
+            if (data.target !== PLUGIN_TARGET || data.id !== id) return;
+            window.removeEventListener("message", onMessage);
+            data.ok ? resolve(data.result) : reject(new Error(data.error || "调用失败"));
+          };
+          window.addEventListener("message", onMessage);
+        });
+      }
+
+      function parseTime(value) {
+        const trimmed = String(value || "").trim();
+        if (!trimmed) return null;
+        const parts = trimmed.split(":");
+        if (parts.length > 3) return NaN;
+        return parts.reduce((total, part) => total * 60 + Number(part), 0);
+      }
+
+      function formatSeconds(value) {
+        if (!Number.isFinite(value)) return "--";
+        const minutes = Math.floor(value / 60);
+        const seconds = Math.round(value % 60);
+        return `${minutes}m ${seconds}s`;
+      }
+
+      function updateEstimate() {
+        const sample = Number($("sampleInterval").value);
+        const display = Number($("frameDisplay").value);
+        const start = parseTime($("startTime").value) || 0;
+        const end = parseTime($("endTime").value);
+        const duration = metadata ? metadata.durationSeconds : 0;
+        const selected = Math.max(0, (Number.isFinite(end) && end !== null ? end : duration) - start);
+        const frames = metadata && sample > 0 ? Math.ceil(selected / sample) : 0;
+
+        $("duration").textContent = metadata ? formatSeconds(metadata.durationSeconds) : "--";
+        $("resolution").textContent = metadata ? `${metadata.width} x ${metadata.height}` : "--";
+        $("frames").textContent = frames ? String(frames) : "--";
+        $("outputDuration").textContent = frames && display > 0 ? formatSeconds(frames * display) : "--";
+        $("generate").disabled = running || !metadata || !$("outputDir").value || frames <= 0;
+      }
+
+      function setStatus(message, isError = false) {
+        $("status").textContent = message;
+        $("status").classList.toggle("error", isError);
+      }
+
+      async function probeSelectedVideo() {
+        if (!$("videoPath").value) return;
+        setStatus("正在读取视频信息...");
+        metadata = await callHost("probe", { inputPath: $("videoPath").value });
+        setStatus(metadata.hasAudio ? "已读取视频信息，输出将不包含音频。" : "已读取视频信息。");
+        updateEstimate();
+      }
+
+      $("pickVideo").addEventListener("click", async () => {
+        try {
+          const path = await callHost("pickVideo");
+          if (!path) return;
+          $("videoPath").value = path;
+          await probeSelectedVideo();
+        } catch (err) {
+          setStatus(err.message, true);
+        }
+      });
+
+      $("pickOutput").addEventListener("click", async () => {
+        try {
+          const path = await callHost("pickOutputDir");
+          if (!path) return;
+          $("outputDir").value = path;
+          updateEstimate();
+        } catch (err) {
+          setStatus(err.message, true);
+        }
+      });
+
+      ["startTime", "endTime", "sampleInterval", "frameDisplay"].forEach((id) => {
+        $(id).addEventListener("input", updateEstimate);
+      });
+
+      $("generate").addEventListener("click", async () => {
+        running = true;
+        $("generate").disabled = true;
+        $("cancel").disabled = false;
+        $("openOutput").disabled = true;
+        $("progress").value = 0;
+        $("result").textContent = "";
+        try {
+          const result = await callHost("sample", {
+            inputPath: $("videoPath").value,
+            outputDir: $("outputDir").value,
+            startTime: $("startTime").value,
+            endTime: $("endTime").value || null,
+            sampleIntervalSeconds: Number($("sampleInterval").value),
+            frameDisplaySeconds: Number($("frameDisplay").value),
+            keepFrames: $("keepFrames").checked,
+          });
+          outputPath = result.outputVideoPath;
+          $("result").textContent = `已生成：${outputPath}`;
+          $("openOutput").disabled = false;
+          setStatus(`完成，抽取 ${result.sampledFrameCount} 帧。`);
+        } catch (err) {
+          setStatus(err.message === "cancelled" ? "已取消。" : err.message, err.message !== "cancelled");
+        } finally {
+          running = false;
+          $("cancel").disabled = true;
+          updateEstimate();
+        }
+      });
+
+      $("cancel").addEventListener("click", () => {
+        callHost("cancel").catch((err) => setStatus(err.message, true));
+      });
+
+      $("openOutput").addEventListener("click", () => {
+        if (outputPath) callHost("openPath", { path: outputPath }).catch((err) => setStatus(err.message, true));
+      });
+
+      window.addEventListener("message", (event) => {
+        const data = event.data || {};
+        if (data.target !== PLUGIN_TARGET || data.type !== "event") return;
+        if (data.event === "progress") {
+          $("progress").value = data.payload.progress || 0;
+          setStatus(data.payload.message || "处理中...");
+        }
+      });
+
+      updateEstimate();
+    </script>
+  </body>
+</html>
