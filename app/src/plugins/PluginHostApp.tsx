@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getPluginEntryContent } from "./api";
+import { installPluginCapabilityBridge } from "./capabilities";
 
 function withBaseUrl(html: string, baseUrl: string) {
   const base = `<base href="${convertFileSrc(baseUrl)}/">`;
@@ -15,6 +16,7 @@ export function PluginHostApp() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const pluginId = params.get("pluginId") ?? "";
   const actionId = params.get("actionId") ?? "";
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const [entryHtml, setEntryHtml] = useState("");
   const [error, setError] = useState("");
 
@@ -34,6 +36,10 @@ export function PluginHostApp() {
         setEntryHtml("");
       });
   }, [pluginId, actionId]);
+
+  useEffect(() => {
+    return installPluginCapabilityBridge(pluginId, iframeRef.current);
+  }, [pluginId, entryHtml]);
 
   if (error) {
     return (
@@ -113,6 +119,7 @@ export function PluginHostApp() {
       </header>
       {entryHtml ? (
         <iframe
+          ref={iframeRef}
           title={pluginId}
           srcDoc={entryHtml}
           sandbox="allow-scripts allow-forms allow-modals allow-popups"

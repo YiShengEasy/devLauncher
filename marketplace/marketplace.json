@@ -10,6 +10,16 @@
       "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/hello-webview-1.0.0.zip",
       "sha256": "269d68257e24c9294bcf46982f1eb664b48d5f3c9fd9ad3552245506b834d494",
       "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/hello-webview.svg"
+    },
+    {
+      "id": "devlauncher.tools.video-frame-sampler",
+      "name": "Video Frame Sampler",
+      "version": "1.0.0",
+      "kind": "webview",
+      "description": "Sample local video frames and generate a quick MP4 preview without uploading files.",
+      "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/video-frame-sampler-1.0.0.zip",
+      "sha256": "2bee5665c8a81d84b35646342afe54a509f8cad246b3972b9b269ea16b99673d",
+      "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/video-frame-sampler.svg"
     }
   ]
 }

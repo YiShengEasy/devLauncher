@@ -5,10 +5,11 @@ mod entries;
 mod keyboard_control_tap;
 mod ocr;
 mod platform;
-mod plugin_manifest;
 mod plugin_manager;
+mod plugin_manifest;
 mod types;
 mod utils;
+mod video_tools;
 mod window_pinning;
 
 use tauri::{
@@ -79,6 +80,10 @@ pub fn run() {
             plugin_manager::get_plugin_entry_url,
             plugin_manager::get_plugin_entry_content,
             plugin_manager::open_plugin_window,
+            video_tools::probe_video,
+            video_tools::sample_video_frames,
+            video_tools::cancel_video_frame_sampler,
+            video_tools::open_video_tool_path,
             actions::execute_action,
             actions::save_ssh_password,
             actions::delete_ssh_password,
@@ -155,6 +160,7 @@ pub fn run() {
             builtins::terminal::setup(app);
             builtins::screenshot::setup(app);
             builtins::clipboard::setup(app);
+            video_tools::setup(app);
             keyboard_control_tap::setup(app.handle());
             window_pinning::apply_all_startup_pin_states(app.handle());
             let _ = entries::show_pet_window(app.handle().clone(), None);
