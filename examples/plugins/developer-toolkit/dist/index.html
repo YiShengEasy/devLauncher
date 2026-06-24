@@ -231,12 +231,28 @@
         { id: "qrcode", label: "QRCode" }
       ];
 
+      function readStorage(key, fallback) {
+        try {
+          return localStorage.getItem(key) || fallback;
+        } catch {
+          return fallback;
+        }
+      }
+
+      function writeStorage(key, value) {
+        try {
+          localStorage.setItem(key, value);
+        } catch {
+          // Sandboxed plugin iframes may block storage; the plugin still works without persistence.
+        }
+      }
+
       const storage = {
         get activeTab() {
-          return localStorage.getItem("devlauncher.developerToolkit.activeTab") || "timestamp";
+          return readStorage("devlauncher.developerToolkit.activeTab", "timestamp");
         },
         set activeTab(value) {
-          localStorage.setItem("devlauncher.developerToolkit.activeTab", value);
+          writeStorage("devlauncher.developerToolkit.activeTab", value);
         }
       };
 

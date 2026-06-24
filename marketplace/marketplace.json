@@ -28,7 +28,7 @@
       "kind": "webview",
       "description": "Timestamp, codec, hash, regex, Cron, and QR Code utilities for DevLauncher.",
       "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/developer-toolkit-1.0.0.zip",
-      "sha256": "49618882c0cbca417a4132d3787f84afa4cac6f1bbe824ca775cabe042b1541f",
+      "sha256": "a8ddca01d9f28f99eac8094303678be664d3ab2b4cb1cb14b06e55dff0f27cb7",
       "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/developer-toolkit.svg"
     }
   ]
