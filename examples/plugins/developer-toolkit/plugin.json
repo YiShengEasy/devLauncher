@@ -1,0 +1,16 @@
+{
+  "id": "devlauncher.tools.developer-toolkit",
+  "name": "Developer Toolkit",
+  "version": "1.0.0",
+  "kind": "webview",
+  "description": "时间戳、编码、哈希、正则、Cron 和二维码工具箱。",
+  "entry": "dist/index.html",
+  "icon": "icon.svg",
+  "actions": [
+    {
+      "id": "open",
+      "title": "打开开发者工具箱",
+      "type": "webview"
+    }
+  ]
+}
