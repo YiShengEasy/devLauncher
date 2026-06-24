@@ -20,6 +20,16 @@
       "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/video-frame-sampler-1.0.0.zip",
       "sha256": "6fb83f317bd511cef915079dc906fbf1a0994b354d8db672b47aa3bc3d65abf8",
       "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/video-frame-sampler.svg"
+    },
+    {
+      "id": "devlauncher.tools.developer-toolkit",
+      "name": "Developer Toolkit",
+      "version": "1.0.0",
+      "kind": "webview",
+      "description": "Timestamp, codec, hash, regex, Cron, and QR Code utilities for DevLauncher.",
+      "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/developer-toolkit-1.0.0.zip",
+      "sha256": "49618882c0cbca417a4132d3787f84afa4cac6f1bbe824ca775cabe042b1541f",
+      "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/developer-toolkit.svg"
     }
   ]
 }
