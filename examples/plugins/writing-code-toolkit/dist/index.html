@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Writing & Code Toolkit</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101116;
+        --panel: rgba(255, 255, 255, 0.045);
+        --panel-strong: rgba(255, 255, 255, 0.07);
+        --line: rgba(255, 255, 255, 0.12);
+        --text: #e8eaf0;
+        --muted: rgba(255, 255, 255, 0.56);
+        --accent: #f6b44b;
+        --accent-2: #2ec4b6;
+        --danger: #ff6b6b;
+        --add: rgba(46, 196, 182, 0.16);
+        --remove: rgba(255, 107, 107, 0.16);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+        background: linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0)), var(--bg);
+        color: var(--text);
+      }
+      button, input, textarea, select { font: inherit; }
+      button {
+        min-height: 31px;
+        border: 1px solid rgba(255,255,255,0.13);
+        border-radius: 7px;
+        padding: 0 10px;
+        background: rgba(255,255,255,0.07);
+        color: rgba(255,255,255,0.78);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:hover { border-color: rgba(246,180,75,0.52); }
+      button:disabled { cursor: not-allowed; opacity: 0.5; }
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 10px;
+        padding: 12px;
+      }
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      h1 { margin: 0; font-size: 15px; line-height: 1.25; letter-spacing: 0; }
+      #status { margin: 3px 0 0; min-height: 16px; color: var(--muted); font-size: 11px; line-height: 16px; }
+      #status.error { color: var(--danger); }
+      .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+      .tab { flex: 0 0 auto; min-width: 86px; background: var(--panel); }
+      .tab.active {
+        border-color: rgba(246,180,75,0.6);
+        background: rgba(246,180,75,0.14);
+        color: #fff4df;
+      }
+      .tool-panel {
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        padding: 12px;
+      }
+      .tool-grid {
+        min-height: 370px;
+        height: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: 12px;
+      }
+      .pane {
+        min-width: 0;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 8px;
+      }
+      .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      label {
+        display: grid;
+        gap: 5px;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+      input, textarea, select, .output, .preview {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        background: rgba(255,255,255,0.055);
+        color: var(--text);
+        outline: none;
+        font-size: 12px;
+      }
+      input, select { min-height: 31px; padding: 6px 9px; }
+      textarea, .output, .preview {
+        min-height: 220px;
+        padding: 10px 11px;
+        resize: none;
+        overflow: auto;
+        line-height: 1.5;
+      }
+      textarea, .output { font-family: Consolas, "Cascadia Code", Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+      .output, .preview { background: rgba(0,0,0,0.16); }
+      .hint { color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      .diff-row { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 2px 6px; border-radius: 5px; font-family: Consolas, "Cascadia Code", Menlo, monospace; font-size: 12px; }
+      .diff-row.add { background: var(--add); }
+      .diff-row.remove { background: var(--remove); }
+      .diff-row.same { color: rgba(232,234,240,0.72); }
+      .markdown-body { color: var(--text); font-size: 13px; line-height: 1.6; }
+      .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0.4em 0; letter-spacing: 0; }
+      .markdown-body p, .markdown-body blockquote, .markdown-body ul, .markdown-body ol { margin: 0.55em 0; }
+      .markdown-body pre { overflow: auto; padding: 10px; border-radius: 8px; background: rgba(0,0,0,0.28); }
+      .markdown-body code { font-family: Consolas, "Cascadia Code", Menlo, monospace; background: rgba(255,255,255,0.08); padding: 1px 4px; border-radius: 4px; }
+      .shot-stage { display: grid; place-items: center; min-height: 250px; }
+      .code-card {
+        width: min(100%, 560px);
+        border: 1px solid rgba(255,255,255,0.12);
+        box-shadow: 0 18px 60px rgba(0,0,0,0.28);
+        overflow: hidden;
+      }
+      .code-title {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 12px;
+        font-size: 11px;
+        color: rgba(255,255,255,0.68);
+      }
+      .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff6b6b; }
+      .dot:nth-child(2) { background: #f6b44b; }
+      .dot:nth-child(3) { background: #2ec4b6; }
+      .code-card pre { margin: 0; overflow: auto; font-family: Consolas, "Cascadia Code", Menlo, monospace; white-space: pre-wrap; }
+      .snippet-list { display: grid; gap: 7px; align-content: start; }
+      .snippet-item { border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px; background: rgba(255,255,255,0.04); }
+      .snippet-item strong { display: block; font-size: 12px; margin-bottom: 3px; }
+      .snippet-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 7px; }
+      @media (max-width: 720px) {
+        .app { padding: 10px; }
+        .tool-grid { grid-template-columns: 1fr; min-height: 0; }
+        .two, .three { grid-template-columns: 1fr; }
+        textarea, .output, .preview { min-height: 160px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <h1>Writing & Code Toolkit</h1>
+          <p id="status">Ready</p>
+        </div>
+        <button id="copyResult" type="button">复制</button>
+      </header>
+      <nav class="tabs" aria-label="Tools"></nav>
+      <section id="toolPanel" class="tool-panel"></section>
+    </main>
+
+    <script>
+      const tabs = [
+        { id: "diff", label: "Diff" },
+        { id: "markdown", label: "Markdown" },
+        { id: "codeshot", label: "Code Shot" },
+        { id: "snippets", label: "Snippets" }
+      ];
+      const storeKey = "devlauncher.writingCodeToolkit";
+      const memory = { snippets: [], activeTab: "diff" };
+      const state = { activeTab: readStorage(`${storeKey}.activeTab`, "diff"), lastCopyText: "", renderedHtml: "" };
+      const tabsEl = document.querySelector(".tabs");
+      const panelEl = document.querySelector("#toolPanel");
+      const statusEl = document.querySelector("#status");
+      const copyButton = document.querySelector("#copyResult");
+
+      function readStorage(key, fallback) {
+        try { return localStorage.getItem(key) || fallback; } catch { return memory[key.split(".").pop()] || fallback; }
+      }
+      function writeStorage(key, value) {
+        try { localStorage.setItem(key, value); } catch { memory[key.split(".").pop()] = value; }
+      }
+      function readJson(key, fallback) {
+        try { return JSON.parse(readStorage(key, JSON.stringify(fallback))); } catch { return fallback; }
+      }
+      function writeJson(key, value) { writeStorage(key, JSON.stringify(value)); }
+      function setStatus(message, kind = "") { statusEl.textContent = message; statusEl.className = kind; }
+      function escapeHtml(value) {
+        return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+      }
+      function stripTags(html) {
+        const div = document.createElement("div");
+        div.innerHTML = html;
+        return div.textContent || "";
+      }
+      function safeHref(value) {
+        const href = String(value || "").trim();
+        return /^(https?:|mailto:|#|\/)/i.test(href) ? href : "#";
+      }
+      function setCopy(text) { state.lastCopyText = text || ""; }
+      async function copyText(text) {
+        if (!text) return setStatus("没有可复制内容", "error");
+        try { await navigator.clipboard.writeText(text); setStatus("已复制"); }
+        catch { setStatus("复制不可用，请手动选择结果", "error"); }
+      }
+      copyButton.addEventListener("click", () => copyText(state.lastCopyText));
+
+      function lineDiff(left, right) {
+        const a = left.split(/\r?\n/);
+        const b = right.split(/\r?\n/);
+        const dp = Array.from({ length: a.length + 1 }, () => Array(b.length + 1).fill(0));
+        for (let i = a.length - 1; i >= 0; i--) {
+          for (let j = b.length - 1; j >= 0; j--) dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+        const rows = [];
+        let i = 0, j = 0;
+        while (i < a.length || j < b.length) {
+          if (i < a.length && j < b.length && a[i] === b[j]) rows.push({ type: "same", text: a[i++], mark: " " }), j++;
+          else if (j < b.length && (i === a.length || dp[i][j + 1] >= dp[i + 1][j])) rows.push({ type: "add", text: b[j++], mark: "+" });
+          else rows.push({ type: "remove", text: a[i++], mark: "-" });
+        }
+        return rows;
+      }
+
+      function renderMarkdownText(markdown) {
+        const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+        let html = "", inCode = false, listType = "";
+        const closeList = () => { if (listType) { html += `</${listType}>`; listType = ""; } };
+        const inline = (text) => escapeHtml(text)
+          .replace(/`([^`]+)`/g, "<code>$1</code>")
+          .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+          .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+          .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, href) => `<a href="${escapeHtml(safeHref(href))}">${label}</a>`);
+        for (const line of lines) {
+          if (line.startsWith("```")) {
+            closeList();
+            html += inCode ? "</code></pre>" : "<pre><code>";
+            inCode = !inCode;
+            continue;
+          }
+          if (inCode) { html += `${escapeHtml(line)}\n`; continue; }
+          if (!line.trim()) { closeList(); continue; }
+          const heading = line.match(/^(#{1,3})\s+(.+)$/);
+          if (heading) { closeList(); html += `<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`; continue; }
+          if (/^>\s+/.test(line)) { closeList(); html += `<blockquote>${inline(line.replace(/^>\s+/, ""))}</blockquote>`; continue; }
+          const unordered = line.match(/^[-*]\s+(.+)$/);
+          if (unordered) { if (listType !== "ul") { closeList(); html += "<ul>"; listType = "ul"; } html += `<li>${inline(unordered[1])}</li>`; continue; }
+          const ordered = line.match(/^\d+\.\s+(.+)$/);
+          if (ordered) { if (listType !== "ol") { closeList(); html += "<ol>"; listType = "ol"; } html += `<li>${inline(ordered[1])}</li>`; continue; }
+          closeList();
+          html += `<p>${inline(line)}</p>`;
+        }
+        closeList();
+        if (inCode) html += "</code></pre>";
+        return html;
+      }
+
+      function codeTheme(name) {
+        if (name === "light") return { bg: "#f5f7fb", header: "#e8edf5", text: "#172033" };
+        if (name === "green") return { bg: "#071713", header: "#0f2a24", text: "#dcfff6" };
+        return { bg: "#111318", header: "#1c2029", text: "#e8eaf0" };
+      }
+
+      function updateCodeCard() {
+        const code = panelEl.querySelector("#shotCode").value || "console.log('Hello DevLauncher');";
+        const lang = panelEl.querySelector("#shotLang").value || "text";
+        const theme = codeTheme(panelEl.querySelector("#shotTheme").value);
+        const fontSize = Number(panelEl.querySelector("#shotSize").value);
+        const radius = Number(panelEl.querySelector("#shotRadius").value);
+        const padding = Number(panelEl.querySelector("#shotPadding").value);
+        const card = panelEl.querySelector("#codeCard");
+        card.style.background = theme.bg;
+        card.style.borderRadius = `${radius}px`;
+        card.innerHTML = `<div class="code-title" style="background:${theme.header}"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span>${escapeHtml(lang)}</span></div><pre style="padding:${padding}px;font-size:${fontSize}px;color:${theme.text}">${escapeHtml(code)}</pre>`;
+        setCopy(code);
+      }
+
+      function downloadCodePng() {
+        const card = panelEl.querySelector("#codeCard");
+        const rect = card.getBoundingClientRect();
+        const style = `<style>.code-card{border:1px solid rgba(255,255,255,0.12);box-shadow:0 18px 60px rgba(0,0,0,0.28);overflow:hidden}.code-title{display:flex;align-items:center;gap:7px;padding:9px 12px;font:11px system-ui;color:rgba(255,255,255,0.68)}.dot{width:9px;height:9px;border-radius:50%;background:#ff6b6b}.dot:nth-child(2){background:#f6b44b}.dot:nth-child(3){background:#2ec4b6}.code-card pre{margin:0;overflow:auto;font-family:Consolas,Menlo,monospace;white-space:pre-wrap}</style>`;
+        const html = `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${Math.ceil(rect.width)}px">${style}${card.outerHTML}</div>`;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(rect.width)}" height="${Math.ceil(rect.height)}"><foreignObject width="100%" height="100%">${html}</foreignObject></svg>`;
+        const image = new Image();
+        const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+        image.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(image, 0, 0);
+          URL.revokeObjectURL(url);
+          const link = document.createElement("a");
+          link.download = "devlauncher-code-shot.png";
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+        };
+        image.onerror = () => { URL.revokeObjectURL(url); setStatus("PNG 生成失败", "error"); };
+        image.src = url;
+      }
+
+      function getSnippets() { return readJson(`${storeKey}.snippets`, memory.snippets || []); }
+      function saveSnippets(items) { memory.snippets = items; writeJson(`${storeKey}.snippets`, items); }
+      function seedSnippets() {
+        const samples = [
+          { title: "Fetch JSON", lang: "ts", body: "const res = await fetch(url);\nconst data = await res.json();" },
+          { title: "Rust Result", lang: "rust", body: "fn run() -> Result<(), String> {\n    Ok(())\n}" }
+        ];
+        saveSnippets(samples);
+        renderSnippets();
+      }
+
+      function renderTabs() {
+        tabsEl.innerHTML = tabs.map((tab) => `<button type="button" class="tab ${tab.id === state.activeTab ? "active" : ""}" data-tab="${tab.id}">${tab.label}</button>`).join("");
+        tabsEl.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => {
+          state.activeTab = button.dataset.tab;
+          writeStorage(`${storeKey}.activeTab`, state.activeTab);
+          setStatus("Ready");
+          render();
+        }));
+      }
+
+      function renderDiff() {
+        panelEl.innerHTML = `
+          <div class="tool-grid">
+            <div class="pane">
+              <div class="controls"><button id="runDiff" type="button">对比</button><button id="clearDiff" type="button">清空</button></div>
+              <div class="two">
+                <label>左侧<textarea id="leftText" placeholder="旧文本"></textarea></label>
+                <label>右侧<textarea id="rightText" placeholder="新文本"></textarea></label>
+              </div>
+              <div class="hint">行级 diff，适合文本和代码片段。</div>
+            </div>
+            <div class="pane">
+              <div class="controls"><span class="hint" id="diffStats">结果</span></div>
+              <div class="output" id="diffOutput"></div>
+              <div class="hint">绿色新增，红色删除。</div>
+            </div>
+          </div>`;
+        const run = () => {
+          const rows = lineDiff(panelEl.querySelector("#leftText").value, panelEl.querySelector("#rightText").value);
+          const stats = rows.reduce((acc, row) => (acc[row.type]++, acc), { add: 0, remove: 0, same: 0 });
+          panelEl.querySelector("#diffStats").textContent = `+${stats.add} / -${stats.remove} / =${stats.same}`;
+          panelEl.querySelector("#diffOutput").innerHTML = rows.map((row) => `<div class="diff-row ${row.type}"><span>${row.mark}</span><span>${escapeHtml(row.text) || " "}</span></div>`).join("");
+          setCopy(rows.map((row) => `${row.mark} ${row.text}`).join("\n"));
+          setStatus("已对比");
+        };
+        panelEl.querySelector("#runDiff").addEventListener("click", run);
+        panelEl.querySelector("#clearDiff").addEventListener("click", () => { panelEl.querySelector("#leftText").value = ""; panelEl.querySelector("#rightText").value = ""; panelEl.querySelector("#diffOutput").innerHTML = ""; setCopy(""); });
+      }
+
+      function renderMarkdown() {
+        panelEl.innerHTML = `
+          <div class="tool-grid">
+            <div class="pane">
+              <div class="controls"><button id="copyHtml" type="button">复制 HTML</button><button id="copyText" type="button">复制文本</button></div>
+              <label>Markdown<textarea id="markdownInput" placeholder="# Title\n\nWrite **Markdown** here."></textarea></label>
+              <div class="hint">支持基础 Markdown，输出会转义 HTML。</div>
+            </div>
+            <div class="pane">
+              <div class="controls"><span class="hint">预览</span></div>
+              <div class="preview markdown-body" id="markdownPreview"></div>
+              <div class="hint">实时预览。</div>
+            </div>
+          </div>`;
+        const input = panelEl.querySelector("#markdownInput");
+        const preview = panelEl.querySelector("#markdownPreview");
+        const update = () => { state.renderedHtml = renderMarkdownText(input.value); preview.innerHTML = state.renderedHtml; setCopy(state.renderedHtml); setStatus("已预览"); };
+        input.addEventListener("input", update);
+        panelEl.querySelector("#copyHtml").addEventListener("click", () => copyText(state.renderedHtml));
+        panelEl.querySelector("#copyText").addEventListener("click", () => copyText(stripTags(state.renderedHtml)));
+        input.value = "# Developer Note\n\n- Use **small steps**\n- Keep `scope` clear";
+        update();
+      }
+
+      function renderCodeShot() {
+        panelEl.innerHTML = `
+          <div class="tool-grid">
+            <div class="pane">
+              <div class="three">
+                <label>语言<input id="shotLang" value="ts" /></label>
+                <label>主题<select id="shotTheme"><option value="dark">Dark</option><option value="green">Green</option><option value="light">Light</option></select></label>
+                <label>字号<input id="shotSize" type="number" min="10" max="28" value="14" /></label>
+              </div>
+              <div class="two">
+                <label>圆角<input id="shotRadius" type="number" min="0" max="28" value="14" /></label>
+                <label>边距<input id="shotPadding" type="number" min="8" max="48" value="22" /></label>
+              </div>
+              <label>代码<textarea id="shotCode" placeholder="Paste code here"></textarea></label>
+              <div class="controls"><button id="refreshShot" type="button">预览</button><button id="downloadShot" type="button">下载 PNG</button></div>
+            </div>
+            <div class="pane">
+              <div class="controls"><span class="hint">截图预览</span></div>
+              <div class="preview shot-stage"><div class="code-card" id="codeCard"></div></div>
+              <div class="hint">通过浏览器 canvas 导出。</div>
+            </div>
+          </div>`;
+        panelEl.querySelector("#shotCode").value = "export function greet(name: string) {\n  return `Hello ${name}`;\n}";
+        ["#shotLang", "#shotTheme", "#shotSize", "#shotRadius", "#shotPadding", "#shotCode"].forEach((selector) => panelEl.querySelector(selector).addEventListener("input", updateCodeCard));
+        panelEl.querySelector("#refreshShot").addEventListener("click", updateCodeCard);
+        panelEl.querySelector("#downloadShot").addEventListener("click", downloadCodePng);
+        updateCodeCard();
+      }
+
+      function renderSnippets() {
+        panelEl.innerHTML = `
+          <div class="tool-grid">
+            <div class="pane">
+              <div class="two">
+                <label>标题<input id="snippetTitle" /></label>
+                <label>语言<input id="snippetLang" value="text" /></label>
+              </div>
+              <label>片段<textarea id="snippetBody"></textarea></label>
+              <div class="controls"><button id="saveSnippet" type="button">保存</button><button id="seedSnippets" type="button">示例</button><button id="clearSnippet" type="button">清空</button></div>
+            </div>
+            <div class="pane">
+              <div class="controls"><span class="hint">片段列表</span></div>
+              <div class="preview snippet-list" id="snippetList"></div>
+              <div class="hint">存储不可用时，片段仅本次会话有效。</div>
+            </div>
+          </div>`;
+        const title = panelEl.querySelector("#snippetTitle"), lang = panelEl.querySelector("#snippetLang"), body = panelEl.querySelector("#snippetBody");
+        const list = panelEl.querySelector("#snippetList");
+        const paint = () => {
+          const items = getSnippets();
+          list.innerHTML = items.length ? items.map((item, index) => `<div class="snippet-item"><strong>${escapeHtml(item.title)}</strong><div class="hint">${escapeHtml(item.lang)} / ${item.body.length} chars</div><pre>${escapeHtml(item.body.slice(0, 220))}</pre><div class="snippet-actions"><button data-edit="${index}" type="button">编辑</button><button data-copy="${index}" type="button">复制</button><button data-shot="${index}" type="button">到截图</button><button data-del="${index}" type="button">删除</button></div></div>`).join("") : `<div class="hint">暂无片段。</div>`;
+          list.querySelectorAll("[data-edit]").forEach((btn) => btn.addEventListener("click", () => { const item = getSnippets()[Number(btn.dataset.edit)]; title.value = item.title; lang.value = item.lang; body.value = item.body; title.dataset.editing = btn.dataset.edit; }));
+          list.querySelectorAll("[data-copy]").forEach((btn) => btn.addEventListener("click", () => copyText(getSnippets()[Number(btn.dataset.copy)].body)));
+          list.querySelectorAll("[data-shot]").forEach((btn) => btn.addEventListener("click", () => { const item = getSnippets()[Number(btn.dataset.shot)]; state.activeTab = "codeshot"; render(); panelEl.querySelector("#shotLang").value = item.lang; panelEl.querySelector("#shotCode").value = item.body; updateCodeCard(); }));
+          list.querySelectorAll("[data-del]").forEach((btn) => btn.addEventListener("click", () => { const items = getSnippets(); items.splice(Number(btn.dataset.del), 1); saveSnippets(items); paint(); }));
+        };
+        panelEl.querySelector("#saveSnippet").addEventListener("click", () => {
+          if (!title.value.trim() || !body.value.trim()) return setStatus("标题和片段不能为空", "error");
+          const items = getSnippets();
+          const item = { title: title.value.trim(), lang: lang.value.trim() || "text", body: body.value };
+          if (title.dataset.editing) items[Number(title.dataset.editing)] = item; else items.unshift(item);
+          delete title.dataset.editing;
+          saveSnippets(items);
+          title.value = ""; body.value = ""; setStatus("已保存"); paint();
+        });
+        panelEl.querySelector("#seedSnippets").addEventListener("click", seedSnippets);
+        panelEl.querySelector("#clearSnippet").addEventListener("click", () => { title.value = ""; body.value = ""; delete title.dataset.editing; });
+        paint();
+      }
+
+      function render() {
+        renderTabs();
+        if (state.activeTab === "diff") renderDiff();
+        if (state.activeTab === "markdown") renderMarkdown();
+        if (state.activeTab === "codeshot") renderCodeShot();
+        if (state.activeTab === "snippets") renderSnippets();
+      }
+      render();
+    </script>
+  </body>
+</html>

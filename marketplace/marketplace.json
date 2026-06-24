@@ -30,6 +30,16 @@
       "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/developer-toolkit-1.0.0.zip",
       "sha256": "a8ddca01d9f28f99eac8094303678be664d3ab2b4cb1cb14b06e55dff0f27cb7",
       "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/developer-toolkit.svg"
+    },
+    {
+      "id": "devlauncher.tools.writing-code-toolkit",
+      "name": "Writing & Code Toolkit",
+      "version": "1.0.0",
+      "kind": "webview",
+      "description": "Diff, Markdown preview, code screenshot, and snippets for DevLauncher.",
+      "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/writing-code-toolkit-1.0.0.zip",
+      "sha256": "5f7c27f7eb96cdc425f655f240c391e30b4644dc8549f8e2e96615c3ea0994de",
+      "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/writing-code-toolkit.svg"
     }
   ]
 }
