@@ -1,0 +1,16 @@
+{
+  "id": "devlauncher.tools.writing-code-toolkit",
+  "name": "Writing & Code Toolkit",
+  "version": "1.0.0",
+  "kind": "webview",
+  "description": "文本对比、Markdown 预览、代码截图和代码片段工具箱。",
+  "entry": "dist/index.html",
+  "icon": "icon.svg",
+  "actions": [
+    {
+      "id": "open",
+      "title": "打开写作与代码工具箱",
+      "type": "webview"
+    }
+  ]
+}
