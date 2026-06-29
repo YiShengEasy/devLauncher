@@ -9,52 +9,62 @@
         color-scheme: dark;
         --bg: #101116;
         --panel: rgba(255, 255, 255, 0.045);
-        --panel-strong: rgba(255, 255, 255, 0.07);
+        --panel-strong: rgba(255, 255, 255, 0.075);
         --line: rgba(255, 255, 255, 0.12);
+        --line-strong: rgba(255, 255, 255, 0.18);
         --text: #e8eaf0;
         --muted: rgba(255, 255, 255, 0.56);
+        --soft: rgba(255, 255, 255, 0.38);
         --accent: #f6b44b;
         --accent-2: #2ec4b6;
         --danger: #ff6b6b;
         --ok: #7bd88f;
       }
+
       * { box-sizing: border-box; }
+
       body {
         margin: 0;
         min-height: 100vh;
         font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
         background:
-          linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0)),
+          linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0)),
           var(--bg);
         color: var(--text);
       }
+
       button, input, textarea, select { font: inherit; }
+
       button {
         min-height: 31px;
-        border: 1px solid rgba(255,255,255,0.13);
+        border: 1px solid rgba(255, 255, 255, 0.13);
         border-radius: 7px;
         padding: 0 10px;
-        background: rgba(255,255,255,0.07);
-        color: rgba(255,255,255,0.78);
+        background: rgba(255, 255, 255, 0.07);
+        color: rgba(255, 255, 255, 0.78);
         font-size: 12px;
         font-weight: 700;
         cursor: pointer;
       }
-      button:hover { border-color: rgba(246,180,75,0.52); }
+
+      button:hover { border-color: rgba(246, 180, 75, 0.52); }
       button:disabled { cursor: not-allowed; opacity: 0.5; }
+
       input, textarea, select {
         width: 100%;
         min-width: 0;
-        border: 1px solid rgba(255,255,255,0.12);
+        border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 8px;
-        background: rgba(255,255,255,0.055);
+        background: rgba(255, 255, 255, 0.055);
         color: var(--text);
         outline: none;
         font-size: 12px;
       }
+
       input, select { min-height: 31px; padding: 6px 9px; }
+
       textarea {
-        min-height: 170px;
+        min-height: 174px;
         padding: 10px 11px;
         resize: vertical;
         line-height: 1.5;
@@ -62,34 +72,87 @@
         white-space: pre-wrap;
         word-break: break-word;
       }
+
+      code { color: rgba(255, 255, 255, 0.72); }
+
       .app {
         min-height: 100vh;
         display: grid;
-        grid-template-rows: auto auto 1fr;
+        grid-template-rows: auto auto auto 1fr;
         gap: 10px;
         padding: 12px;
       }
+
       .topbar {
         display: grid;
         grid-template-columns: minmax(0, 1fr) 190px;
         align-items: center;
         gap: 10px;
       }
-      h1 { margin: 0; font-size: 15px; line-height: 1.25; letter-spacing: 0; }
-      #status { margin: 3px 0 0; min-height: 16px; color: var(--muted); font-size: 11px; line-height: 16px; }
+
+      h1 {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.25;
+        letter-spacing: 0;
+      }
+
+      #status {
+        margin: 3px 0 0;
+        min-height: 16px;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 16px;
+      }
+
       #status.error { color: var(--danger); }
       #status.ok { color: var(--ok); }
+
+      .request-name-line {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto auto;
+        gap: 8px;
+      }
+
       .request-line {
         display: grid;
         grid-template-columns: 112px minmax(0, 1fr) auto auto;
         gap: 8px;
       }
+
+      .resolved-line {
+        min-height: 25px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 8px;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.035);
+        color: var(--muted);
+        font-size: 11px;
+        overflow: hidden;
+      }
+
+      .resolved-line strong {
+        flex: 0 0 auto;
+        color: rgba(255, 255, 255, 0.64);
+      }
+
+      .resolved-line span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       .layout {
         min-height: 0;
         display: grid;
-        grid-template-columns: minmax(230px, 0.31fr) minmax(0, 1fr);
+        grid-template-columns: minmax(250px, 0.32fr) minmax(0, 1fr);
         gap: 10px;
       }
+
       .panel {
         min-width: 0;
         min-height: 0;
@@ -98,67 +161,84 @@
         background: var(--panel);
         padding: 12px;
       }
+
       .section-title {
         margin: 0 0 8px;
         font-size: 12px;
-        color: rgba(255,255,255,0.74);
+        color: rgba(255, 255, 255, 0.74);
         font-weight: 800;
       }
-      .tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
+
+      .tabs {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 8px;
+        overflow-x: auto;
+      }
+
       .tab.active {
-        border-color: rgba(246,180,75,0.6);
-        background: rgba(246,180,75,0.14);
+        border-color: rgba(246, 180, 75, 0.6);
+        background: rgba(246, 180, 75, 0.14);
         color: #fff4df;
       }
+
       .split {
         height: 100%;
         min-height: 0;
         display: grid;
-        grid-template-rows: minmax(250px, 0.58fr) minmax(210px, 0.42fr);
+        grid-template-rows: minmax(272px, 0.56fr) minmax(230px, 0.44fr);
         gap: 10px;
       }
+
       .row {
         display: grid;
         grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1fr) auto;
         gap: 6px;
         margin-bottom: 6px;
       }
+
       .row.two { grid-template-columns: minmax(0, 1fr) auto; }
       .row.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+      .row.auth { grid-template-columns: 150px minmax(0, 1fr); align-items: center; }
+
       .row input[type="checkbox"] {
         width: 16px;
         min-height: 16px;
         align-self: center;
         justify-self: center;
       }
+
       .list {
         display: grid;
-        gap: 6px;
-        max-height: 240px;
+        gap: 7px;
+        max-height: 286px;
         overflow: auto;
       }
-      .list button {
-        min-height: 34px;
-        text-align: left;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
+
       .list-item {
-        border: 1px solid rgba(255,255,255,0.1);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 8px;
         padding: 8px;
-        background: rgba(255,255,255,0.04);
+        background: rgba(255, 255, 255, 0.04);
       }
+
       .item-title {
-        margin: 0 0 3px;
-        color: rgba(255,255,255,0.82);
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin: 0 0 5px;
+        color: rgba(255, 255, 255, 0.84);
         font-size: 12px;
         font-weight: 800;
+      }
+
+      .item-title span:last-child {
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+
       .item-subtitle {
         margin: 0;
         color: var(--muted);
@@ -166,6 +246,29 @@
         line-height: 1.35;
         overflow-wrap: anywhere;
       }
+
+      .badge {
+        flex: 0 0 auto;
+        display: inline-grid;
+        place-items: center;
+        min-width: 44px;
+        height: 19px;
+        padding: 0 6px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.82);
+        background: rgba(255, 255, 255, 0.07);
+        font-size: 10px;
+        font-weight: 900;
+      }
+
+      .badge.get { color: #8bd7ff; background: rgba(74, 171, 255, 0.12); }
+      .badge.post { color: #9df2bd; background: rgba(83, 214, 137, 0.12); }
+      .badge.put, .badge.patch { color: #ffd78a; background: rgba(246, 180, 75, 0.13); }
+      .badge.delete { color: #ff9a9a; background: rgba(255, 107, 107, 0.12); }
+      .badge.status-ok { color: var(--ok); }
+      .badge.status-bad { color: var(--danger); }
+
       .meta {
         display: flex;
         flex-wrap: wrap;
@@ -174,33 +277,63 @@
         color: var(--muted);
         font-size: 11px;
       }
+
       .output {
-        min-height: 160px;
-        max-height: 34vh;
+        min-height: 162px;
+        max-height: 36vh;
         overflow: auto;
         padding: 10px 11px;
-        border: 1px solid rgba(255,255,255,0.12);
+        border: 1px solid rgba(255, 255, 255, 0.12);
         border-radius: 8px;
-        background: rgba(0,0,0,0.16);
+        background: rgba(0, 0, 0, 0.16);
         font-size: 12px;
         line-height: 1.5;
         font-family: Consolas, "Cascadia Code", Menlo, monospace;
         white-space: pre-wrap;
         word-break: break-word;
       }
-      .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .toolbar .actions { margin-top: 0; }
       .field-stack { display: grid; gap: 8px; }
-      .hint { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+
+      .hint {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
       .danger { color: var(--danger); }
+
       .empty {
-        min-height: 72px;
+        min-height: 86px;
         display: grid;
         place-items: center;
-        border: 1px dashed rgba(255,255,255,0.15);
+        gap: 8px;
+        border: 1px dashed rgba(255, 255, 255, 0.15);
         border-radius: 8px;
         color: var(--muted);
         font-size: 12px;
+        text-align: center;
+        padding: 12px;
       }
+
       .mode-line {
         display: grid;
         grid-template-columns: 140px auto auto minmax(0, 1fr);
@@ -208,13 +341,18 @@
         align-items: center;
         margin-bottom: 8px;
       }
-      @media (max-width: 780px) {
+
+      .search {
+        margin-bottom: 8px;
+      }
+
+      @media (max-width: 820px) {
         .app { padding: 10px; }
-        .topbar { grid-template-columns: 1fr; }
+        .topbar, .request-name-line { grid-template-columns: 1fr; }
         .request-line { grid-template-columns: 92px minmax(0, 1fr); }
         .layout { grid-template-columns: 1fr; }
         .split { grid-template-rows: auto auto; }
-        .mode-line { grid-template-columns: 1fr 1fr; }
+        .mode-line, .row.auth { grid-template-columns: 1fr; }
       }
     </style>
   </head>
@@ -227,6 +365,12 @@
         </div>
         <select id="envSelect" aria-label="Environment"></select>
       </header>
+
+      <section class="request-name-line" aria-label="Request name">
+        <input id="requestName" placeholder="Untitled request" />
+        <button data-action="example" type="button">示例</button>
+        <button data-action="save-draft" type="button">保存</button>
+      </section>
 
       <section class="request-line" aria-label="Request">
         <select id="method">
@@ -243,6 +387,11 @@
         <button id="cancel" type="button" disabled>取消</button>
       </section>
 
+      <div class="resolved-line" id="resolvedLine">
+        <strong>Resolved</strong>
+        <span id="resolvedUrl">-</span>
+      </div>
+
       <section class="layout">
         <aside class="panel">
           <div class="tabs">
@@ -256,7 +405,8 @@
         <section class="split">
           <div class="panel">
             <div class="tabs">
-              <button class="tab active" data-request-tab="query" type="button">Query</button>
+              <button class="tab active" data-request-tab="params" type="button">Params</button>
+              <button class="tab" data-request-tab="auth" type="button">Auth</button>
               <button class="tab" data-request-tab="headers" type="button">Headers</button>
               <button class="tab" data-request-tab="body" type="button">Body</button>
             </div>
@@ -281,12 +431,15 @@
       const STORAGE_KEY = "devlauncher.apiLab.v1";
       const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
       const BODY_MODES = ["none", "json", "text"];
+      const AUTH_TYPES = ["none", "bearer", "basic"];
 
       const els = {
         status: document.getElementById("status"),
         envSelect: document.getElementById("envSelect"),
+        requestName: document.getElementById("requestName"),
         method: document.getElementById("method"),
         url: document.getElementById("url"),
+        resolvedUrl: document.getElementById("resolvedUrl"),
         send: document.getElementById("send"),
         cancel: document.getElementById("cancel"),
         sidePanel: document.getElementById("sidePanel"),
@@ -294,12 +447,16 @@
         responsePanel: document.getElementById("responsePanel")
       };
 
+      const blankPair = () => ({ key: "", value: "", enabled: true });
+      const defaultAuth = () => ({ type: "none", bearerToken: "{{token}}", username: "", password: "" });
+
       const defaultState = () => ({
         version: 1,
         activeEnvironmentId: "env-local",
         activeSideTab: "collections",
-        activeRequestTab: "query",
+        activeRequestTab: "params",
         activeResponseTab: "body",
+        sideSearch: "",
         environments: [
           {
             id: "env-local",
@@ -310,21 +467,16 @@
             ]
           }
         ],
-        collections: [
-          {
-            id: "col-default",
-            name: "Default",
-            requests: []
-          }
-        ],
+        collections: [{ id: "col-default", name: "Default", requests: [] }],
         history: [],
         draft: {
           id: "draft",
-          name: "Untitled",
+          name: "Untitled request",
           method: "GET",
           url: "{{baseUrl}}",
-          query: [{ key: "", value: "", enabled: true }],
+          query: [blankPair()],
           headers: [{ key: "Accept", value: "application/json", enabled: true }],
+          auth: defaultAuth(),
           bodyMode: "none",
           body: ""
         },
@@ -356,15 +508,61 @@
         els.status.classList.toggle("ok", tone === "ok");
       }
 
+      function normalizePairs(pairs) {
+        return Array.isArray(pairs)
+          ? pairs.map((pair) => ({
+              key: String(pair.key ?? ""),
+              value: String(pair.value ?? ""),
+              enabled: pair.enabled !== false
+            }))
+          : [];
+      }
+
+      function normalizeAuth(auth) {
+        const next = { ...defaultAuth(), ...(auth ?? {}) };
+        next.type = AUTH_TYPES.includes(next.type) ? next.type : "none";
+        next.bearerToken = String(next.bearerToken ?? "{{token}}");
+        next.username = String(next.username ?? "");
+        next.password = String(next.password ?? "");
+        return next;
+      }
+
+      function normalizeRequest(request) {
+        return {
+          id: String(request.id || uid("req")),
+          name: String(request.name || "Untitled request"),
+          method: METHODS.includes(request.method) ? request.method : "GET",
+          url: String(request.url || ""),
+          query: normalizePairs(request.query),
+          headers: normalizePairs(request.headers),
+          auth: normalizeAuth(request.auth),
+          bodyMode: BODY_MODES.includes(request.bodyMode) ? request.bodyMode : "none",
+          body: String(request.body || "")
+        };
+      }
+
       function loadState() {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
           if (!raw) return defaultState();
           const parsed = JSON.parse(raw);
           if (parsed.version !== 1 || !Array.isArray(parsed.environments) || !parsed.draft) return defaultState();
-          const merged = { ...defaultState(), ...parsed, response: null };
-          if (!Array.isArray(merged.collections) || merged.collections.length === 0) merged.collections = defaultState().collections;
-          if (!Array.isArray(merged.history)) merged.history = [];
+          const base = defaultState();
+          const merged = { ...base, ...parsed, response: null };
+          merged.activeRequestTab = merged.activeRequestTab === "query" ? "params" : merged.activeRequestTab;
+          merged.collections = Array.isArray(merged.collections) && merged.collections.length ? merged.collections : base.collections;
+          merged.history = Array.isArray(merged.history) ? merged.history : [];
+          merged.sideSearch = String(merged.sideSearch ?? "");
+          merged.draft = normalizeRequest({ ...base.draft, ...merged.draft, id: "draft" });
+          merged.collections = merged.collections.map((col) => ({
+            id: String(col.id || uid("col")),
+            name: String(col.name || "Collection"),
+            requests: Array.isArray(col.requests) ? col.requests.map(normalizeRequest) : []
+          }));
+          merged.history = merged.history.map((item) => ({
+            ...item,
+            request: normalizeRequest(item.request ?? base.draft)
+          }));
           return merged;
         } catch (error) {
           return defaultState();
@@ -411,8 +609,27 @@
       }
 
       function syncDraftFromInputs() {
+        state.draft.name = els.requestName.value.trim() || "Untitled request";
         state.draft.method = els.method.value;
         state.draft.url = els.url.value.trim();
+      }
+
+      function authHeader() {
+        const auth = normalizeAuth(state.draft.auth);
+        if (auth.type === "bearer") {
+          const token = resolveVariables(auth.bearerToken);
+          if (token.missing.length) return { missing: token.missing, headers: {} };
+          return { missing: [], headers: token.value.trim() ? { Authorization: `Bearer ${token.value.trim()}` } : {} };
+        }
+        if (auth.type === "basic") {
+          const username = resolveVariables(auth.username);
+          const password = resolveVariables(auth.password);
+          const missing = [...username.missing, ...password.missing];
+          if (missing.length) return { missing, headers: {} };
+          if (!username.value && !password.value) return { missing: [], headers: {} };
+          return { missing: [], headers: { Authorization: `Basic ${btoa(`${username.value}:${password.value}`)}` } };
+        }
+        return { missing: [], headers: {} };
       }
 
       function buildRequest() {
@@ -433,15 +650,17 @@
           const key = resolveVariables(pair.key);
           const value = resolveVariables(pair.value);
           for (const item of [...key.missing, ...value.missing]) missing.add(item);
-          url.searchParams.set(key.value, value.value);
+          if (key.value.trim()) url.searchParams.set(key.value, value.value);
         }
 
-        const headers = {};
+        const auth = authHeader();
+        for (const item of auth.missing) missing.add(item);
+        const headers = { ...auth.headers };
         for (const pair of enabledPairs(state.draft.headers)) {
           const key = resolveVariables(pair.key);
           const value = resolveVariables(pair.value);
           for (const item of [...key.missing, ...value.missing]) missing.add(item);
-          headers[key.value] = value.value;
+          if (key.value.trim()) headers[key.value] = value.value;
         }
 
         let body;
@@ -464,6 +683,15 @@
           init: { method: state.draft.method, headers, body },
           snapshot: clone(state.draft)
         };
+      }
+
+      function resolvedPreview() {
+        try {
+          return buildRequest().url;
+        } catch (error) {
+          const resolved = resolveVariables(state.draft.url);
+          return resolved.value || "-";
+        }
       }
 
       function recordHistory(request, response) {
@@ -527,6 +755,7 @@
             statusText: response.statusText,
             elapsedMs,
             size: new Blob([text]).size,
+            type: contentType || "unknown",
             finalUrl: response.url,
             headers,
             body: formatBody(text, contentType),
@@ -541,7 +770,7 @@
           const message = aborted
             ? "请求已取消"
             : `请求失败：${error.message || "未知错误"}。如果目标服务未允许跨域访问，浏览器 CORS 会阻止第一版插件请求；后续 native HTTP 阶段会解决这类问题。`;
-          state.response = { error: message, elapsedMs, status: "failed" };
+          state.response = { error: message, elapsedMs, status: "failed", finalUrl: request.url, headers: [] };
           recordHistory(request, state.response);
           saveState();
           setStatus(message, aborted ? "normal" : "error");
@@ -557,32 +786,9 @@
         if (activeAbort) activeAbort.abort();
       }
 
-      function normalizePairs(pairs) {
-        return Array.isArray(pairs)
-          ? pairs.map((pair) => ({
-              key: String(pair.key ?? ""),
-              value: String(pair.value ?? ""),
-              enabled: pair.enabled !== false
-            }))
-          : [];
-      }
-
-      function normalizeRequest(request) {
-        return {
-          id: String(request.id || uid("req")),
-          name: String(request.name || "Untitled"),
-          method: METHODS.includes(request.method) ? request.method : "GET",
-          url: String(request.url || ""),
-          query: normalizePairs(request.query),
-          headers: normalizePairs(request.headers),
-          bodyMode: BODY_MODES.includes(request.bodyMode) ? request.bodyMode : "none",
-          body: String(request.body || "")
-        };
-      }
-
       function loadRequest(request) {
         state.draft = { ...normalizeRequest(request), id: "draft" };
-        setStatus(`已载入：${request.name || request.url || "request"}`);
+        setStatus(`已载入：${state.draft.name || state.draft.url}`);
         saveState();
         render();
       }
@@ -594,11 +800,12 @@
 
       function saveDraftToCollection() {
         syncDraftFromInputs();
-        const name = prompt("请求名称", state.draft.name || state.draft.url || "Untitled");
-        if (!name) return;
-        const saved = { ...clone(state.draft), id: uid("req"), name };
-        collection().requests.unshift(saved);
-        setStatus(`已保存：${name}`, "ok");
+        const saved = { ...clone(state.draft), id: uid("req"), name: state.draft.name || state.draft.url || "Untitled request" };
+        const col = collection();
+        const existingIndex = col.requests.findIndex((item) => item.name === saved.name);
+        if (existingIndex >= 0) col.requests.splice(existingIndex, 1, saved);
+        else col.requests.unshift(saved);
+        setStatus(`已保存：${saved.name}`, "ok");
         saveState();
         render();
       }
@@ -631,7 +838,7 @@
       function addEnvironment() {
         const name = prompt("环境名称", "Dev");
         if (!name) return;
-        const env = { id: uid("env"), name, variables: [{ key: "baseUrl", value: "", enabled: true }] };
+        const env = { id: uid("env"), name, variables: [{ key: "baseUrl", value: "", enabled: true }, { key: "token", value: "", enabled: true }] };
         state.environments.push(env);
         state.activeEnvironmentId = env.id;
         saveState();
@@ -645,7 +852,7 @@
 
       function ensureBlankPair(list) {
         if (!list.some((pair) => !pair.key && !pair.value)) {
-          list.push({ key: "", value: "", enabled: true });
+          list.push(blankPair());
         }
       }
 
@@ -661,6 +868,21 @@
         `).join("");
       }
 
+      function methodBadge(method) {
+        return `<span class="badge ${escapeHtml(String(method).toLowerCase())}">${escapeHtml(method)}</span>`;
+      }
+
+      function statusBadge(status) {
+        const text = String(status ?? "-");
+        const ok = Number(status) >= 200 && Number(status) < 400;
+        return `<span class="badge ${ok ? "status-ok" : "status-bad"}">${escapeHtml(text)}</span>`;
+      }
+
+      function matchesSearch(text) {
+        const q = state.sideSearch.trim().toLowerCase();
+        return !q || String(text).toLowerCase().includes(q);
+      }
+
       function renderEnvSelect() {
         els.envSelect.innerHTML = state.environments.map((env) => `
           <option value="${escapeHtml(env.id)}" ${env.id === state.activeEnvironmentId ? "selected" : ""}>${escapeHtml(env.name)}</option>
@@ -670,19 +892,20 @@
       function renderSidePanel() {
         if (state.activeSideTab === "collections") {
           const col = collection();
+          const requests = col.requests.filter((request) => matchesSearch(`${request.name} ${request.method} ${request.url}`));
           els.sidePanel.innerHTML = `
             <h2 class="section-title">${escapeHtml(col.name)}</h2>
+            <input class="search" id="sideSearch" value="${escapeHtml(state.sideSearch)}" placeholder="搜索集合请求" />
             <div class="actions">
-              <button data-action="save-draft" type="button">保存</button>
+              <button data-action="save-draft" type="button">保存当前</button>
               <button data-action="export" type="button">导出</button>
               <button data-action="import" type="button">导入</button>
             </div>
-            <p class="hint">点击请求只会载入编辑器，不会自动发送。</p>
             <div class="list">
-              ${col.requests.length ? col.requests.map((request) => `
+              ${requests.length ? requests.map((request) => `
                 <div class="list-item">
-                  <p class="item-title">${escapeHtml(request.name)}</p>
-                  <p class="item-subtitle">${escapeHtml(request.method)} ${escapeHtml(request.url)}</p>
+                  <p class="item-title">${methodBadge(request.method)}<span>${escapeHtml(request.name)}</span></p>
+                  <p class="item-subtitle">${escapeHtml(request.url)}</p>
                   <div class="actions">
                     <button data-load-request="${escapeHtml(request.id)}" type="button">载入</button>
                     <button data-rename-request="${escapeHtml(request.id)}" type="button">重命名</button>
@@ -690,21 +913,31 @@
                     <button data-delete-request="${escapeHtml(request.id)}" type="button">删除</button>
                   </div>
                 </div>
-              `).join("") : `<div class="empty">暂无集合请求</div>`}
+              `).join("") : `
+                <div class="empty">
+                  <span>暂无集合请求</span>
+                  <button data-action="example" type="button">载入示例请求</button>
+                </div>
+              `}
             </div>
           `;
           return;
         }
 
         if (state.activeSideTab === "history") {
+          const history = state.history.filter((item) => matchesSearch(`${item.method} ${item.status} ${item.url}`));
           els.sidePanel.innerHTML = `
             <h2 class="section-title">最近 100 条</h2>
+            <input class="search" id="sideSearch" value="${escapeHtml(state.sideSearch)}" placeholder="搜索历史 URL 或状态" />
             <div class="list">
-              ${state.history.length ? state.history.map((item) => `
-                <button data-load-history="${escapeHtml(item.id)}" type="button">
-                  ${escapeHtml(item.method)} ${escapeHtml(item.status ?? "-")} · ${escapeHtml(item.elapsedMs ?? "-")} ms
-                  <br />${escapeHtml(item.url)}
-                </button>
+              ${history.length ? history.map((item) => `
+                <div class="list-item">
+                  <p class="item-title">${methodBadge(item.method)}${statusBadge(item.status)}<span>${escapeHtml(item.elapsedMs ?? "-")} ms</span></p>
+                  <p class="item-subtitle">${escapeHtml(item.url)}</p>
+                  <div class="actions">
+                    <button data-load-history="${escapeHtml(item.id)}" type="button">载入</button>
+                  </div>
+                </div>
               `).join("") : `<div class="empty">发送请求后会记录历史</div>`}
             </div>
           `;
@@ -721,19 +954,54 @@
           <div class="field-stack">
             ${env ? renderPairRows(env.variables, "env") : `<div class="empty">暂无环境</div>`}
           </div>
-          <p class="hint">变量使用 <code>{{name}}</code> 插值到 URL、Headers 和 Body。本地保存，不是安全密钥库。</p>
+          <p class="hint">变量使用 <code>{{name}}</code> 插值到 URL、Auth、Headers 和 Body。本地保存，不是安全密钥库。</p>
         `;
       }
 
       function renderRequestPanel() {
-        if (state.activeRequestTab === "query") {
+        if (state.activeRequestTab === "params") {
           els.requestPanel.innerHTML = `
-            <h2 class="section-title">Query</h2>
+            <h2 class="section-title">Params</h2>
             ${renderPairRows(state.draft.query, "query")}
             <div class="actions">
               <button data-action="add-query" type="button">添加</button>
               <button data-action="sync-query" type="button">同步到 URL</button>
             </div>
+          `;
+          return;
+        }
+
+        if (state.activeRequestTab === "auth") {
+          const auth = normalizeAuth(state.draft.auth);
+          els.requestPanel.innerHTML = `
+            <h2 class="section-title">Auth</h2>
+            <div class="field-stack">
+              <div class="row auth">
+                <label for="authType">Type</label>
+                <select id="authType">
+                  <option value="none" ${auth.type === "none" ? "selected" : ""}>No Auth</option>
+                  <option value="bearer" ${auth.type === "bearer" ? "selected" : ""}>Bearer Token</option>
+                  <option value="basic" ${auth.type === "basic" ? "selected" : ""}>Basic Auth</option>
+                </select>
+              </div>
+              ${auth.type === "bearer" ? `
+                <div class="row auth">
+                  <label for="bearerToken">Token</label>
+                  <input id="bearerToken" value="${escapeHtml(auth.bearerToken)}" placeholder="{{token}}" />
+                </div>
+              ` : ""}
+              ${auth.type === "basic" ? `
+                <div class="row auth">
+                  <label for="basicUsername">Username</label>
+                  <input id="basicUsername" value="${escapeHtml(auth.username)}" placeholder="username" />
+                </div>
+                <div class="row auth">
+                  <label for="basicPassword">Password</label>
+                  <input id="basicPassword" value="${escapeHtml(auth.password)}" placeholder="password or {{password}}" />
+                </div>
+              ` : ""}
+            </div>
+            <p class="hint">Auth 会生成 Authorization header；Headers tab 中同名 header 会覆盖它。</p>
           `;
           return;
         }
@@ -752,7 +1020,7 @@
           <div class="mode-line">
             <select id="bodyMode">
               <option value="none" ${state.draft.bodyMode === "none" ? "selected" : ""}>none</option>
-              <option value="json" ${state.draft.bodyMode === "json" ? "selected" : ""}>json</option>
+              <option value="json" ${state.draft.bodyMode === "json" ? "selected" : ""}>JSON</option>
               <option value="text" ${state.draft.bodyMode === "text" ? "selected" : ""}>text</option>
             </select>
             <button data-action="format-json" type="button">格式化</button>
@@ -763,41 +1031,58 @@
         `;
       }
 
+      function responseHeadersText() {
+        return (state.response?.headers ?? []).map((item) => `${item.key}: ${item.value}`).join("\n");
+      }
+
+      function renderResponseToolbar(response) {
+        if (!response || response.error) return "";
+        return `
+          <div class="toolbar">
+            <div class="meta">
+              ${statusBadge(response.status)}
+              <span>${escapeHtml(response.elapsedMs)} ms</span>
+              <span>${escapeHtml(formatBytes(response.size))}</span>
+              <span>${escapeHtml(response.type || "unknown")}</span>
+            </div>
+            <div class="actions">
+              <button data-action="copy-body" type="button">复制 Body</button>
+              <button data-action="copy-headers" type="button">复制 Headers</button>
+              <button data-action="save-draft" type="button">保存为请求</button>
+            </div>
+          </div>
+        `;
+      }
+
       function renderResponse() {
         const response = state.response;
         if (!response) {
           els.responsePanel.innerHTML = `
-            <div class="meta"><span>等待请求</span></div>
-            <div class="output">发送请求后，这里会显示响应。</div>
+            <div class="empty">
+              <span>发送请求后，这里会显示响应。</span>
+              <button data-action="example" type="button">载入 GET 示例</button>
+            </div>
           `;
           return;
         }
         if (response.error) {
           els.responsePanel.innerHTML = `
-            <div class="meta"><span class="danger">请求失败</span><span>${escapeHtml(response.elapsedMs ?? 0)} ms</span></div>
+            <div class="meta"><span class="danger">请求失败</span><span>${escapeHtml(response.elapsedMs ?? 0)} ms</span><span>${escapeHtml(response.finalUrl ?? "")}</span></div>
             <div class="output">${escapeHtml(response.error)}</div>
           `;
           return;
         }
         if (state.activeResponseTab === "headers") {
           els.responsePanel.innerHTML = `
-            <div class="meta">
-              <span>${escapeHtml(response.status)} ${escapeHtml(response.statusText)}</span>
-              <span>${escapeHtml(response.elapsedMs)} ms</span>
-              <span>${escapeHtml(formatBytes(response.size))}</span>
-            </div>
-            <div class="output">${escapeHtml(response.headers.map((item) => `${item.key}: ${item.value}`).join("\n"))}</div>
+            ${renderResponseToolbar(response)}
+            <div class="output">${escapeHtml(responseHeadersText() || "No headers")}</div>
           `;
           return;
         }
         els.responsePanel.innerHTML = `
-          <div class="meta">
-            <span>${escapeHtml(response.status)} ${escapeHtml(response.statusText)}</span>
-            <span>${escapeHtml(response.elapsedMs)} ms</span>
-            <span>${escapeHtml(formatBytes(response.size))}</span>
-            <span>${escapeHtml(response.finalUrl)}</span>
-          </div>
-          <div class="output">${escapeHtml(response.body)}</div>
+          ${renderResponseToolbar(response)}
+          <div class="meta"><span>${escapeHtml(response.finalUrl)}</span></div>
+          <div class="output">${escapeHtml(response.body || "Empty response")}</div>
         `;
       }
 
@@ -811,9 +1096,10 @@
           state.draft.url = parsed.toString();
           els.url.value = state.draft.url;
           saveState();
-          setStatus("已同步 Query 到 URL", "ok");
+          setStatus("已同步 Params 到 URL", "ok");
+          renderResolvedUrl();
         } catch (error) {
-          setStatus("URL 无效，无法同步 Query", "error");
+          setStatus("URL 无效，无法同步 Params", "error");
         }
       }
 
@@ -826,6 +1112,15 @@
           renderRequestPanel();
         } catch (error) {
           setStatus(`JSON 格式化失败：${error.message}`, "error");
+        }
+      }
+
+      async function copyText(text, label) {
+        try {
+          await navigator.clipboard.writeText(text);
+          setStatus(`已复制：${label}`, "ok");
+        } catch (error) {
+          setStatus(`复制失败：${error.message}`, "error");
         }
       }
 
@@ -885,6 +1180,24 @@
         input.click();
       }
 
+      function loadExampleRequest() {
+        state.draft = normalizeRequest({
+          id: "draft",
+          name: "GitHub Zen",
+          method: "GET",
+          url: "https://api.github.com/zen",
+          query: [blankPair()],
+          headers: [{ key: "Accept", value: "application/json", enabled: true }],
+          auth: defaultAuth(),
+          bodyMode: "none",
+          body: ""
+        });
+        state.activeRequestTab = "params";
+        setStatus("已载入示例请求", "ok");
+        saveState();
+        render();
+      }
+
       function renderTabs() {
         document.querySelectorAll("[data-side-tab]").forEach((button) => {
           button.classList.toggle("active", button.dataset.sideTab === state.activeSideTab);
@@ -897,11 +1210,17 @@
         });
       }
 
+      function renderResolvedUrl() {
+        els.resolvedUrl.textContent = resolvedPreview();
+      }
+
       function render() {
         renderTabs();
         renderEnvSelect();
+        els.requestName.value = state.draft.name;
         els.method.value = state.draft.method;
         els.url.value = state.draft.url;
+        renderResolvedUrl();
         renderSidePanel();
         renderRequestPanel();
         renderResponse();
@@ -912,6 +1231,7 @@
         if (!target) return;
         if (target.dataset.sideTab) {
           state.activeSideTab = target.dataset.sideTab;
+          state.sideSearch = "";
           saveState();
           render();
         } else if (target.dataset.requestTab) {
@@ -929,18 +1249,24 @@
           exportData();
         } else if (target.dataset.action === "import") {
           importData();
+        } else if (target.dataset.action === "example") {
+          loadExampleRequest();
         } else if (target.dataset.action === "add-env") {
           addEnvironment();
         } else if (target.dataset.action === "add-query") {
-          state.draft.query.push({ key: "", value: "", enabled: true });
+          state.draft.query.push(blankPair());
           renderRequestPanel();
         } else if (target.dataset.action === "add-header") {
-          state.draft.headers.push({ key: "", value: "", enabled: true });
+          state.draft.headers.push(blankPair());
           renderRequestPanel();
         } else if (target.dataset.action === "sync-query") {
           syncQueryToUrl();
         } else if (target.dataset.action === "format-json") {
           formatJsonBody();
+        } else if (target.dataset.action === "copy-body") {
+          copyText(state.response?.body || "", "Body");
+        } else if (target.dataset.action === "copy-headers") {
+          copyText(responseHeadersText(), "Headers");
         } else if (target.dataset.action === "remove-pair") {
           const row = target.closest("[data-pair-type]");
           const list = pairList(row.dataset.pairType);
@@ -975,14 +1301,23 @@
           const index = Number(row.dataset.index);
           const field = event.target.dataset.field;
           updatePair(list, index, field, event.target.type === "checkbox" ? event.target.checked : event.target.value);
+          renderResolvedUrl();
           return;
         }
-        if (event.target.id === "url") {
+        if (event.target.id === "requestName") {
+          state.draft.name = event.target.value;
+          saveState();
+        } else if (event.target.id === "url") {
           state.draft.url = event.target.value;
           saveState();
+          renderResolvedUrl();
         } else if (event.target.id === "bodyInput") {
           state.draft.body = event.target.value;
           saveState();
+        } else if (event.target.id === "sideSearch") {
+          state.sideSearch = event.target.value;
+          saveState();
+          renderSidePanel();
         } else if (event.target.id === "envName") {
           const env = activeEnvironment();
           if (env) {
@@ -990,6 +1325,18 @@
             saveState();
             renderEnvSelect();
           }
+        } else if (event.target.id === "bearerToken") {
+          state.draft.auth.bearerToken = event.target.value;
+          saveState();
+          renderResolvedUrl();
+        } else if (event.target.id === "basicUsername") {
+          state.draft.auth.username = event.target.value;
+          saveState();
+          renderResolvedUrl();
+        } else if (event.target.id === "basicPassword") {
+          state.draft.auth.password = event.target.value;
+          saveState();
+          renderResolvedUrl();
         }
       });
 
@@ -1004,6 +1351,10 @@
         } else if (event.target.id === "bodyMode") {
           state.draft.bodyMode = event.target.value;
           saveState();
+        } else if (event.target.id === "authType") {
+          state.draft.auth.type = event.target.value;
+          saveState();
+          render();
         }
       });
 

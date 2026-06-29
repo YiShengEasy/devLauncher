@@ -48,7 +48,7 @@
       "kind": "webview",
       "description": "Lightweight API requests, environments, collections, and history for DevLauncher.",
       "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/api-lab-1.0.0.zip",
-      "sha256": "9880a50edcbbd38674475ceb88056ebe968710a4b494d994937d9062b3c632a4",
+      "sha256": "713a1f9429fd5318b92f5eea170be53b93958eec6eef06833844a9b3873de610",
       "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/api-lab.svg"
     }
   ]

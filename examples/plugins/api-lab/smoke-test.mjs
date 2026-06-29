@@ -16,7 +16,7 @@ assert(manifest.kind === "webview", "manifest kind must be webview");
 assert(manifest.entry === "dist/index.html", "manifest entry mismatch");
 assert(manifest.actions?.[0]?.type === "webview", "manifest action must be webview");
 
-for (const id of ["method", "url", "send", "cancel", "envSelect", "sidePanel", "requestPanel", "responsePanel"]) {
+for (const id of ["requestName", "method", "url", "send", "cancel", "envSelect", "resolvedUrl", "sidePanel", "requestPanel", "responsePanel"]) {
   assert(html.includes(`id="${id}"`), `missing #${id}`);
 }
 
@@ -26,6 +26,14 @@ for (const token of [
   "AbortController",
   "buildRequest",
   "resolveVariables",
+  "resolvedPreview",
+  "authHeader",
+  "Bearer Token",
+  "Basic Auth",
+  "copyText",
+  "copy-body",
+  "copy-headers",
+  "loadExampleRequest",
   "exportData",
   "importData",
   "saveDraftToCollection"
