@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="API Lab">
+  <rect width="96" height="96" rx="20" fill="#101116"/>
+  <path d="M20 31h56a9 9 0 0 1 9 9v16a9 9 0 0 1-9 9H20a9 9 0 0 1-9-9V40a9 9 0 0 1 9-9Z" fill="#1d202a" stroke="#f6b44b" stroke-width="4"/>
+  <path d="M27 48h13m8 0h21" stroke="#e8eaf0" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="72" cy="48" r="5" fill="#2ec4b6"/>
+</svg>

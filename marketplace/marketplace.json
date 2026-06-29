@@ -40,6 +40,16 @@
       "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/writing-code-toolkit-1.0.0.zip",
       "sha256": "5f7c27f7eb96cdc425f655f240c391e30b4644dc8549f8e2e96615c3ea0994de",
       "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/writing-code-toolkit.svg"
+    },
+    {
+      "id": "devlauncher.tools.api-lab",
+      "name": "API Lab",
+      "version": "1.0.0",
+      "kind": "webview",
+      "description": "Lightweight API requests, environments, collections, and history for DevLauncher.",
+      "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/api-lab-1.0.0.zip",
+      "sha256": "9880a50edcbbd38674475ceb88056ebe968710a4b494d994937d9062b3c632a4",
+      "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/api-lab.svg"
     }
   ]
 }

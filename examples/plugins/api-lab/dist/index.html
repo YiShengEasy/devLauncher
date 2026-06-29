@@ -1,0 +1,1017 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>API Lab</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101116;
+        --panel: rgba(255, 255, 255, 0.045);
+        --panel-strong: rgba(255, 255, 255, 0.07);
+        --line: rgba(255, 255, 255, 0.12);
+        --text: #e8eaf0;
+        --muted: rgba(255, 255, 255, 0.56);
+        --accent: #f6b44b;
+        --accent-2: #2ec4b6;
+        --danger: #ff6b6b;
+        --ok: #7bd88f;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,0.025), rgba(255,255,255,0)),
+          var(--bg);
+        color: var(--text);
+      }
+      button, input, textarea, select { font: inherit; }
+      button {
+        min-height: 31px;
+        border: 1px solid rgba(255,255,255,0.13);
+        border-radius: 7px;
+        padding: 0 10px;
+        background: rgba(255,255,255,0.07);
+        color: rgba(255,255,255,0.78);
+        font-size: 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      button:hover { border-color: rgba(246,180,75,0.52); }
+      button:disabled { cursor: not-allowed; opacity: 0.5; }
+      input, textarea, select {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        background: rgba(255,255,255,0.055);
+        color: var(--text);
+        outline: none;
+        font-size: 12px;
+      }
+      input, select { min-height: 31px; padding: 6px 9px; }
+      textarea {
+        min-height: 170px;
+        padding: 10px 11px;
+        resize: vertical;
+        line-height: 1.5;
+        font-family: Consolas, "Cascadia Code", Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .app {
+        min-height: 100vh;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 10px;
+        padding: 12px;
+      }
+      .topbar {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 190px;
+        align-items: center;
+        gap: 10px;
+      }
+      h1 { margin: 0; font-size: 15px; line-height: 1.25; letter-spacing: 0; }
+      #status { margin: 3px 0 0; min-height: 16px; color: var(--muted); font-size: 11px; line-height: 16px; }
+      #status.error { color: var(--danger); }
+      #status.ok { color: var(--ok); }
+      .request-line {
+        display: grid;
+        grid-template-columns: 112px minmax(0, 1fr) auto auto;
+        gap: 8px;
+      }
+      .layout {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(230px, 0.31fr) minmax(0, 1fr);
+        gap: 10px;
+      }
+      .panel {
+        min-width: 0;
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--panel);
+        padding: 12px;
+      }
+      .section-title {
+        margin: 0 0 8px;
+        font-size: 12px;
+        color: rgba(255,255,255,0.74);
+        font-weight: 800;
+      }
+      .tabs { display: flex; gap: 6px; margin-bottom: 8px; overflow-x: auto; }
+      .tab.active {
+        border-color: rgba(246,180,75,0.6);
+        background: rgba(246,180,75,0.14);
+        color: #fff4df;
+      }
+      .split {
+        height: 100%;
+        min-height: 0;
+        display: grid;
+        grid-template-rows: minmax(250px, 0.58fr) minmax(210px, 0.42fr);
+        gap: 10px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 26px minmax(0, 1fr) minmax(0, 1fr) auto;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .row.two { grid-template-columns: minmax(0, 1fr) auto; }
+      .row.three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+      .row input[type="checkbox"] {
+        width: 16px;
+        min-height: 16px;
+        align-self: center;
+        justify-self: center;
+      }
+      .list {
+        display: grid;
+        gap: 6px;
+        max-height: 240px;
+        overflow: auto;
+      }
+      .list button {
+        min-height: 34px;
+        text-align: left;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .list-item {
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 8px;
+        background: rgba(255,255,255,0.04);
+      }
+      .item-title {
+        margin: 0 0 3px;
+        color: rgba(255,255,255,0.82);
+        font-size: 12px;
+        font-weight: 800;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .item-subtitle {
+        margin: 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .output {
+        min-height: 160px;
+        max-height: 34vh;
+        overflow: auto;
+        padding: 10px 11px;
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px;
+        background: rgba(0,0,0,0.16);
+        font-size: 12px;
+        line-height: 1.5;
+        font-family: Consolas, "Cascadia Code", Menlo, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+      .field-stack { display: grid; gap: 8px; }
+      .hint { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+      .danger { color: var(--danger); }
+      .empty {
+        min-height: 72px;
+        display: grid;
+        place-items: center;
+        border: 1px dashed rgba(255,255,255,0.15);
+        border-radius: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .mode-line {
+        display: grid;
+        grid-template-columns: 140px auto auto minmax(0, 1fr);
+        gap: 6px;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+      @media (max-width: 780px) {
+        .app { padding: 10px; }
+        .topbar { grid-template-columns: 1fr; }
+        .request-line { grid-template-columns: 92px minmax(0, 1fr); }
+        .layout { grid-template-columns: 1fr; }
+        .split { grid-template-rows: auto auto; }
+        .mode-line { grid-template-columns: 1fr 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div>
+          <h1>API Lab</h1>
+          <p id="status">Ready</p>
+        </div>
+        <select id="envSelect" aria-label="Environment"></select>
+      </header>
+
+      <section class="request-line" aria-label="Request">
+        <select id="method">
+          <option>GET</option>
+          <option>POST</option>
+          <option>PUT</option>
+          <option>PATCH</option>
+          <option>DELETE</option>
+          <option>HEAD</option>
+          <option>OPTIONS</option>
+        </select>
+        <input id="url" placeholder="https://api.example.com/users/{{id}}" />
+        <button id="send" type="button">发送</button>
+        <button id="cancel" type="button" disabled>取消</button>
+      </section>
+
+      <section class="layout">
+        <aside class="panel">
+          <div class="tabs">
+            <button class="tab active" data-side-tab="collections" type="button">集合</button>
+            <button class="tab" data-side-tab="history" type="button">历史</button>
+            <button class="tab" data-side-tab="env" type="button">环境</button>
+          </div>
+          <div id="sidePanel"></div>
+        </aside>
+
+        <section class="split">
+          <div class="panel">
+            <div class="tabs">
+              <button class="tab active" data-request-tab="query" type="button">Query</button>
+              <button class="tab" data-request-tab="headers" type="button">Headers</button>
+              <button class="tab" data-request-tab="body" type="button">Body</button>
+            </div>
+            <div id="requestPanel"></div>
+          </div>
+
+          <div class="panel">
+            <div class="tabs">
+              <button class="tab active" data-response-tab="body" type="button">Response</button>
+              <button class="tab" data-response-tab="headers" type="button">Headers</button>
+            </div>
+            <div id="responsePanel">
+              <div class="meta"><span>等待请求</span></div>
+              <div class="output">发送请求后，这里会显示响应。</div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      const STORAGE_KEY = "devlauncher.apiLab.v1";
+      const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+      const BODY_MODES = ["none", "json", "text"];
+
+      const els = {
+        status: document.getElementById("status"),
+        envSelect: document.getElementById("envSelect"),
+        method: document.getElementById("method"),
+        url: document.getElementById("url"),
+        send: document.getElementById("send"),
+        cancel: document.getElementById("cancel"),
+        sidePanel: document.getElementById("sidePanel"),
+        requestPanel: document.getElementById("requestPanel"),
+        responsePanel: document.getElementById("responsePanel")
+      };
+
+      const defaultState = () => ({
+        version: 1,
+        activeEnvironmentId: "env-local",
+        activeSideTab: "collections",
+        activeRequestTab: "query",
+        activeResponseTab: "body",
+        environments: [
+          {
+            id: "env-local",
+            name: "Local",
+            variables: [
+              { key: "baseUrl", value: "http://localhost:3000" },
+              { key: "token", value: "" }
+            ]
+          }
+        ],
+        collections: [
+          {
+            id: "col-default",
+            name: "Default",
+            requests: []
+          }
+        ],
+        history: [],
+        draft: {
+          id: "draft",
+          name: "Untitled",
+          method: "GET",
+          url: "{{baseUrl}}",
+          query: [{ key: "", value: "", enabled: true }],
+          headers: [{ key: "Accept", value: "application/json", enabled: true }],
+          bodyMode: "none",
+          body: ""
+        },
+        response: null
+      });
+
+      let state = loadState();
+      let activeAbort = null;
+
+      function uid(prefix) {
+        return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      }
+
+      function clone(value) {
+        return JSON.parse(JSON.stringify(value));
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      function setStatus(message, tone = "normal") {
+        els.status.textContent = message;
+        els.status.classList.toggle("error", tone === "error");
+        els.status.classList.toggle("ok", tone === "ok");
+      }
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return defaultState();
+          const parsed = JSON.parse(raw);
+          if (parsed.version !== 1 || !Array.isArray(parsed.environments) || !parsed.draft) return defaultState();
+          const merged = { ...defaultState(), ...parsed, response: null };
+          if (!Array.isArray(merged.collections) || merged.collections.length === 0) merged.collections = defaultState().collections;
+          if (!Array.isArray(merged.history)) merged.history = [];
+          return merged;
+        } catch (error) {
+          return defaultState();
+        }
+      }
+
+      function saveState() {
+        try {
+          const { response, ...persisted } = state;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+        } catch (error) {
+          setStatus("保存失败：请导出备份或清理本地数据", "error");
+        }
+      }
+
+      function activeEnvironment() {
+        return state.environments.find((env) => env.id === state.activeEnvironmentId) ?? state.environments[0] ?? null;
+      }
+
+      function variableMap() {
+        const env = activeEnvironment();
+        const map = new Map();
+        for (const pair of env?.variables ?? []) {
+          if (pair.key.trim()) map.set(pair.key.trim(), pair.value);
+        }
+        return map;
+      }
+
+      function resolveVariables(input) {
+        const missing = new Set();
+        const vars = variableMap();
+        const value = String(input ?? "").replace(/\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}/g, (_, key) => {
+          if (!vars.has(key)) {
+            missing.add(key);
+            return `{{${key}}}`;
+          }
+          return vars.get(key);
+        });
+        return { value, missing: [...missing] };
+      }
+
+      function enabledPairs(pairs) {
+        return (pairs ?? []).filter((pair) => pair.enabled !== false && String(pair.key ?? "").trim());
+      }
+
+      function syncDraftFromInputs() {
+        state.draft.method = els.method.value;
+        state.draft.url = els.url.value.trim();
+      }
+
+      function buildRequest() {
+        syncDraftFromInputs();
+        const missing = new Set();
+        const resolvedUrl = resolveVariables(state.draft.url);
+        for (const key of resolvedUrl.missing) missing.add(key);
+        if (!resolvedUrl.value.trim()) throw new Error("URL 不能为空");
+
+        let url;
+        try {
+          url = new URL(resolvedUrl.value);
+        } catch (error) {
+          throw new Error("URL 无效，请使用完整 URL");
+        }
+
+        for (const pair of enabledPairs(state.draft.query)) {
+          const key = resolveVariables(pair.key);
+          const value = resolveVariables(pair.value);
+          for (const item of [...key.missing, ...value.missing]) missing.add(item);
+          url.searchParams.set(key.value, value.value);
+        }
+
+        const headers = {};
+        for (const pair of enabledPairs(state.draft.headers)) {
+          const key = resolveVariables(pair.key);
+          const value = resolveVariables(pair.value);
+          for (const item of [...key.missing, ...value.missing]) missing.add(item);
+          headers[key.value] = value.value;
+        }
+
+        let body;
+        if (!["GET", "HEAD"].includes(state.draft.method) && state.draft.bodyMode !== "none") {
+          const resolvedBody = resolveVariables(state.draft.body);
+          for (const item of resolvedBody.missing) missing.add(item);
+          body = resolvedBody.value;
+          if (state.draft.bodyMode === "json" && !Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+            headers["Content-Type"] = "application/json";
+          }
+        }
+
+        if (missing.size > 0) {
+          throw new Error(`缺少环境变量：${[...missing].join(", ")}`);
+        }
+
+        return {
+          method: state.draft.method,
+          url: url.toString(),
+          init: { method: state.draft.method, headers, body },
+          snapshot: clone(state.draft)
+        };
+      }
+
+      function recordHistory(request, response) {
+        state.history.unshift({
+          id: uid("hist"),
+          method: request.method,
+          url: request.url,
+          status: response.status ?? "failed",
+          elapsedMs: response.elapsedMs,
+          createdAt: new Date().toISOString(),
+          request: request.snapshot
+        });
+        state.history = state.history.slice(0, 100);
+      }
+
+      function formatBytes(size) {
+        if (!Number.isFinite(size)) return "-";
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+        return `${(size / 1024 / 1024).toFixed(1)} MB`;
+      }
+
+      function formatBody(text, contentType) {
+        const maybeJson = contentType.includes("json") || /^[\s\r\n]*[\[{]/.test(text);
+        if (!text) return "";
+        if (!maybeJson) return text;
+        try {
+          return JSON.stringify(JSON.parse(text), null, 2);
+        } catch (error) {
+          return text;
+        }
+      }
+
+      async function sendRequest() {
+        let request;
+        try {
+          request = buildRequest();
+        } catch (error) {
+          setStatus(error.message, "error");
+          state.response = { error: error.message };
+          renderResponse();
+          return;
+        }
+
+        const controller = new AbortController();
+        activeAbort = controller;
+        els.send.disabled = true;
+        els.cancel.disabled = false;
+        setStatus("正在发送请求...");
+
+        const startedAt = performance.now();
+        try {
+          const response = await fetch(request.url, { ...request.init, signal: controller.signal });
+          const text = await response.text();
+          const elapsedMs = Math.round(performance.now() - startedAt);
+          const headers = [...response.headers.entries()].map(([key, value]) => ({ key, value }));
+          const contentType = response.headers.get("content-type") ?? "";
+          state.response = {
+            ok: response.ok,
+            status: response.status,
+            statusText: response.statusText,
+            elapsedMs,
+            size: new Blob([text]).size,
+            finalUrl: response.url,
+            headers,
+            body: formatBody(text, contentType),
+            rawBody: text
+          };
+          recordHistory(request, state.response);
+          setStatus(`${response.status} ${response.statusText || ""} · ${elapsedMs} ms`, response.ok ? "ok" : "error");
+          saveState();
+        } catch (error) {
+          const elapsedMs = Math.round(performance.now() - startedAt);
+          const aborted = error.name === "AbortError";
+          const message = aborted
+            ? "请求已取消"
+            : `请求失败：${error.message || "未知错误"}。如果目标服务未允许跨域访问，浏览器 CORS 会阻止第一版插件请求；后续 native HTTP 阶段会解决这类问题。`;
+          state.response = { error: message, elapsedMs, status: "failed" };
+          recordHistory(request, state.response);
+          saveState();
+          setStatus(message, aborted ? "normal" : "error");
+        } finally {
+          activeAbort = null;
+          els.send.disabled = false;
+          els.cancel.disabled = true;
+          render();
+        }
+      }
+
+      function cancelRequest() {
+        if (activeAbort) activeAbort.abort();
+      }
+
+      function normalizePairs(pairs) {
+        return Array.isArray(pairs)
+          ? pairs.map((pair) => ({
+              key: String(pair.key ?? ""),
+              value: String(pair.value ?? ""),
+              enabled: pair.enabled !== false
+            }))
+          : [];
+      }
+
+      function normalizeRequest(request) {
+        return {
+          id: String(request.id || uid("req")),
+          name: String(request.name || "Untitled"),
+          method: METHODS.includes(request.method) ? request.method : "GET",
+          url: String(request.url || ""),
+          query: normalizePairs(request.query),
+          headers: normalizePairs(request.headers),
+          bodyMode: BODY_MODES.includes(request.bodyMode) ? request.bodyMode : "none",
+          body: String(request.body || "")
+        };
+      }
+
+      function loadRequest(request) {
+        state.draft = { ...normalizeRequest(request), id: "draft" };
+        setStatus(`已载入：${request.name || request.url || "request"}`);
+        saveState();
+        render();
+      }
+
+      function collection() {
+        if (!state.collections.length) state.collections.push({ id: uid("col"), name: "Default", requests: [] });
+        return state.collections[0];
+      }
+
+      function saveDraftToCollection() {
+        syncDraftFromInputs();
+        const name = prompt("请求名称", state.draft.name || state.draft.url || "Untitled");
+        if (!name) return;
+        const saved = { ...clone(state.draft), id: uid("req"), name };
+        collection().requests.unshift(saved);
+        setStatus(`已保存：${name}`, "ok");
+        saveState();
+        render();
+      }
+
+      function duplicateRequest(requestId) {
+        const col = collection();
+        const request = col.requests.find((item) => item.id === requestId);
+        if (!request) return;
+        col.requests.unshift({ ...clone(request), id: uid("req"), name: `${request.name} Copy` });
+        saveState();
+        renderSidePanel();
+      }
+
+      function renameRequest(requestId) {
+        const request = collection().requests.find((item) => item.id === requestId);
+        if (!request) return;
+        const name = prompt("新名称", request.name);
+        if (!name) return;
+        request.name = name;
+        saveState();
+        renderSidePanel();
+      }
+
+      function deleteRequest(requestId) {
+        collection().requests = collection().requests.filter((item) => item.id !== requestId);
+        saveState();
+        renderSidePanel();
+      }
+
+      function addEnvironment() {
+        const name = prompt("环境名称", "Dev");
+        if (!name) return;
+        const env = { id: uid("env"), name, variables: [{ key: "baseUrl", value: "", enabled: true }] };
+        state.environments.push(env);
+        state.activeEnvironmentId = env.id;
+        saveState();
+        render();
+      }
+
+      function updatePair(list, index, key, value) {
+        list[index][key] = value;
+        saveState();
+      }
+
+      function ensureBlankPair(list) {
+        if (!list.some((pair) => !pair.key && !pair.value)) {
+          list.push({ key: "", value: "", enabled: true });
+        }
+      }
+
+      function renderPairRows(list, type) {
+        ensureBlankPair(list);
+        return list.map((pair, index) => `
+          <div class="row" data-pair-type="${type}" data-index="${index}">
+            <input type="checkbox" data-field="enabled" ${pair.enabled !== false ? "checked" : ""} aria-label="enabled" />
+            <input data-field="key" value="${escapeHtml(pair.key)}" placeholder="key" />
+            <input data-field="value" value="${escapeHtml(pair.value)}" placeholder="value" />
+            <button data-action="remove-pair" type="button">删除</button>
+          </div>
+        `).join("");
+      }
+
+      function renderEnvSelect() {
+        els.envSelect.innerHTML = state.environments.map((env) => `
+          <option value="${escapeHtml(env.id)}" ${env.id === state.activeEnvironmentId ? "selected" : ""}>${escapeHtml(env.name)}</option>
+        `).join("");
+      }
+
+      function renderSidePanel() {
+        if (state.activeSideTab === "collections") {
+          const col = collection();
+          els.sidePanel.innerHTML = `
+            <h2 class="section-title">${escapeHtml(col.name)}</h2>
+            <div class="actions">
+              <button data-action="save-draft" type="button">保存</button>
+              <button data-action="export" type="button">导出</button>
+              <button data-action="import" type="button">导入</button>
+            </div>
+            <p class="hint">点击请求只会载入编辑器，不会自动发送。</p>
+            <div class="list">
+              ${col.requests.length ? col.requests.map((request) => `
+                <div class="list-item">
+                  <p class="item-title">${escapeHtml(request.name)}</p>
+                  <p class="item-subtitle">${escapeHtml(request.method)} ${escapeHtml(request.url)}</p>
+                  <div class="actions">
+                    <button data-load-request="${escapeHtml(request.id)}" type="button">载入</button>
+                    <button data-rename-request="${escapeHtml(request.id)}" type="button">重命名</button>
+                    <button data-copy-request="${escapeHtml(request.id)}" type="button">复制</button>
+                    <button data-delete-request="${escapeHtml(request.id)}" type="button">删除</button>
+                  </div>
+                </div>
+              `).join("") : `<div class="empty">暂无集合请求</div>`}
+            </div>
+          `;
+          return;
+        }
+
+        if (state.activeSideTab === "history") {
+          els.sidePanel.innerHTML = `
+            <h2 class="section-title">最近 100 条</h2>
+            <div class="list">
+              ${state.history.length ? state.history.map((item) => `
+                <button data-load-history="${escapeHtml(item.id)}" type="button">
+                  ${escapeHtml(item.method)} ${escapeHtml(item.status ?? "-")} · ${escapeHtml(item.elapsedMs ?? "-")} ms
+                  <br />${escapeHtml(item.url)}
+                </button>
+              `).join("") : `<div class="empty">发送请求后会记录历史</div>`}
+            </div>
+          `;
+          return;
+        }
+
+        const env = activeEnvironment();
+        els.sidePanel.innerHTML = `
+          <h2 class="section-title">环境变量</h2>
+          <div class="row two">
+            <input id="envName" value="${escapeHtml(env?.name ?? "")}" placeholder="Environment name" />
+            <button data-action="add-env" type="button">新增</button>
+          </div>
+          <div class="field-stack">
+            ${env ? renderPairRows(env.variables, "env") : `<div class="empty">暂无环境</div>`}
+          </div>
+          <p class="hint">变量使用 <code>{{name}}</code> 插值到 URL、Headers 和 Body。本地保存，不是安全密钥库。</p>
+        `;
+      }
+
+      function renderRequestPanel() {
+        if (state.activeRequestTab === "query") {
+          els.requestPanel.innerHTML = `
+            <h2 class="section-title">Query</h2>
+            ${renderPairRows(state.draft.query, "query")}
+            <div class="actions">
+              <button data-action="add-query" type="button">添加</button>
+              <button data-action="sync-query" type="button">同步到 URL</button>
+            </div>
+          `;
+          return;
+        }
+
+        if (state.activeRequestTab === "headers") {
+          els.requestPanel.innerHTML = `
+            <h2 class="section-title">Headers</h2>
+            ${renderPairRows(state.draft.headers, "headers")}
+            <div class="actions"><button data-action="add-header" type="button">添加</button></div>
+          `;
+          return;
+        }
+
+        els.requestPanel.innerHTML = `
+          <h2 class="section-title">Body</h2>
+          <div class="mode-line">
+            <select id="bodyMode">
+              <option value="none" ${state.draft.bodyMode === "none" ? "selected" : ""}>none</option>
+              <option value="json" ${state.draft.bodyMode === "json" ? "selected" : ""}>json</option>
+              <option value="text" ${state.draft.bodyMode === "text" ? "selected" : ""}>text</option>
+            </select>
+            <button data-action="format-json" type="button">格式化</button>
+            <button data-action="save-draft" type="button">保存</button>
+            <span class="hint">GET/HEAD 不会发送 Body。</span>
+          </div>
+          <textarea id="bodyInput" placeholder='{"hello":"world"}'>${escapeHtml(state.draft.body)}</textarea>
+        `;
+      }
+
+      function renderResponse() {
+        const response = state.response;
+        if (!response) {
+          els.responsePanel.innerHTML = `
+            <div class="meta"><span>等待请求</span></div>
+            <div class="output">发送请求后，这里会显示响应。</div>
+          `;
+          return;
+        }
+        if (response.error) {
+          els.responsePanel.innerHTML = `
+            <div class="meta"><span class="danger">请求失败</span><span>${escapeHtml(response.elapsedMs ?? 0)} ms</span></div>
+            <div class="output">${escapeHtml(response.error)}</div>
+          `;
+          return;
+        }
+        if (state.activeResponseTab === "headers") {
+          els.responsePanel.innerHTML = `
+            <div class="meta">
+              <span>${escapeHtml(response.status)} ${escapeHtml(response.statusText)}</span>
+              <span>${escapeHtml(response.elapsedMs)} ms</span>
+              <span>${escapeHtml(formatBytes(response.size))}</span>
+            </div>
+            <div class="output">${escapeHtml(response.headers.map((item) => `${item.key}: ${item.value}`).join("\n"))}</div>
+          `;
+          return;
+        }
+        els.responsePanel.innerHTML = `
+          <div class="meta">
+            <span>${escapeHtml(response.status)} ${escapeHtml(response.statusText)}</span>
+            <span>${escapeHtml(response.elapsedMs)} ms</span>
+            <span>${escapeHtml(formatBytes(response.size))}</span>
+            <span>${escapeHtml(response.finalUrl)}</span>
+          </div>
+          <div class="output">${escapeHtml(response.body)}</div>
+        `;
+      }
+
+      function syncQueryToUrl() {
+        try {
+          syncDraftFromInputs();
+          const parsed = new URL(resolveVariables(state.draft.url).value);
+          for (const pair of enabledPairs(state.draft.query)) {
+            parsed.searchParams.set(pair.key, pair.value);
+          }
+          state.draft.url = parsed.toString();
+          els.url.value = state.draft.url;
+          saveState();
+          setStatus("已同步 Query 到 URL", "ok");
+        } catch (error) {
+          setStatus("URL 无效，无法同步 Query", "error");
+        }
+      }
+
+      function formatJsonBody() {
+        try {
+          state.draft.body = JSON.stringify(JSON.parse(state.draft.body || "null"), null, 2);
+          state.draft.bodyMode = "json";
+          setStatus("JSON 已格式化", "ok");
+          saveState();
+          renderRequestPanel();
+        } catch (error) {
+          setStatus(`JSON 格式化失败：${error.message}`, "error");
+        }
+      }
+
+      function exportData() {
+        syncDraftFromInputs();
+        const payload = {
+          version: 1,
+          environments: state.environments,
+          collections: state.collections
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "api-lab-backup.json";
+        link.click();
+        URL.revokeObjectURL(url);
+        setStatus("已导出 API Lab JSON", "ok");
+      }
+
+      function validateImport(data) {
+        if (!data || data.version !== 1) throw new Error("只支持 version 1");
+        if (!Array.isArray(data.environments) || !Array.isArray(data.collections)) throw new Error("字段类型无效");
+        return {
+          environments: data.environments.map((env) => ({
+            id: String(env.id || uid("env")),
+            name: String(env.name || "Environment"),
+            variables: normalizePairs(env.variables)
+          })),
+          collections: data.collections.map((col) => ({
+            id: String(col.id || uid("col")),
+            name: String(col.name || "Collection"),
+            requests: Array.isArray(col.requests) ? col.requests.map(normalizeRequest) : []
+          }))
+        };
+      }
+
+      function importData() {
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "application/json,.json";
+        input.addEventListener("change", async () => {
+          const file = input.files?.[0];
+          if (!file) return;
+          try {
+            const data = validateImport(JSON.parse(await file.text()));
+            state.environments = data.environments;
+            state.collections = data.collections.length ? data.collections : defaultState().collections;
+            state.activeEnvironmentId = state.environments[0]?.id ?? null;
+            saveState();
+            setStatus("导入完成", "ok");
+            render();
+          } catch (error) {
+            setStatus(`导入失败：${error.message}`, "error");
+          }
+        });
+        input.click();
+      }
+
+      function renderTabs() {
+        document.querySelectorAll("[data-side-tab]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.sideTab === state.activeSideTab);
+        });
+        document.querySelectorAll("[data-request-tab]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.requestTab === state.activeRequestTab);
+        });
+        document.querySelectorAll("[data-response-tab]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.responseTab === state.activeResponseTab);
+        });
+      }
+
+      function render() {
+        renderTabs();
+        renderEnvSelect();
+        els.method.value = state.draft.method;
+        els.url.value = state.draft.url;
+        renderSidePanel();
+        renderRequestPanel();
+        renderResponse();
+      }
+
+      document.addEventListener("click", (event) => {
+        const target = event.target.closest("button");
+        if (!target) return;
+        if (target.dataset.sideTab) {
+          state.activeSideTab = target.dataset.sideTab;
+          saveState();
+          render();
+        } else if (target.dataset.requestTab) {
+          syncDraftFromInputs();
+          state.activeRequestTab = target.dataset.requestTab;
+          saveState();
+          render();
+        } else if (target.dataset.responseTab) {
+          state.activeResponseTab = target.dataset.responseTab;
+          saveState();
+          render();
+        } else if (target.dataset.action === "save-draft") {
+          saveDraftToCollection();
+        } else if (target.dataset.action === "export") {
+          exportData();
+        } else if (target.dataset.action === "import") {
+          importData();
+        } else if (target.dataset.action === "add-env") {
+          addEnvironment();
+        } else if (target.dataset.action === "add-query") {
+          state.draft.query.push({ key: "", value: "", enabled: true });
+          renderRequestPanel();
+        } else if (target.dataset.action === "add-header") {
+          state.draft.headers.push({ key: "", value: "", enabled: true });
+          renderRequestPanel();
+        } else if (target.dataset.action === "sync-query") {
+          syncQueryToUrl();
+        } else if (target.dataset.action === "format-json") {
+          formatJsonBody();
+        } else if (target.dataset.action === "remove-pair") {
+          const row = target.closest("[data-pair-type]");
+          const list = pairList(row.dataset.pairType);
+          list.splice(Number(row.dataset.index), 1);
+          saveState();
+          render();
+        } else if (target.dataset.loadRequest) {
+          const request = collection().requests.find((item) => item.id === target.dataset.loadRequest);
+          if (request) loadRequest(request);
+        } else if (target.dataset.loadHistory) {
+          const item = state.history.find((entry) => entry.id === target.dataset.loadHistory);
+          if (item) loadRequest(item.request);
+        } else if (target.dataset.renameRequest) {
+          renameRequest(target.dataset.renameRequest);
+        } else if (target.dataset.copyRequest) {
+          duplicateRequest(target.dataset.copyRequest);
+        } else if (target.dataset.deleteRequest) {
+          deleteRequest(target.dataset.deleteRequest);
+        }
+      });
+
+      function pairList(type) {
+        if (type === "query") return state.draft.query;
+        if (type === "headers") return state.draft.headers;
+        return activeEnvironment().variables;
+      }
+
+      document.addEventListener("input", (event) => {
+        const row = event.target.closest("[data-pair-type]");
+        if (row) {
+          const list = pairList(row.dataset.pairType);
+          const index = Number(row.dataset.index);
+          const field = event.target.dataset.field;
+          updatePair(list, index, field, event.target.type === "checkbox" ? event.target.checked : event.target.value);
+          return;
+        }
+        if (event.target.id === "url") {
+          state.draft.url = event.target.value;
+          saveState();
+        } else if (event.target.id === "bodyInput") {
+          state.draft.body = event.target.value;
+          saveState();
+        } else if (event.target.id === "envName") {
+          const env = activeEnvironment();
+          if (env) {
+            env.name = event.target.value;
+            saveState();
+            renderEnvSelect();
+          }
+        }
+      });
+
+      document.addEventListener("change", (event) => {
+        if (event.target === els.envSelect) {
+          state.activeEnvironmentId = event.target.value;
+          saveState();
+          render();
+        } else if (event.target === els.method) {
+          state.draft.method = event.target.value;
+          saveState();
+        } else if (event.target.id === "bodyMode") {
+          state.draft.bodyMode = event.target.value;
+          saveState();
+        }
+      });
+
+      els.send.addEventListener("click", sendRequest);
+      els.cancel.addEventListener("click", cancelRequest);
+
+      render();
+      setStatus("Ready");
+    </script>
+  </body>
+</html>

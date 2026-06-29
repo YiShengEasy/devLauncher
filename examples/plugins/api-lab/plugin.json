@@ -1,0 +1,16 @@
+{
+  "id": "devlauncher.tools.api-lab",
+  "name": "API Lab",
+  "version": "1.0.0",
+  "kind": "webview",
+  "description": "轻量 API 请求、环境变量、集合和历史记录工具。",
+  "entry": "dist/index.html",
+  "icon": "icon.svg",
+  "actions": [
+    {
+      "id": "open",
+      "title": "打开 API Lab",
+      "type": "webview"
+    }
+  ]
+}
