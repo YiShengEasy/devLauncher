@@ -9,6 +9,7 @@ interface KeyboardState {
   error: string | null;
   appIcons: Record<string, string>; // exe_path → base64 PNG data URL
   favicons: Record<string, string>;
+  pluginIcons: Record<string, string>;
   showSettings: boolean;
 
   // Derived
@@ -21,6 +22,7 @@ interface KeyboardState {
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
   setAppIcons: (icons: Record<string, string>) => void;
+  setPluginIcons: (icons: Record<string, string>) => void;
   bindKey: (pageIndex: number, keyId: KeyId, action: Action | null) => void;
   swapKeys: (pageIndex: number, fromKey: KeyId, toKey: KeyId) => void;
   addPage: (name: string) => void;
@@ -38,6 +40,7 @@ export const useKeyboardStore = create<KeyboardState>((set, get) => ({
   error: null,
   appIcons: {},
   favicons: {},
+  pluginIcons: {},
   showSettings: false,
   theme: DEFAULT_THEME,
 
@@ -52,6 +55,7 @@ export const useKeyboardStore = create<KeyboardState>((set, get) => ({
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setAppIcons: (icons) => set({ appIcons: icons }),
+  setPluginIcons: (icons) => set({ pluginIcons: icons }),
   setFavicons: (icons) => set((state) => ({ favicons: { ...state.favicons, ...icons } })),
   setShowSettings: (show) => set({ showSettings: show }),
 

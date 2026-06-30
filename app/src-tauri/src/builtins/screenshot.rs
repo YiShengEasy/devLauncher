@@ -45,13 +45,21 @@ fn set_capture_window_bounds(
 }
 
 #[cfg(target_os = "macos")]
-fn set_editor_window_size(win: &tauri::WebviewWindow, width: u32, height: u32) -> Result<(), String> {
+fn set_editor_window_size(
+    win: &tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
     win.set_size(tauri::LogicalSize::new(width as f64, height as f64))
         .map_err(|e| e.to_string())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn set_editor_window_size(win: &tauri::WebviewWindow, width: u32, height: u32) -> Result<(), String> {
+fn set_editor_window_size(
+    win: &tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
     win.set_size(tauri::PhysicalSize::new(width, height))
         .map_err(|e| e.to_string())
 }

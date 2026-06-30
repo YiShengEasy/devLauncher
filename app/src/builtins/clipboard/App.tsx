@@ -61,7 +61,7 @@ export function ClipboardApp() {
 
   const handleCopyText = async (text: string, options?: { keepOpen?: boolean }) => {
     try {
-      await invoke("set_clipboard_text", { text });
+      await invoke("set_clipboard_text", { text, suppressHistory: true });
       if (!options?.keepOpen) {
         getCurrentWindow().hide().catch(() => {});
       }
@@ -72,7 +72,7 @@ export function ClipboardApp() {
 
   const handleCopyImage = async (data: string, options?: { keepOpen?: boolean }) => {
     try {
-      await invoke("set_clipboard_image", { data });
+      await invoke("set_clipboard_image", { data, suppressHistory: true });
       if (!options?.keepOpen) {
         getCurrentWindow().hide().catch(() => {});
       }

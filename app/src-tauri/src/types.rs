@@ -273,7 +273,10 @@ pages:
 "#;
 
         let config: KeyboardConfig = serde_yaml::from_str(yaml).expect("plugin config should load");
-        let action = config.pages[0].keys.get("Q").expect("Q binding should exist");
+        let action = config.pages[0]
+            .keys
+            .get("Q")
+            .expect("Q binding should exist");
 
         match action {
             Action::Plugin {

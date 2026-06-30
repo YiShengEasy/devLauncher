@@ -13,6 +13,7 @@ function unique(values: Array<string | undefined | null>): string[] {
 
 export function pluginIconSrc(iconPath?: string): string | undefined {
   if (!iconPath) return undefined;
+  if (/^(https?:|data:|blob:)/i.test(iconPath)) return iconPath;
   if (typeof window === "undefined") return iconPath;
   return convertFileSrc(iconPath);
 }

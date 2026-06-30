@@ -24,9 +24,9 @@ pub struct PluginManifest {
 
 fn is_safe_id(value: &str) -> bool {
     !value.is_empty()
-        && value.chars().all(|ch| {
-            ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '.' || ch == '-'
-        })
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '.' || ch == '-')
 }
 
 fn is_relative_safe_path(value: &str) -> bool {

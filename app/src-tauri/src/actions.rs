@@ -2,8 +2,8 @@ use tauri::{Emitter, Manager};
 
 use crate::builtins::terminal::TerminalState;
 use crate::platform::{
-    app_launch_spec, chrome_candidates, current_platform, folder_open_spec, shell_run_spec, spawn_spec,
-    system_command_spec, unsupported_on_macos, Platform,
+    app_launch_spec, chrome_candidates, current_platform, folder_open_spec, shell_run_spec,
+    spawn_spec, system_command_spec, unsupported_on_macos, Platform,
 };
 
 pub fn split_command_args(input: &str) -> Vec<String> {
@@ -94,7 +94,12 @@ fn open_url_action(action: &serde_json::Value, target: &str) -> Result<(), Strin
     let url = normalize_url_target(target)?;
     let use_chrome = action["autofill"].as_bool().unwrap_or(false);
     if use_chrome {
-        if spawn_first(&chrome_candidates(current_platform()), std::slice::from_ref(&url)).is_ok() {
+        if spawn_first(
+            &chrome_candidates(current_platform()),
+            std::slice::from_ref(&url),
+        )
+        .is_ok()
+        {
             return Ok(());
         }
     }

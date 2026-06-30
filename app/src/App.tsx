@@ -12,13 +12,15 @@ import { SettingsPanel } from "@/components/SettingsPanel";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import type { Action, KeyId, KeyboardConfig, ThemeConfig } from "@/types/actions";
 import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon } from "@/icons";
-import { PixelPetIcon, SearchIcon } from "@/icons/entryIcons";
+import { SearchIcon } from "@/icons/entryIcons";
 import { executeAction } from "@/launcher/actionExecutor";
 import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
 import { motionDuration, motionEase } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
 import { getGlobalShortcuts, keyIdToShortcut } from "@/platform/shortcuts";
+import { listInstalledPlugins } from "@/plugins/api";
+import { pluginIconSrc } from "@/plugins/registry";
 import "./index.css";
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
@@ -252,6 +254,22 @@ export default function App() {
     }
   }, []);
 
+  const refreshPluginIcons = useCallback(async () => {
+    try {
+      const plugins = await listInstalledPlugins();
+      const icons = Object.fromEntries(
+        plugins
+          .filter((plugin) => plugin.enabled)
+          .map((plugin) => [plugin.id, pluginIconSrc(plugin.iconPath)])
+          .filter((entry): entry is [string, string] => Boolean(entry[1])),
+      );
+      useKeyboardStore.getState().setPluginIcons(icons);
+    } catch (e) {
+      console.warn("[DevLauncher] listInstalledPlugins failed:", e);
+      useKeyboardStore.getState().setPluginIcons({});
+    }
+  }, []);
+
   // Load config on mount
   useEffect(() => {
     async function init() {
@@ -268,6 +286,19 @@ export default function App() {
     }
     init();
   }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    refreshPluginIcons();
+    listen("plugins-changed", () => {
+      refreshPluginIcons();
+    }).then((fn) => {
+      unlisten = fn;
+    }).catch(console.error);
+    return () => {
+      unlisten?.();
+    };
+  }, [refreshPluginIcons]);
 
   // Re-extract app icons whenever config changes (handles cases where
   // initial extraction ran before icons were available or failed silently)
@@ -509,7 +540,18 @@ export default function App() {
               tabIndex={-1}
               data-tauri-drag-region="false"
             >
-              <PixelPetIcon size={18} decorative />
+              <img
+                src="/devlauncher-icon.png"
+                alt=""
+                draggable={false}
+                style={{
+                  width: 21,
+                  height: 21,
+                  display: "block",
+                  borderRadius: 6,
+                  objectFit: "cover",
+                }}
+              />
             </button>
             <span style={{ fontSize: 12, fontWeight: 650, color: "rgba(255,255,255,0.86)", letterSpacing: 0, pointerEvents: "none" }}>
               DevLauncher

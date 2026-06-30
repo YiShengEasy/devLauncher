@@ -115,6 +115,10 @@ fn url_component(value: &str) -> String {
         .collect()
 }
 
+fn is_remote_icon(value: &str) -> bool {
+    value.starts_with("https://") || value.starts_with("http://")
+}
+
 fn extract_plugin_zip(
     app: &tauri::AppHandle,
     bytes: &[u8],
@@ -190,6 +194,14 @@ fn plugin_icon_path(
     app: &tauri::AppHandle,
     plugin: &InstalledPlugin,
 ) -> Result<Option<String>, String> {
+    if let Some(remote_icon) = plugin
+        .icon_path
+        .as_deref()
+        .filter(|icon| is_remote_icon(icon))
+    {
+        return Ok(Some(remote_icon.to_string()));
+    }
+
     let Some(icon) = plugin.manifest.icon.as_deref() else {
         return Ok(None);
     };
@@ -216,6 +228,37 @@ fn hydrate_plugin_icon_paths(
         .collect()
 }
 
+fn backfill_market_icon_paths(
+    app: &tauri::AppHandle,
+    entries: &[MarketplacePluginEntry],
+) -> Result<(), String> {
+    let mut file = read_installed_file(app)?;
+    let mut changed = false;
+
+    for plugin in &mut file.plugins {
+        let Some(entry) = entries
+            .iter()
+            .find(|entry| entry.id == plugin.id && entry.version == plugin.version)
+        else {
+            continue;
+        };
+        let Some(icon) = entry.icon.as_deref().filter(|icon| is_remote_icon(icon)) else {
+            continue;
+        };
+
+        if plugin.source == "market" && plugin.icon_path.as_deref() != Some(icon) {
+            plugin.icon_path = Some(icon.to_string());
+            changed = true;
+        }
+    }
+
+    if changed {
+        write_installed_file(app, &file)?;
+    }
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn list_installed_plugins(app: tauri::AppHandle) -> Result<Vec<InstalledPlugin>, String> {
     hydrate_plugin_icon_paths(&app, read_installed_file(&app)?.plugins)
@@ -232,7 +275,10 @@ pub fn install_plugin_from_zip(
 }
 
 #[tauri::command]
-pub fn fetch_marketplace_index(url: String) -> Result<MarketplaceIndex, String> {
+pub fn fetch_marketplace_index(
+    app: tauri::AppHandle,
+    url: String,
+) -> Result<MarketplaceIndex, String> {
     if !url.starts_with("https://") {
         return Err("marketplace url must use https".to_string());
     }
@@ -246,6 +292,7 @@ pub fn fetch_marketplace_index(url: String) -> Result<MarketplaceIndex, String> 
     if index.version != 1 {
         return Err("unsupported marketplace index version".to_string());
     }
+    backfill_market_icon_paths(&app, &index.plugins)?;
     Ok(index)
 }
 
@@ -268,10 +315,11 @@ pub fn install_plugin_from_market(
         return Err("plugin sha256 mismatch".to_string());
     }
 
-    let plugin = extract_plugin_zip(&app, &bytes, "market")?;
+    let mut plugin = extract_plugin_zip(&app, &bytes, "market")?;
     if plugin.id != entry.id || plugin.version != entry.version {
         return Err("market entry does not match plugin manifest".to_string());
     }
+    plugin.icon_path = entry.icon.filter(|icon| is_remote_icon(icon));
     upsert_installed(&app, plugin)
 }
 

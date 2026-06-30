@@ -75,7 +75,11 @@ pub fn shell_run_spec(platform: Platform, command: &str) -> CommandSpec {
     match platform {
         Platform::Windows => CommandSpec {
             program: "powershell.exe".to_string(),
-            args: vec!["-NoExit".to_string(), "-Command".to_string(), command.to_string()],
+            args: vec![
+                "-NoExit".to_string(),
+                "-Command".to_string(),
+                command.to_string(),
+            ],
         },
         Platform::Macos | Platform::Other => {
             let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
@@ -314,7 +318,11 @@ mod tests {
     #[test]
     fn windows_app_launch_remains_direct() {
         assert_eq!(
-            app_launch_spec(Platform::Windows, r"C:\Tools\app.exe", &["--flag".to_string()]),
+            app_launch_spec(
+                Platform::Windows,
+                r"C:\Tools\app.exe",
+                &["--flag".to_string()]
+            ),
             CommandSpec {
                 program: r"C:\Tools\app.exe".to_string(),
                 args: vec!["--flag".to_string()],

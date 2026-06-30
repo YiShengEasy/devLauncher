@@ -5,7 +5,10 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
 import { loadConfig } from "@/api/config";
 import { ActionIcon } from "@/components/ActionIcon";
+import { useKeyboardStore } from "@/store/useKeyboardStore";
 import type { Action } from "@/types/actions";
+import { listInstalledPlugins } from "@/plugins/api";
+import { pluginIconSrc } from "@/plugins/registry";
 import gsap from "gsap";
 import { KeyboardIcon } from "@/icons/entryIcons";
 import { executeAction } from "@/launcher/actionExecutor";
@@ -318,6 +321,21 @@ export function PetEntryApp() {
   const spriteTimerRef = useRef<number | null>(null);
   const thinkingStatusTimerRef = useRef<number | null>(null);
   const reducedMotion = useReducedMotion();
+  const refreshPluginIcons = useCallback(async () => {
+    try {
+      const plugins = await listInstalledPlugins();
+      const icons = Object.fromEntries(
+        plugins
+          .filter((plugin) => plugin.enabled)
+          .map((plugin) => [plugin.id, pluginIconSrc(plugin.iconPath)])
+          .filter((entry): entry is [string, string] => Boolean(entry[1])),
+      );
+      useKeyboardStore.getState().setPluginIcons(icons);
+    } catch (error) {
+      console.warn("[DevLauncher] listInstalledPlugins failed:", error);
+      useKeyboardStore.getState().setPluginIcons({});
+    }
+  }, []);
   const spriteAction = petActionRegistry[spriteActionId];
   const spriteFrameSrc = spriteAction.frames[spriteFrameIndex] ?? spriteAction.frames[0];
   const codexStatusColor = getPetCodexStatusColor(codexStatus.status);
@@ -531,6 +549,9 @@ export function PetEntryApp() {
   useEffect(() => {
     let unlistenCodexStatus: (() => void) | null = null;
     let unlistenPetMenu: (() => void) | null = null;
+    let unlistenPluginsChanged: (() => void) | null = null;
+
+    refreshPluginIcons();
 
     loadConfig()
       .then((config) => {
@@ -566,14 +587,23 @@ export function PetEntryApp() {
       })
       .catch(console.error);
 
+    listen("plugins-changed", () => {
+      refreshPluginIcons();
+    })
+      .then((unlisten) => {
+        unlistenPluginsChanged = unlisten;
+      })
+      .catch(console.error);
+
     window.addEventListener("storage", handleStorage);
     return () => {
       if (unlistenCodexStatus) unlistenCodexStatus();
       if (unlistenPetMenu) unlistenPetMenu();
+      if (unlistenPluginsChanged) unlistenPluginsChanged();
       window.removeEventListener("storage", handleStorage);
       clearThinkingStatusTimer();
     };
-  }, [applyCodexStatus, clearThinkingStatusTimer]);
+  }, [applyCodexStatus, clearThinkingStatusTimer, refreshPluginIcons]);
 
   useEffect(() => {
     if (!codexEnabled) return;

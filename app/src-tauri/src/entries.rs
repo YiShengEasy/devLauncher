@@ -9,8 +9,6 @@ pub struct EntryWindowPosition {
     pub y: i32,
 }
 
-const KEYBOARD_PET_DOCK_OFFSET_X: i32 = -18;
-const KEYBOARD_PET_DOCK_OFFSET_Y: i32 = -150;
 const PET_ACTION_EVENT: &str = "pet-action-state";
 const PET_CODEX_STATUS_EVENT: &str = "pet-codex-status";
 
@@ -239,18 +237,7 @@ fn show_entry_mode_window(
     show_window(app, label)
 }
 
-fn keyboard_pet_position(main_position: EntryWindowPosition) -> EntryWindowPosition {
-    EntryWindowPosition {
-        x: main_position.x + KEYBOARD_PET_DOCK_OFFSET_X,
-        y: main_position.y + KEYBOARD_PET_DOCK_OFFSET_Y,
-    }
-}
-
-fn dock_pet_for_keyboard(
-    app: &tauri::AppHandle,
-    main_position: EntryWindowPosition,
-) -> Result<(), String> {
-    set_position_if_present(app, "pet", Some(keyboard_pet_position(main_position)))?;
+fn show_pet_for_keyboard(app: &tauri::AppHandle) -> Result<(), String> {
     show_window(app, "pet")
 }
 
@@ -295,21 +282,11 @@ pub fn show_keyboard_window(
     if let Some(position) = position {
         set_position_if_present(&app, "main", Some(position))?;
         restore_main_window(&app)?;
-        return dock_pet_for_keyboard(&app, position);
+        return show_pet_for_keyboard(&app);
     }
 
     restore_main_window(&app)?;
-    let main = app
-        .get_webview_window("main")
-        .ok_or_else(|| "window not found: main".to_string())?;
-    let position = main.outer_position().map_err(|e| e.to_string())?;
-    dock_pet_for_keyboard(
-        &app,
-        EntryWindowPosition {
-            x: position.x,
-            y: position.y,
-        },
-    )
+    show_pet_for_keyboard(&app)
 }
 
 #[tauri::command]

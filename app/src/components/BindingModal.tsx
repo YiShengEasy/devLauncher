@@ -12,6 +12,7 @@ import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
 import { isMacPlatform } from "@/platform/shortcuts";
 import { listInstalledPlugins } from "@/plugins/api";
+import { pluginIconSrc } from "@/plugins/registry";
 import type { InstalledPlugin } from "@/plugins/types";
 
 interface BindingModalProps {
@@ -274,11 +275,13 @@ export function BindingModal({ keyId, bindingLabel, initialAction, onClose, onSa
           setSaveError("请先安装并启用插件。");
           return;
         }
+        const pluginName = selected.plugin.manifest.name || selected.action.title;
         action = {
           type: "plugin",
-          name: name || selected.action.title,
+          name: name || pluginName,
           pluginId: selected.plugin.id,
           actionId: selected.action.id,
+          icon: pluginIconSrc(selected.plugin.iconPath),
         } as PluginAction;
         break;
       }
@@ -752,7 +755,7 @@ export function BindingModal({ keyId, bindingLabel, initialAction, onClose, onSa
                   key={key}
                   onClick={() => {
                     setPluginSelection(key);
-                    if (!name) setName(pluginAction.title);
+                    if (!name) setName(plugin.manifest.name || pluginAction.title);
                   }}
                   type="button"
                   style={{

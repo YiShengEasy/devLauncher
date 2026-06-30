@@ -126,6 +126,8 @@ pub fn load_clipboard_favorites(app: &tauri::AppHandle) -> Result<Vec<ClipboardE
 
 pub struct ClipboardState {
     pub history: Arc<Mutex<Vec<ClipboardEntry>>>,
+    pub suppressed_text: Arc<Mutex<Option<String>>>,
+    pub suppressed_image_fp: Arc<Mutex<Option<Vec<u8>>>>,
 }
 
 pub struct ClipboardFavoritesState {
@@ -138,6 +140,36 @@ fn apply_pin_state(app: &tauri::AppHandle, label: &str) {
 
 const CLIPBOARD_DOCK_HEIGHT: u32 = 620;
 const CLIPBOARD_DOCK_BOTTOM_MARGIN: i32 = 0;
+
+fn image_fingerprint(width: usize, height: usize, bytes: &[u8]) -> Vec<u8> {
+    let mut fp = Vec::new();
+    fp.extend_from_slice(&width.to_le_bytes());
+    fp.extend_from_slice(&height.to_le_bytes());
+    if bytes.len() > 64 {
+        fp.extend_from_slice(&bytes[..64]);
+    } else {
+        fp.extend_from_slice(bytes);
+    }
+    fp
+}
+
+fn should_suppress_text(suppressed: &Arc<Mutex<Option<String>>>, text: &str) -> bool {
+    let mut pending = suppressed.lock().unwrap();
+    if pending.as_deref() == Some(text) {
+        *pending = None;
+        return true;
+    }
+    false
+}
+
+fn should_suppress_image(suppressed: &Arc<Mutex<Option<Vec<u8>>>>, fp: &[u8]) -> bool {
+    let mut pending = suppressed.lock().unwrap();
+    if pending.as_deref() == Some(fp) {
+        *pending = None;
+        return true;
+    }
+    false
+}
 
 fn bottom_dock_position(
     work_area_position: PhysicalPosition<i32>,
@@ -188,8 +220,12 @@ pub fn setup(app: &mut tauri::App) {
     });
 
     let history = Arc::new(Mutex::new(Vec::<ClipboardEntry>::new()));
+    let suppressed_text = Arc::new(Mutex::new(None::<String>));
+    let suppressed_image_fp = Arc::new(Mutex::new(None::<Vec<u8>>));
     app.manage(ClipboardState {
         history: Arc::clone(&history),
+        suppressed_text: Arc::clone(&suppressed_text),
+        suppressed_image_fp: Arc::clone(&suppressed_image_fp),
     });
 
     std::thread::spawn(move || {
@@ -202,6 +238,9 @@ pub fn setup(app: &mut tauri::App) {
                     let t = text.trim().to_string();
                     if !t.is_empty() && t != last_text {
                         last_text = t.clone();
+                        if should_suppress_text(&suppressed_text, &t) {
+                            continue;
+                        }
                         let mut hist = history.lock().unwrap();
                         hist.retain(
                             |e| !matches!(e, ClipboardEntry::Text { content, .. } if content == &t),
@@ -221,16 +260,12 @@ pub fn setup(app: &mut tauri::App) {
                 // Poll image
                 if let Ok(image) = cb.get_image() {
                     if image.width >= 16 && image.height >= 16 {
-                        let mut fp = Vec::new();
-                        fp.extend_from_slice(&image.width.to_le_bytes());
-                        fp.extend_from_slice(&image.height.to_le_bytes());
-                        if image.bytes.len() > 64 {
-                            fp.extend_from_slice(&image.bytes[..64]);
-                        } else {
-                            fp.extend_from_slice(&image.bytes);
-                        }
+                        let fp = image_fingerprint(image.width, image.height, image.bytes.as_ref());
                         if fp != last_image_fp {
-                            last_image_fp = fp;
+                            last_image_fp = fp.clone();
+                            if should_suppress_image(&suppressed_image_fp, &fp) {
+                                continue;
+                            }
                             if let Some(rgba) = RgbaImage::from_raw(
                                 image.width as u32,
                                 image.height as u32,
@@ -271,7 +306,15 @@ pub fn get_clipboard_history(state: tauri::State<'_, ClipboardState>) -> Vec<Cli
 }
 
 #[tauri::command]
-pub fn set_clipboard_text(text: String) -> Result<(), String> {
+pub fn set_clipboard_text(
+    state: tauri::State<'_, ClipboardState>,
+    text: String,
+    suppress_history: Option<bool>,
+) -> Result<(), String> {
+    let normalized = text.trim().to_string();
+    if suppress_history.unwrap_or(false) && !normalized.is_empty() {
+        *state.suppressed_text.lock().unwrap() = Some(normalized);
+    }
     let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     cb.set_text(text).map_err(|e| e.to_string())
 }
@@ -283,14 +326,24 @@ pub fn get_clipboard_text() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn set_clipboard_image(data: String) -> Result<(), String> {
+pub fn set_clipboard_image(
+    state: tauri::State<'_, ClipboardState>,
+    data: String,
+    suppress_history: Option<bool>,
+) -> Result<(), String> {
     let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
     let img = image::load_from_memory(&bytes).map_err(|e| e.to_string())?;
     let rgba = img.to_rgba8();
+    let width = rgba.width() as usize;
+    let height = rgba.height() as usize;
+    let raw = rgba.into_raw();
+    if suppress_history.unwrap_or(false) {
+        *state.suppressed_image_fp.lock().unwrap() = Some(image_fingerprint(width, height, &raw));
+    }
     let image_data = arboard::ImageData {
-        width: rgba.width() as usize,
-        height: rgba.height() as usize,
-        bytes: rgba.into_raw().into(),
+        width,
+        height,
+        bytes: raw.into(),
     };
     let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
     cb.set_image(image_data).map_err(|e| e.to_string())
@@ -398,6 +451,31 @@ mod tests {
 
         assert_eq!(pos.x, 10);
         assert_eq!(pos.y, 40);
+    }
+
+    #[test]
+    fn suppress_text_consumes_matching_value_once() {
+        let suppressed = Arc::new(Mutex::new(Some("hello".to_string())));
+
+        assert!(should_suppress_text(&suppressed, "hello"));
+        assert!(!should_suppress_text(&suppressed, "hello"));
+    }
+
+    #[test]
+    fn suppress_image_consumes_matching_fingerprint_once() {
+        let fp = image_fingerprint(2, 2, &[1, 2, 3, 4]);
+        let suppressed = Arc::new(Mutex::new(Some(fp.clone())));
+
+        assert!(should_suppress_image(&suppressed, &fp));
+        assert!(!should_suppress_image(&suppressed, &fp));
+    }
+
+    #[test]
+    fn suppress_image_ignores_different_fingerprint() {
+        let suppressed = Arc::new(Mutex::new(Some(image_fingerprint(2, 2, &[1, 2, 3, 4]))));
+        let other = image_fingerprint(2, 2, &[4, 3, 2, 1]);
+
+        assert!(!should_suppress_image(&suppressed, &other));
     }
 }
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
-import type { Action, ActionType, AppAction, BuiltinAction, BuiltinFeature, ScriptAction, UrlAction } from "@/types/actions";
+import type { Action, ActionType, AppAction, BuiltinAction, BuiltinFeature, PluginAction, ScriptAction, UrlAction } from "@/types/actions";
 import { ACTION_TYPE_META } from "@/types/actions";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
@@ -92,15 +92,19 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
   const meta = ACTION_TYPE_META[action.type];
   const Icon = TYPE_ICONS[action.type];
   const appIcons = useKeyboardStore(state => state.appIcons);
+  const pluginIcons = useKeyboardStore(state => state.pluginIcons);
+  const pluginIcon = action.type === "plugin" ? pluginIcons[(action as PluginAction).pluginId] : null;
+  const [failedImageSrc, setFailedImageSrc] = useState<string | null>(null);
+  const actionImageSrc = pluginIcon ?? action.icon;
 
-  if (action.icon) {
+  if (actionImageSrc && failedImageSrc !== actionImageSrc) {
     return (
       <img
-        src={action.icon}
+        src={actionImageSrc}
         width={size}
         height={size}
         style={{ borderRadius: size * 0.22, objectFit: "cover" }}
-        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        onError={() => setFailedImageSrc(actionImageSrc)}
         alt={action.name}
       />
     );
@@ -110,16 +114,19 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
     const target = (action as AppAction).target;
     const cachedIcon = appIcons[target];
     if (cachedIcon) {
-      return (
-        <img
-          src={`data:image/png;base64,${cachedIcon}`}
-          width={size}
-          height={size}
-          style={{ borderRadius: size * 0.15, objectFit: "cover" }}
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-          alt={action.name}
-        />
-      );
+      const cachedIconSrc = `data:image/png;base64,${cachedIcon}`;
+      if (failedImageSrc !== cachedIconSrc) {
+        return (
+          <img
+            src={cachedIconSrc}
+            width={size}
+            height={size}
+            style={{ borderRadius: size * 0.15, objectFit: "cover" }}
+            onError={() => setFailedImageSrc(cachedIconSrc)}
+            alt={action.name}
+          />
+        );
+      }
     }
   }
 

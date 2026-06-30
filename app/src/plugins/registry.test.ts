@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { InstalledPlugin } from "./types";
-import { buildPluginActionRecords } from "./registry";
+import { buildPluginActionRecords, pluginIconSrc } from "./registry";
 
 const plugin: InstalledPlugin = {
   id: "devlauncher.tools.hello",
@@ -44,5 +44,9 @@ describe("plugin registry", () => {
   it("does not expose disabled plugins", () => {
     const records = buildPluginActionRecords([{ ...plugin, enabled: false }]);
     expect(records).toEqual([]);
+  });
+
+  it("keeps remote plugin icon urls unchanged", () => {
+    expect(pluginIconSrc("https://example.com/plugin.svg")).toBe("https://example.com/plugin.svg");
   });
 });

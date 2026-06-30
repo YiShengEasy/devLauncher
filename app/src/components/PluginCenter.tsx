@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import {
   fetchMarketplaceIndex,
@@ -10,6 +9,7 @@ import {
   setPluginEnabled,
   uninstallPlugin,
 } from "@/plugins/api";
+import { pluginIconSrc } from "@/plugins/registry";
 import type { InstalledPlugin, MarketplacePluginEntry } from "@/plugins/types";
 
 const DEFAULT_MARKET_URL = "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/marketplace.json";
@@ -46,8 +46,8 @@ const panelStyle: React.CSSProperties = {
 };
 
 function PluginIcon({ src, name }: { src?: string; name: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!src || failed) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (!src || failedSrc === src) {
     return (
       <div
         aria-hidden="true"
@@ -81,7 +81,7 @@ function PluginIcon({ src, name }: { src?: string; name: string }) {
         objectFit: "cover",
         background: "rgba(255,255,255,0.08)",
       }}
-      onError={() => setFailed(true)}
+      onError={() => setFailedSrc(src)}
     />
   );
 }
@@ -114,6 +114,8 @@ export function PluginCenter() {
     try {
       const index = await fetchMarketplaceIndex(url);
       setMarket(index.plugins);
+      await refreshInstalled();
+      await notifyPluginsChanged();
       setStatus("市场已刷新。");
     } catch (error) {
       setStatus(String(error));
@@ -230,7 +232,7 @@ export function PluginCenter() {
           >
             <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
               <PluginIcon
-                src={plugin.iconPath ? convertFileSrc(plugin.iconPath) : undefined}
+                src={pluginIconSrc(plugin.iconPath ?? market.find((entry) => entry.id === plugin.id && entry.version === plugin.version)?.icon)}
                 name={plugin.manifest.name}
               />
               <div style={{ minWidth: 0 }}>
