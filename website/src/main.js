@@ -1,12 +1,12 @@
 const commands = [
-  { id: "1", title: "Generate Report", icon: "⚡", shortcut: "⌘ G", color: "cyan" },
-  { id: "2", title: "SSH Production Server", icon: "▰", shortcut: "⌘ ⇧ P", color: "violet" },
-  { id: "3", title: "Search Snippets", icon: "{ }", shortcut: "⌘ S", color: "blue" },
-  { id: "4", title: "Kill Port 3000", icon: "✕", shortcut: "⌘ K", color: "rose" },
-  { id: "5", title: "Translate to English", icon: "◎", shortcut: "⌘ T", color: "emerald" },
+  { id: "1", title: "剪切板历史", icon: "▤", shortcut: "⌘ V", color: "cyan" },
+  { id: "2", title: "截图问题报告", icon: "AI", shortcut: "⌘ ⇧ S", color: "violet" },
+  { id: "3", title: "JSON 助手", icon: "{ }", shortcut: "⌘ J", color: "blue" },
+  { id: "4", title: "快捷记忆", icon: "MEM", shortcut: "⌘ M", color: "rose" },
+  { id: "5", title: "终端 / SSH 会话", icon: "▰", shortcut: "⌘ T", color: "emerald" },
 ];
 
-const phrases = ["ssh", "report", "kill", "trans"];
+const phrases = ["剪切", "JSON", "截图", "终端"];
 const typedText = document.querySelector("#typedText");
 const commandList = document.querySelector("#commandList");
 const year = document.querySelector("#year");

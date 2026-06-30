@@ -36,8 +36,8 @@
         <nav class="nav-links" aria-label="主导航">
           <a href="#features">特性</a>
           <a href="#ecosystem">插件</a>
-          <a href="#docs">文档</a>
-          <a href="#github">GitHub</a>
+          <a href="https://github.com/YiShengEasy/devLauncher/tree/main/docs">文档</a>
+          <a href="https://github.com/YiShengEasy/devLauncher">GitHub</a>
         </nav>
         <a class="download-mini" href="https://github.com/YiShengEasy/devLauncher/releases">Download</a>
       </div>
@@ -48,7 +48,7 @@
         <div class="hero-inner">
           <div class="release-badge">
             <span class="icon terminal-icon"></span>
-            <span>DevLauncher 2.0 现已开启公测</span>
+            <span>开源版本已发布到 GitHub Releases</span>
           </div>
 
           <h1>
@@ -57,12 +57,12 @@
           </h1>
 
           <p class="hero-copy">
-            告别繁琐的窗口切换。通过全局命令搜索、虚拟快捷键与悬浮入口，将分散的开发动作重塑为极速心流体验。
+            告别繁琐的窗口切换。通过桌面宠物入口、虚拟快捷键、内置工具与 WebView 插件，将分散的开发动作重塑为本地优先的桌面工作流。
           </p>
 
           <div class="hero-actions">
             <a class="primary-action" href="https://github.com/YiShengEasy/devLauncher/releases">前往 Releases 下载<span>→</span></a>
-            <a class="secondary-action" href="#docs"><span class="icon search-icon"></span>浏览文档</a>
+            <a class="secondary-action" href="#ecosystem"><span class="icon search-icon"></span>查看插件生态</a>
           </div>
 
           <section class="command-demo" aria-label="命令搜索演示">
@@ -84,7 +84,7 @@
       <section class="workflow-section">
         <div class="section-heading centered">
           <h2>极速连贯的核心工作流</h2>
-          <p>不需要在不同的应用间频繁切换，只需 4 步，保持你的心流状态。</p>
+          <p>从入口、动作到插件沉淀，都围绕 DevLauncher 现有桌面能力展开。</p>
         </div>
         <div class="workflow-grid">
           <div class="workflow-line"><span></span></div>
@@ -92,25 +92,25 @@
             <div class="step-icon">⌁</div>
             <small>Step 01</small>
             <h3>召唤入口</h3>
-            <p>通过桌面悬浮宠物或全局快捷键，瞬间唤醒你的工作流控制中心。</p>
+            <p>通过桌面悬浮宠物、全局快捷键或虚拟键盘，瞬间唤醒你的工作流控制中心。</p>
           </article>
           <article>
             <div class="step-icon">⌕</div>
             <small>Step 02</small>
-            <h3>搜索/选择动作</h3>
-            <p>模糊搜索海量命令，或直接点击高频动作，指尖触达所有工具。</p>
+            <h3>选择内置工具</h3>
+            <p>打开剪切板历史、截图、JSON 助手、快捷记忆、终端、TOTP 或远程桌面等真实内置功能。</p>
           </article>
           <article>
             <div class="step-icon">▰</div>
             <small>Step 03</small>
-            <h3>执行工具</h3>
-            <p>瞬间执行脚本、调用 API、或打开特定环境，不打断当前思路。</p>
+            <h3>运行本地动作</h3>
+            <p>调用 Tauri 本地能力、终端命令、SSH 会话或静态 WebView 插件，不打断当前思路。</p>
           </article>
           <article>
             <div class="step-icon">◇</div>
             <small>Step 04</small>
             <h3>沉淀为插件/快捷键</h3>
-            <p>将一次性操作固化为可复用的插件或绑定键盘快捷键，持续进化。</p>
+            <p>将高频操作固化到 keyboard.yaml、自定义宠物菜单或 marketplace 插件中，持续进化。</p>
           </article>
         </div>
       </section>
@@ -118,18 +118,18 @@
       <section id="features" class="capabilities-section">
         <div class="section-heading">
           <h2>全能的核心能力矩阵</h2>
-          <p>满足开发者桌面日常的一切折腾需求，开箱即用。</p>
+          <p>来自项目内置 manifest 和已打包 marketplace 插件的真实能力。</p>
         </div>
         <div class="feature-grid">
-          <article><span>♟</span><h3>桌面宠物入口</h3><p>不仅是陪伴，更是随叫随到的交互锚点。</p></article>
-          <article><span>⌕</span><h3>命令搜索</h3><p>全局模糊匹配，瞬间找到需要的操作。</p></article>
-          <article><span>⌘</span><h3>虚拟快捷键</h3><p>自定义键盘绑定，复杂组合一键触发。</p></article>
-          <article><span>▤</span><h3>剪贴板历史</h3><p>自动记录、搜索并管理你的复制内容。</p></article>
-          <article><span>⌗</span><h3>截图与 AI 解析</h3><p>精准截图，一键交由 AI 识别、翻译或提取信息。</p></article>
-          <article><span>▰</span><h3>终端与脚本</h3><p>无缝运行本地 Shell 脚本，直达结果。</p></article>
-          <article><span>▣</span><h3>远程桌面 / SSH</h3><p>内置连接管理，一键唤起远端服务器工作台。</p></article>
-          <article><span>◆</span><h3>Web 账号记忆</h3><p>快速填入或管理高频使用的快捷账号信息。</p></article>
-          <article><span>▦</span><h3>插件市场</h3><p>海量社区插件，无限拓展你的能力边界。</p></article>
+          <article><span>♟</span><h3>桌面宠物入口</h3><p>支持点击展开、固定层级、自定义菜单，以及 Codex 状态联动。</p></article>
+          <article><span>▤</span><h3>剪切板历史</h3><p>打开历史记录窗口，搜索复制内容并一键粘贴。</p></article>
+          <article><span>⌗</span><h3>截图与问题报告</h3><p>全屏截图、区域选择、标注，并把截图整理成 AI Prompt 问题报告。</p></article>
+          <article><span>{ }</span><h3>JSON 助手</h3><p>格式化、转义/去转义 JSON，并生成 OpenAI 文档片段。</p></article>
+          <article><span>MEM</span><h3>快捷记忆</h3><p>沉淀开发常用命令与快捷键，作为本地速查面板使用。</p></article>
+          <article><span>▰</span><h3>终端与 SSH</h3><p>内置终端窗口，支持命令执行与 SSH 会话。</p></article>
+          <article><span>▣</span><h3>远程桌面</h3><p>RDP 管理与 P2P 屏幕共享入口集中管理。</p></article>
+          <article><span>WEB</span><h3>网页账号</h3><p>管理 Chrome 网页账号绑定、扩展安装和安全填充说明。</p></article>
+          <article><span>▦</span><h3>插件市场</h3><p>已打包 API Lab、Developer Toolkit、Writing & Code Toolkit 等 WebView 插件。</p></article>
         </div>
       </section>
 
@@ -140,15 +140,15 @@
             <div class="violet-badge"><span>▦</span>Extensible Architecture</div>
             <h2>插件不是附属品，<br />而是工作流的延伸</h2>
             <p>
-              基于开放的本地架构，你可以用熟悉的技术栈轻松编写插件。无论是简单的脚本包裹，还是复杂的带界面的工具，都能无缝融入你的桌面环境。
+              项目已经内置静态 WebView 插件市场与 release zip 包。你可以用 HTML、CSS、JS 编写工具界面，打包后通过 marketplace 分发到 DevLauncher。
             </p>
-            <a href="#docs">浏览插件开发文档 →</a>
+            <a href="https://github.com/YiShengEasy/devLauncher/tree/main/marketplace">查看 marketplace 配置 →</a>
           </div>
           <div class="ecosystem-grid">
-            <article><span>⌘</span><h3>API Lab</h3><p>在启动器内快速发包测试接口，查看 JSON 响应，无需打开庞大的 Postman。</p></article>
-            <article><span>▶</span><h3>视频帧采样</h3><p>轻量级多媒体处理工具，直接选中视频文件提取关键帧。</p></article>
-            <article><span>☷</span><h3>团队内部工具</h3><p>企业私有插件分发，快速封装内网发版、日志查询等高频动作。</p></article>
-            <article><span>◎</span><h3>静态 WebView 插件</h3><p>用 HTML/JS/CSS 编写界面，利用本地能力，构建专属小应用。</p></article>
+            <article><span>⌘</span><h3>API Lab</h3><p>轻量 API 请求工具，支持环境、集合、历史与 JSON 响应查看。</p></article>
+            <article><span>▧</span><h3>Developer Toolkit</h3><p>时间戳、编码、哈希、正则、Cron 与二维码等开发小工具集合。</p></article>
+            <article><span>☷</span><h3>Writing & Code Toolkit</h3><p>Diff、Markdown 预览、代码截图与 snippets，服务写作和代码整理。</p></article>
+            <article><span>▶</span><h3>Video Frame Sampler</h3><p>本地采样视频帧并生成 MP4 预览，无需上传文件。</p></article>
           </div>
         </div>
       </section>
@@ -159,21 +159,21 @@
           <div></div>
         </div>
         <div class="local-grid">
-          <article><span>▥</span><h3>数据存留本机</h3><p>所有配置、账号信息、历史记录与工作流数据全部保存在本地磁盘，无需依赖 SaaS 后台。</p></article>
-          <article><span>◈</span><h3>极致响应速度</h3><p>调用本地二进制工具与脚本，没有网络延迟，键入即所得，享受零等待的丝滑体验。</p></article>
-          <article><span>⬟</span><h3>完全掌控</h3><p>纯粹的开发者工具气质，基于文件的配置管理，支持 Git 同步你的专属肌肉记忆。</p></article>
+          <article><span>▥</span><h3>数据存留本机</h3><p>keyboard.yaml、插件包、截图记录与工具状态优先保存在本地应用目录，敏感凭据交给系统 Keychain/Keyring。</p></article>
+          <article><span>◈</span><h3>桌面原生响应</h3><p>基于 Tauri 调用本地能力，工具窗口可置顶、可独立打开，适合高频小任务。</p></article>
+          <article><span>⬟</span><h3>完全掌控</h3><p>配置、插件与文档都在仓库里可追溯，适合按自己的桌面习惯持续打磨。</p></article>
         </div>
       </section>
 
       <section class="usecases-section">
         <h2>为真实的极客场景而生</h2>
         <div class="usecase-grid">
-          <article><span>▱</span><h3>开启一天的工作</h3><p>一个命令，同时使用 VS Code 打开项目文件夹、启动终端并在浏览器中打开对应的 Jira 文档和设计稿。</p></article>
-          <article><span>⌕</span><h3>找回稍纵即逝的灵感</h3><p>刚才复制的那段报错去哪了？呼出剪贴板历史，输入模糊关键词，回车直接粘贴。</p></article>
-          <article><span>⚡</span><h3>快速调试 API</h3><p>不切换窗口，直接在小工具栏输入 Endpoint 和参数，按下回车即可在悬浮窗预览 JSON 响应格式。</p></article>
-          <article><span>✕</span><h3>一键 Bug 提单</h3><p>截图异常区域，调用 AI 识别内容并总结问题，自动复制为 Markdown 格式的 issue 模板。</p></article>
-          <article><span>▰</span><h3>服务器急救</h3><p>搜 'ssh prod'，一键打开对应服务器的终端窗口，免去寻找凭证和 IP 的繁琐过程。</p></article>
-          <article><span>{ }</span><h3>临时脚本处理</h3><p>选中一段文本，调用预设的 Python/Node 脚本（如时间戳转换、Base64 解码），结果原地替换。</p></article>
+          <article><span>▱</span><h3>启动项目环境</h3><p>通过虚拟键盘绑定文件夹、URL、App 或脚本，一次打开项目相关入口。</p></article>
+          <article><span>⌕</span><h3>找回复制记录</h3><p>呼出剪切板历史，搜索刚复制过的报错、命令或链接，回车直接粘贴。</p></article>
+          <article><span>⚡</span><h3>快速调试 API</h3><p>打开 API Lab，管理环境和集合，复用历史请求并查看响应。</p></article>
+          <article><span>✕</span><h3>整理截图问题</h3><p>先截图和标注，再用截图问题报告窗口整理上下文，生成可复制的 AI Prompt。</p></article>
+          <article><span>▰</span><h3>终端与远程连接</h3><p>打开内置终端执行本地命令，或进入 SSH、RDP、P2P 屏幕共享相关工作流。</p></article>
+          <article><span>{ }</span><h3>处理临时文本</h3><p>用 JSON 助手和 Developer Toolkit 处理格式化、编码、哈希、时间戳和正则。</p></article>
         </div>
       </section>
 
@@ -187,10 +187,10 @@
             <a class="secondary-action" href="https://github.com/YiShengEasy/devLauncher">访问 GitHub 仓库</a>
           </div>
           <div class="cta-links">
-            <a href="#ecosystem">▦ 浏览插件市场</a>
-            <a href="#docs">▤ 安装教程</a>
-            <a href="#docs">▤ 开发者文档</a>
-            <a href="#docs">▤ 版本更新说明</a>
+            <a href="https://github.com/YiShengEasy/devLauncher/tree/main/marketplace">▦ 浏览插件市场</a>
+            <a href="https://github.com/YiShengEasy/devLauncher/blob/main/website/README.md">▤ 官网部署说明</a>
+            <a href="https://github.com/YiShengEasy/devLauncher/tree/main/docs">▤ 开发者文档</a>
+            <a href="https://github.com/YiShengEasy/devLauncher/releases">▤ 版本更新说明</a>
           </div>
         </div>
       </section>
