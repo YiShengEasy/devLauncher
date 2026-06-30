@@ -25,33 +25,7 @@ fn totp_tokens_path(app: &tauri::AppHandle) -> PathBuf {
 }
 
 fn default_totp_tokens() -> Vec<TotpToken> {
-    vec![
-        TotpToken {
-            id: "aliyun-sl".into(),
-            name: "阿里云(石峦科技)".into(),
-            secret: "[removed-totp-secret]".into(),
-        },
-        TotpToken {
-            id: "aliyun-hl".into(),
-            name: "阿里云(瀚联传感)".into(),
-            secret: "[removed-totp-secret]".into(),
-        },
-        TotpToken {
-            id: "manual".into(),
-            name: "手动计算".into(),
-            secret: "[removed-totp-secret]".into(),
-        },
-        TotpToken {
-            id: "github".into(),
-            name: "GitHub".into(),
-            secret: "[removed-totp-secret]".into(),
-        },
-        TotpToken {
-            id: "parsec".into(),
-            name: "Parsec".into(),
-            secret: "[removed-totp-secret]".into(),
-        },
-    ]
+    Vec::new()
 }
 
 #[tauri::command]

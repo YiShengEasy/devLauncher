@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 
@@ -11,5 +11,6 @@ mkdirSync(dist, { recursive: true });
 cpSync(join(root, "index.html"), join(dist, "index.html"));
 cpSync(join(root, "src"), join(dist, "src"), { recursive: true });
 cpSync(join(root, "public"), join(dist, "public"), { recursive: true });
+writeFileSync(join(dist, ".nojekyll"), "");
 
 console.log(`Built static website to ${dist}`);

@@ -5,124 +5,199 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="DevLauncher 是本地优先的桌面工作流启动器，用宠物入口、搜索、快捷键、系统工具和插件市场连接开发者的高频动作。"
+      content="DevLauncher 是本地优先的桌面工作流引擎，通过全局命令搜索、桌面宠物入口、虚拟快捷键和插件生态连接开发者的高频动作。"
     />
-    <meta name="theme-color" content="#0d1117" />
-    <title>DevLauncher - GitHub style project homepage</title>
+    <meta name="theme-color" content="#030712" />
+    <title>DevLauncher - 本地优先的工作流引擎</title>
     <link rel="icon" href="./public/devlauncher-icon.png" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <nav class="topbar" aria-label="主导航">
-      <a class="brand" href="#top" aria-label="DevLauncher 首页">
-        <img src="./public/devlauncher-icon.png" alt="" />
-        <span>DevLauncher</span>
-      </a>
-      <div class="nav-links">
-        <a href="#readme">README</a>
-        <a href="#pinned">Pinned</a>
-        <a href="#activity">Activity</a>
+    <div class="background" aria-hidden="true">
+      <div class="radial-field"></div>
+      <div class="aurora aurora-cyan"></div>
+      <div class="aurora aurora-violet"></div>
+      <div class="dot-grid"></div>
+      <div class="data-streams">
+        <span style="--left: 15%; --delay: 0s; --duration: 12s"></span>
+        <span style="--left: 35%; --delay: 4s; --duration: 15s"></span>
+        <span style="--left: 55%; --delay: 2s; --duration: 10s"></span>
+        <span style="--left: 75%; --delay: 7s; --duration: 14s"></span>
+        <span style="--left: 90%; --delay: 1s; --duration: 11s"></span>
       </div>
-      <a class="github-button" href="https://github.com/YiShengEasy/devLauncher" target="_blank" rel="noreferrer">View on GitHub</a>
-    </nav>
+    </div>
 
-    <main id="top" class="shell">
-      <aside class="profile-card" aria-label="项目资料">
-        <img class="avatar" src="./public/devlauncher-icon.png" alt="DevLauncher 图标" />
-        <h1>DevLauncher</h1>
-        <p class="handle">YiShengEasy / devLauncher</p>
-        <p class="bio">Local-first desktop launcher for developer workflows, plugins, and tiny daily tools.</p>
-        <a class="primary-button" href="https://github.com/YiShengEasy/devLauncher" target="_blank" rel="noreferrer">Follow project</a>
-        <div class="meta-list">
-          <span>macOS / Windows desktop</span>
-          <span>Tauri + React + plugins</span>
-          <span>Local config, local tools</span>
-        </div>
-        <div class="social-row" aria-label="项目数据">
-          <span><b>9</b> tools</span>
-          <span><b>4</b> entries</span>
-          <span><b>1</b> marketplace</span>
-        </div>
-      </aside>
+    <header class="site-header">
+      <div class="header-inner">
+        <a class="brand" href="#top" aria-label="DevLauncher 首页">
+          <span class="brand-icon">▣</span>
+          <span>DevLauncher</span>
+        </a>
+        <nav class="nav-links" aria-label="主导航">
+          <a href="#features">特性</a>
+          <a href="#ecosystem">插件</a>
+          <a href="#docs">文档</a>
+          <a href="#github">GitHub</a>
+        </nav>
+        <a class="download-mini" href="#download">Download</a>
+      </div>
+    </header>
 
-      <section class="content">
-        <section id="readme" class="readme-card">
-          <div class="readme-head">
-            <span>README.md</span>
-            <a href="https://github.com/YiShengEasy/devLauncher" target="_blank" rel="noreferrer">main</a>
+    <main id="top">
+      <section class="hero-section">
+        <div class="hero-inner">
+          <div class="release-badge">
+            <span class="icon terminal-icon"></span>
+            <span>DevLauncher 2.0 现已开启公测</span>
           </div>
-          <div class="readme-body">
-            <p class="eyebrow">Desktop workflow launcher</p>
-            <h2>更安静地启动你的桌面工作流。</h2>
+
+          <h1>
+            <span class="gradient-title">DevLauncher</span>
+            <span>本地优先的工作流引擎</span>
+          </h1>
+
+          <p class="hero-copy">
+            告别繁琐的窗口切换。通过全局命令搜索、虚拟快捷键与悬浮入口，将分散的开发动作重塑为极速心流体验。
+          </p>
+
+          <div class="hero-actions">
+            <a class="primary-action" href="#download">免费下载 (macOS)<span>→</span></a>
+            <a class="secondary-action" href="#docs"><span class="icon search-icon"></span>浏览文档</a>
+          </div>
+
+          <section class="command-demo" aria-label="命令搜索演示">
+            <div class="glow-edge"></div>
+            <div class="command-window">
+              <div class="command-search">
+                <span class="icon search-icon"></span>
+                <div class="typed-line">
+                  <span id="typedText"></span><i></i>
+                </div>
+                <div class="window-dots"><span></span><span></span><span></span></div>
+              </div>
+              <div class="command-list" id="commandList"></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="workflow-section">
+        <div class="section-heading centered">
+          <h2>极速连贯的核心工作流</h2>
+          <p>不需要在不同的应用间频繁切换，只需 4 步，保持你的心流状态。</p>
+        </div>
+        <div class="workflow-grid">
+          <div class="workflow-line"><span></span></div>
+          <article>
+            <div class="step-icon">⌁</div>
+            <small>Step 01</small>
+            <h3>召唤入口</h3>
+            <p>通过桌面悬浮宠物或全局快捷键，瞬间唤醒你的工作流控制中心。</p>
+          </article>
+          <article>
+            <div class="step-icon">⌕</div>
+            <small>Step 02</small>
+            <h3>搜索/选择动作</h3>
+            <p>模糊搜索海量命令，或直接点击高频动作，指尖触达所有工具。</p>
+          </article>
+          <article>
+            <div class="step-icon">▰</div>
+            <small>Step 03</small>
+            <h3>执行工具</h3>
+            <p>瞬间执行脚本、调用 API、或打开特定环境，不打断当前思路。</p>
+          </article>
+          <article>
+            <div class="step-icon">◇</div>
+            <small>Step 04</small>
+            <h3>沉淀为插件/快捷键</h3>
+            <p>将一次性操作固化为可复用的插件或绑定键盘快捷键，持续进化。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="features" class="capabilities-section">
+        <div class="section-heading">
+          <h2>全能的核心能力矩阵</h2>
+          <p>满足开发者桌面日常的一切折腾需求，开箱即用。</p>
+        </div>
+        <div class="feature-grid">
+          <article><span>♟</span><h3>桌面宠物入口</h3><p>不仅是陪伴，更是随叫随到的交互锚点。</p></article>
+          <article><span>⌕</span><h3>命令搜索</h3><p>全局模糊匹配，瞬间找到需要的操作。</p></article>
+          <article><span>⌘</span><h3>虚拟快捷键</h3><p>自定义键盘绑定，复杂组合一键触发。</p></article>
+          <article><span>▤</span><h3>剪贴板历史</h3><p>自动记录、搜索并管理你的复制内容。</p></article>
+          <article><span>⌗</span><h3>截图与 AI 解析</h3><p>精准截图，一键交由 AI 识别、翻译或提取信息。</p></article>
+          <article><span>▰</span><h3>终端与脚本</h3><p>无缝运行本地 Shell 脚本，直达结果。</p></article>
+          <article><span>▣</span><h3>远程桌面 / SSH</h3><p>内置连接管理，一键唤起远端服务器工作台。</p></article>
+          <article><span>◆</span><h3>Web 账号记忆</h3><p>快速填入或管理高频使用的快捷账号信息。</p></article>
+          <article><span>▦</span><h3>插件市场</h3><p>海量社区插件，无限拓展你的能力边界。</p></article>
+        </div>
+      </section>
+
+      <section id="ecosystem" class="ecosystem-section">
+        <div class="ecosystem-glow"></div>
+        <div class="ecosystem-inner">
+          <div class="ecosystem-copy">
+            <div class="violet-badge"><span>▦</span>Extensible Architecture</div>
+            <h2>插件不是附属品，<br />而是工作流的延伸</h2>
             <p>
-              DevLauncher 把宠物入口、命令搜索、快捷键矩阵、剪贴板、截图、终端、远程桌面和插件市场放在一起。
-              它不是一个大而全的后台，而是一个可以被不断绑定、搜索、复用和扩展的本地工具层。
+              基于开放的本地架构，你可以用熟悉的技术栈轻松编写插件。无论是简单的脚本包裹，还是复杂的带界面的工具，都能无缝融入你的桌面环境。
             </p>
+            <a href="#docs">浏览插件开发文档 →</a>
+          </div>
+          <div class="ecosystem-grid">
+            <article><span>⌘</span><h3>API Lab</h3><p>在启动器内快速发包测试接口，查看 JSON 响应，无需打开庞大的 Postman。</p></article>
+            <article><span>▶</span><h3>视频帧采样</h3><p>轻量级多媒体处理工具，直接选中视频文件提取关键帧。</p></article>
+            <article><span>☷</span><h3>团队内部工具</h3><p>企业私有插件分发，快速封装内网发版、日志查询等高频动作。</p></article>
+            <article><span>◎</span><h3>静态 WebView 插件</h3><p>用 HTML/JS/CSS 编写界面，利用本地能力，构建专属小应用。</p></article>
+          </div>
+        </div>
+      </section>
 
-            <div class="badge-row" aria-label="技术标签">
-              <span>local-first</span>
-              <span>desktop pet</span>
-              <span>command search</span>
-              <span>plugin marketplace</span>
-            </div>
+      <section class="local-section">
+        <div class="local-title">
+          <h2><span>Local</span>-First</h2>
+          <div></div>
+        </div>
+        <div class="local-grid">
+          <article><span>▥</span><h3>数据存留本机</h3><p>所有配置、账号信息、历史记录与工作流数据全部保存在本地磁盘，无需依赖 SaaS 后台。</p></article>
+          <article><span>◈</span><h3>极致响应速度</h3><p>调用本地二进制工具与脚本，没有网络延迟，键入即所得，享受零等待的丝滑体验。</p></article>
+          <article><span>⬟</span><h3>完全掌控</h3><p>纯粹的开发者工具气质，基于文件的配置管理，支持 Git 同步你的专属肌肉记忆。</p></article>
+        </div>
+      </section>
 
-            <div class="terminal-card" aria-label="命令演示">
-              <div class="terminal-top"><i></i><i></i><i></i><span>workflow.sh</span></div>
-              <pre><code>$ devlauncher summon
-pet: ready
-search: "api lab"
-action: open official plugin</code></pre>
-            </div>
-          </div>
-        </section>
+      <section class="usecases-section">
+        <h2>为真实的极客场景而生</h2>
+        <div class="usecase-grid">
+          <article><span>▱</span><h3>开启一天的工作</h3><p>一个命令，同时使用 VS Code 打开项目文件夹、启动终端并在浏览器中打开对应的 Jira 文档和设计稿。</p></article>
+          <article><span>⌕</span><h3>找回稍纵即逝的灵感</h3><p>刚才复制的那段报错去哪了？呼出剪贴板历史，输入模糊关键词，回车直接粘贴。</p></article>
+          <article><span>⚡</span><h3>快速调试 API</h3><p>不切换窗口，直接在小工具栏输入 Endpoint 和参数，按下回车即可在悬浮窗预览 JSON 响应格式。</p></article>
+          <article><span>✕</span><h3>一键 Bug 提单</h3><p>截图异常区域，调用 AI 识别内容并总结问题，自动复制为 Markdown 格式的 issue 模板。</p></article>
+          <article><span>▰</span><h3>服务器急救</h3><p>搜 'ssh prod'，一键打开对应服务器的终端窗口，免去寻找凭证和 IP 的繁琐过程。</p></article>
+          <article><span>{ }</span><h3>临时脚本处理</h3><p>选中一段文本，调用预设的 Python/Node 脚本（如时间戳转换、Base64 解码），结果原地替换。</p></article>
+        </div>
+      </section>
 
-        <section id="pinned" class="section-block">
-          <div class="section-title">
-            <h2>Pinned workflows</h2>
-            <span>Public preview</span>
+      <section id="download" class="cta-section">
+        <div class="cta-gradient"></div>
+        <div class="cta-inner">
+          <h2>准备好重塑桌面体验了吗？</h2>
+          <p>完全开源，免费使用。现在就下载 DevLauncher，或加入社区构建你专属的插件。</p>
+          <div class="cta-actions">
+            <a class="primary-action" href="#download">立即下载 macOS 版</a>
+            <a class="secondary-action" href="#github">访问 GitHub 仓库</a>
           </div>
-          <div class="repo-grid">
-            <article>
-              <div class="repo-title"><span></span><h3>Command Search</h3></div>
-              <p>Search actions, recent tools, keyboard bindings, and plugins from one quiet command panel.</p>
-              <footer><i class="lang blue"></i> TypeScript</footer>
-            </article>
-            <article>
-              <div class="repo-title"><span></span><h3>Desktop Pet Entry</h3></div>
-              <p>A small desktop companion that carries status, shortcuts, and lightweight workflow entry points.</p>
-              <footer><i class="lang violet"></i> React</footer>
-            </article>
-            <article>
-              <div class="repo-title"><span></span><h3>API Lab Plugin</h3></div>
-              <p>Postman-like request collections shipped as a static WebView plugin through the marketplace.</p>
-              <footer><i class="lang amber"></i> Plugin</footer>
-            </article>
-            <article>
-              <div class="repo-title"><span></span><h3>Local Tools</h3></div>
-              <p>Clipboard history, screenshots, terminal, remote desktop, TOTP, and web account shortcuts.</p>
-              <footer><i class="lang green"></i> Built-in</footer>
-            </article>
+          <div class="cta-links">
+            <a href="#ecosystem">▦ 浏览插件市场</a>
+            <a href="#docs">▤ 安装教程</a>
+            <a href="#docs">▤ 开发者文档</a>
+            <a href="#docs">▤ 版本更新说明</a>
           </div>
-        </section>
-
-        <section id="activity" class="section-block activity-card">
-          <div class="section-title">
-            <h2>Contribution rhythm</h2>
-            <span>Local iteration map</span>
-          </div>
-          <div class="contribution-grid" aria-label="贡献图"></div>
-          <div class="activity-list">
-            <article><span></span><p><b>Plugin first</b> - validate new capabilities as marketplace packages.</p></article>
-            <article><span></span><p><b>Built-in when stable</b> - move proven workflows into the launcher.</p></article>
-            <article><span></span><p><b>Ship through Git</b> - keep docs, marketplace metadata, and website in sync.</p></article>
-          </div>
-        </section>
+        </div>
       </section>
     </main>
 
-    <footer class="footer">
-      <span>DevLauncher</span>
-      <span>GitHub-style homepage for a local-first desktop workflow tool.</span>
+    <footer class="site-footer">
+      <p>© <span id="year"></span> DevLauncher. 开源协议: MIT.</p>
     </footer>
 
     <script type="module" src="./src/main.js"></script>
