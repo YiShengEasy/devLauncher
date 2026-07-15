@@ -26,16 +26,16 @@ const bindings = {
 };
 
 const demoSteps = [
-  { key: "1", text: "双击 Ctrl 唤起虚拟键盘" },
-  { key: "Q", text: "点击空键位选择动作类型" },
-  { key: "Y", text: "绑定内置工具或脚本动作" },
-  { key: "C", text: "拖拽键帽交换常用位置" },
-  { key: "N", text: "按下键位立即执行动作" },
+  { key: "1", text: "双击 Ctrl 唤起虚拟键盘", title: "快捷唤起", type: "快捷键", detail: "短时间连续按两次 Control，即可打开或隐藏虚拟键盘。", accent: "#60a5fa", mode: "summon" },
+  { key: "W", text: "点击空键位选择动作类型", title: "选择动作类型", type: "空键位", detail: "点击未绑定的键位，从应用、网址、脚本、内置工具和插件中选择。", accent: "#22d3ee", mode: "select" },
+  { key: "Y", text: "绑定内置工具或脚本动作", title: "绑定动作", type: "动作设置", detail: "填写目标并保存，动作图标会立即出现在对应键帽上。", accent: "#4ade80", mode: "bind" },
+  { key: "C", targetKey: "N", text: "拖拽键帽交换常用位置", title: "拖拽交换", type: "键位整理", detail: "按住已绑定键帽拖到另一个位置，两个动作会直接交换。", accent: "#a78bfa", mode: "drag" },
+  { key: "N", text: "按下键位立即执行动作", title: "立即执行", type: "一键启动", detail: "按下高亮键位后，DevLauncher 立即运行已绑定的动作。", accent: "#fbbf24", mode: "execute" },
 ];
 
 const typedText = document.querySelector("#typedText");
 const keyboardBoard = document.querySelector("#keyboardBoard");
-const operationFlow = document.querySelector("#operationFlow");
+const keyboardInspector = document.querySelector("#keyboardInspector");
 const year = document.querySelector("#year");
 
 if (year) {
@@ -46,8 +46,10 @@ let stepIndex = 0;
 let text = "";
 let isDeleting = false;
 
-function renderKeyboard(activeKey) {
+function renderKeyboard(activeStep) {
   if (!keyboardBoard) return;
+
+  keyboardBoard.dataset.step = activeStep.mode;
 
   keyboardBoard.innerHTML = keyRows
     .map((row, rowIndex) => `
@@ -55,9 +57,12 @@ function renderKeyboard(activeKey) {
         ${row
           .map((key) => {
             const binding = bindings[key];
-            const style = binding ? ` style="--accent: ${binding.color}"` : "";
+            const isActive = activeStep.key === key;
+            const isDropTarget = activeStep.targetKey === key;
+            const accent = isActive || isDropTarget ? activeStep.accent : binding?.color;
+            const style = accent ? ` style="--accent: ${accent}"` : "";
             return `
-              <button class="keycap ${binding ? "is-bound" : ""} ${binding?.tile ? "has-tile-icon" : ""} ${activeKey === key ? "is-active" : ""}"${style} type="button" aria-label="${key}${binding ? ` ${binding.name}` : ""}">
+              <button class="keycap ${binding ? "is-bound" : ""} ${binding?.tile ? "has-tile-icon" : ""} ${isActive ? `is-active is-${activeStep.mode}` : ""} ${isDropTarget ? "is-drop-target" : ""}"${style} type="button" aria-label="${key}${binding ? ` ${binding.name}` : ""}">
                 <span class="key-label">${key}</span>
                 ${binding ? `<span class="key-icon">${binding.icon}</span>${binding.type === "script" ? `<strong>${binding.name}</strong>` : ""}` : ""}
               </button>
@@ -69,22 +74,33 @@ function renderKeyboard(activeKey) {
     .join("");
 }
 
-function renderOperationFlow(activeKey) {
-  if (!operationFlow) return;
-  const activeIndex = demoSteps.findIndex((step) => step.key === activeKey);
-  operationFlow.innerHTML = demoSteps
-    .map((step, index) => `
-      <span class="${index === activeIndex ? "is-active" : ""}">
-        <b>${String(index + 1).padStart(2, "0")}</b>${step.text}
-      </span>
-    `)
-    .join("");
+function renderInspector(activeStep) {
+  if (!keyboardInspector) return;
+
+  keyboardInspector.innerHTML = `
+    <div class="inspector-badge" style="--accent: ${activeStep.accent}">
+      <span>${activeStep.key}</span>
+      <strong>${activeStep.type}</strong>
+    </div>
+    <h3>${activeStep.title}</h3>
+    <p>${activeStep.detail}</p>
+    <div class="binding-flow">
+      ${demoSteps
+        .map((step, index) => `
+          <div class="flow-item ${index === stepIndex ? "is-active" : ""}">
+            <span>${String(index + 1).padStart(2, "0")}</span>
+            <p>${step.text}</p>
+          </div>
+        `)
+        .join("")}
+    </div>
+  `;
 }
 
 function renderDemo() {
-  const activeKey = demoSteps[stepIndex].key;
-  renderKeyboard(activeKey);
-  renderOperationFlow(activeKey);
+  const activeStep = demoSteps[stepIndex];
+  renderKeyboard(activeStep);
+  renderInspector(activeStep);
 }
 
 function tickTyping() {

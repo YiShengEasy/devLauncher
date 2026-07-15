@@ -10,7 +10,7 @@
     <meta name="theme-color" content="#030712" />
     <title>DevLauncher - 可绑定的桌面虚拟键盘</title>
     <link rel="icon" href="./public/devlauncher-icon.png?v=2026071601" />
-    <link rel="stylesheet" href="./src/styles.css?v=2026071601" />
+    <link rel="stylesheet" href="./src/styles.css?v=2026071602" />
   </head>
   <body>
     <div class="background" aria-hidden="true">
@@ -93,13 +93,14 @@
                 <button class="add-tab" type="button">+</button>
               </div>
               <div class="keyboard-operation-strip" aria-label="虚拟键盘操作演示">
+                <kbd>Double Ctrl</kbd>
                 <div class="operation-typed-line">
                   <span id="typedText"></span><i></i>
                 </div>
-                <div class="operation-flow" id="operationFlow"></div>
               </div>
               <div class="keyboard-stage">
                 <div class="keyboard-board" id="keyboardBoard" aria-hidden="true"></div>
+                <aside class="keyboard-inspector" id="keyboardInspector" aria-live="polite"></aside>
               </div>
             </div>
           </section>
@@ -272,6 +273,6 @@
       </a>
     </footer>
 
-    <script type="module" src="./src/main.js?v=2026071601"></script>
+    <script src="./src/main.js?v=2026071602"></script>
   </body>
 </html>

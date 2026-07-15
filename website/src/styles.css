@@ -1745,3 +1745,364 @@ a {
     padding-block: 72px;
   }
 }
+
+/* Compact product-faithful keyboard demo with the original guided inspector. */
+.keyboard-demo {
+  width: min(1040px, 100%);
+}
+
+.keyboard-window {
+  min-height: 448px;
+}
+
+.launcher-preview-header {
+  height: 56px;
+}
+
+.launcher-logo-button {
+  width: 32px;
+  height: 32px;
+}
+
+.launcher-logo-button img {
+  width: 23px;
+  height: 23px;
+}
+
+.launcher-brand-block strong {
+  font-size: 16px;
+}
+
+.launcher-brand-block p {
+  font-size: 12px;
+}
+
+.launcher-search-button,
+.launcher-icon-button,
+.launcher-sync-button {
+  height: 34px;
+}
+
+.launcher-search-button {
+  width: 104px;
+  font-size: 13px;
+}
+
+.launcher-icon-button,
+.launcher-sync-button {
+  width: 34px;
+}
+
+.launcher-tabs {
+  height: 44px;
+  gap: 32px;
+}
+
+.launcher-tabs button {
+  min-width: 74px;
+  height: 35px;
+  font-size: 15px;
+}
+
+.launcher-tabs .add-tab {
+  width: 34px;
+  height: 32px;
+  margin-bottom: 5px;
+}
+
+.keyboard-operation-strip {
+  min-height: 48px;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 0 22px;
+}
+
+.keyboard-operation-strip kbd {
+  flex-shrink: 0;
+  padding: 5px 8px;
+  border: 1px solid rgba(96, 165, 250, 0.36);
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.8);
+  color: #bfdbfe;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.operation-typed-line {
+  min-width: 0;
+  font-size: 13px;
+}
+
+.keyboard-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 246px;
+  gap: 20px;
+  align-items: center;
+  justify-content: stretch;
+  padding: 22px 24px 26px;
+  overflow: visible;
+}
+
+.keyboard-board {
+  width: 100%;
+  max-width: 100%;
+  gap: 7px;
+}
+
+.keyboard-row {
+  gap: 7px;
+}
+
+.keyboard-row.row-1 {
+  padding-left: 16px;
+}
+
+.keyboard-row.row-2 {
+  padding-left: 54px;
+}
+
+.keyboard-row.row-3 {
+  padding-left: 116px;
+}
+
+.keycap {
+  width: 62px;
+  height: 58px;
+  border-radius: 8px;
+}
+
+.keycap.is-bound:hover,
+.keycap.is-active {
+  z-index: 2;
+  border-color: color-mix(in srgb, var(--accent) 72%, white);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 8px 18px rgba(0, 0, 0, 0.3), 0 0 24px color-mix(in srgb, var(--accent) 58%, transparent);
+  transform: translateY(-4px) scale(1.07);
+}
+
+.keycap.is-active::after {
+  inset: 4px;
+  border-color: color-mix(in srgb, var(--accent) 78%, transparent);
+}
+
+.keycap.is-select {
+  border-style: dashed;
+  animation: selectTarget 900ms ease-in-out infinite;
+}
+
+.keycap.is-drag {
+  animation: dragSource 1.4s ease-in-out infinite;
+}
+
+.keycap.is-drop-target {
+  border-color: color-mix(in srgb, var(--accent) 58%, white);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 26%, transparent), 0 0 18px color-mix(in srgb, var(--accent) 34%, transparent);
+  animation: dropTarget 1.4s ease-in-out infinite;
+}
+
+.keycap.is-execute .key-icon {
+  animation: executeIcon 900ms ease-in-out infinite;
+}
+
+@keyframes selectTarget {
+  0%, 100% { transform: translateY(-2px) scale(1.03); }
+  50% { transform: translateY(-4px) scale(1.09); }
+}
+
+@keyframes dragSource {
+  0%, 100% { transform: translate(0, -4px) rotate(0); }
+  50% { transform: translate(20px, -9px) rotate(2deg); }
+}
+
+@keyframes dropTarget {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+@keyframes executeIcon {
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(1.22); }
+}
+
+.key-label {
+  top: 6px;
+  left: 8px;
+  font-size: 9px;
+}
+
+.key-icon {
+  font-size: 18px;
+}
+
+.keycap strong {
+  max-width: 50px;
+  margin-top: 4px;
+  font-size: 9px;
+}
+
+.keycap.has-tile-icon .key-icon {
+  min-width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  font-size: 14px;
+}
+
+.keyboard-inspector {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid rgba(96, 165, 250, 0.18);
+  border-radius: 10px;
+  background: rgba(7, 15, 29, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  text-align: left;
+}
+
+.inspector-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 38%, #1e293b);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+.inspector-badge span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 5px;
+  background: #020617;
+  color: #f8fafc;
+  font-weight: 800;
+}
+
+.inspector-badge strong {
+  font-weight: 700;
+}
+
+.keyboard-inspector h3 {
+  margin: 0 0 7px;
+  color: #f8fafc;
+  font-size: 19px;
+  font-weight: 820;
+}
+
+.keyboard-inspector > p {
+  min-height: 48px;
+  margin: 0 0 14px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.binding-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.flow-item {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 7px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #64748b;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.flow-item.is-active {
+  border-color: rgba(96, 165, 250, 0.34);
+  background: rgba(30, 41, 59, 0.78);
+  color: #e2e8f0;
+  transform: translateX(3px);
+}
+
+.flow-item span {
+  color: #22d3ee;
+  font-size: 9px;
+}
+
+.flow-item p {
+  margin: 0;
+}
+
+@media (max-width: 1050px) and (min-width: 641px) {
+  .keyboard-stage {
+    grid-template-columns: 685px 230px;
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .keyboard-window {
+    min-height: 0;
+  }
+
+  .keyboard-stage {
+    display: flex;
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px 12px 20px;
+    overflow: hidden;
+  }
+
+  .keyboard-board {
+    width: max-content;
+    max-width: none;
+    align-self: center;
+    margin-bottom: -76px;
+    transform: scale(0.72);
+    transform-origin: top center;
+  }
+
+  .keyboard-inspector {
+    width: 100%;
+    padding: 15px;
+  }
+
+  .keyboard-inspector > p {
+    min-height: 0;
+  }
+
+  .binding-flow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .flow-item:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .keyboard-operation-strip {
+    padding-inline: 14px;
+  }
+
+  .operation-typed-line {
+    font-size: 11px;
+  }
+
+  .keyboard-operation-strip kbd {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .keycap.is-select,
+  .keycap.is-drag,
+  .keycap.is-drop-target,
+  .keycap.is-execute .key-icon {
+    animation: none;
+  }
+}
