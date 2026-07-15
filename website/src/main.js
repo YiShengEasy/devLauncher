@@ -35,6 +35,7 @@ const demoSteps = [
 
 const typedText = document.querySelector("#typedText");
 const keyboardBoard = document.querySelector("#keyboardBoard");
+const operationFlow = document.querySelector("#operationFlow");
 const year = document.querySelector("#year");
 
 if (year) {
@@ -68,9 +69,22 @@ function renderKeyboard(activeKey) {
     .join("");
 }
 
+function renderOperationFlow(activeKey) {
+  if (!operationFlow) return;
+  const activeIndex = demoSteps.findIndex((step) => step.key === activeKey);
+  operationFlow.innerHTML = demoSteps
+    .map((step, index) => `
+      <span class="${index === activeIndex ? "is-active" : ""}">
+        <b>${String(index + 1).padStart(2, "0")}</b>${step.text}
+      </span>
+    `)
+    .join("");
+}
+
 function renderDemo() {
   const activeKey = demoSteps[stepIndex].key;
   renderKeyboard(activeKey);
+  renderOperationFlow(activeKey);
 }
 
 function tickTyping() {

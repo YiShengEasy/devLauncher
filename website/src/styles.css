@@ -391,7 +391,7 @@ a {
 }
 
 .keyboard-demo {
-  width: min(1440px, 100%);
+  width: min(1180px, 100%);
   padding: 0;
   border-radius: 26px;
   border-color: rgba(148, 163, 184, 0.32);
@@ -426,7 +426,7 @@ a {
 
 .keyboard-window {
   position: relative;
-  min-height: 704px;
+  min-height: 586px;
   border-color: rgba(148, 163, 184, 0.28);
   border-radius: 24px;
   background:
@@ -469,10 +469,10 @@ a {
 
 .launcher-preview-header {
   display: flex;
-  height: 82px;
+  height: 64px;
   align-items: center;
   justify-content: space-between;
-  padding: 18px 24px 17px;
+  padding: 13px 20px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.075);
 }
 
@@ -484,14 +484,14 @@ a {
 }
 
 .launcher-brand-block {
-  gap: 16px;
+  gap: 12px;
   min-width: 0;
 }
 
 .launcher-logo-button {
   display: grid;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   place-items: center;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.13);
@@ -501,42 +501,42 @@ a {
 }
 
 .launcher-logo-button img {
-  width: 31px;
-  height: 31px;
+  width: 26px;
+  height: 26px;
   border-radius: 8px;
   object-fit: cover;
 }
 
 .launcher-brand-block strong {
   color: rgba(255, 255, 255, 0.86);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 760;
   letter-spacing: 0;
 }
 
 .launcher-brand-block > span {
   width: 1px;
-  height: 22px;
+  height: 18px;
   background: rgba(255, 255, 255, 0.2);
 }
 
 .launcher-brand-block p {
   margin: 0;
   color: rgba(222, 227, 238, 0.58);
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 650;
   letter-spacing: 0;
 }
 
 .launcher-toolbar {
-  gap: 14px;
+  gap: 11px;
 }
 
 .launcher-search-button,
 .launcher-icon-button,
 .launcher-sync-button {
   display: inline-flex;
-  height: 48px;
+  height: 38px;
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(255, 255, 255, 0.09);
@@ -546,27 +546,27 @@ a {
 }
 
 .launcher-search-button {
-  width: 150px;
-  gap: 12px;
-  border-radius: 15px;
-  font-size: 18px;
+  width: 118px;
+  gap: 9px;
+  border-radius: 12px;
+  font-size: 15px;
   font-weight: 800;
 }
 
 .launcher-icon-button,
 .launcher-sync-button {
-  width: 48px;
+  width: 38px;
   padding: 0;
-  border-radius: 15px;
+  border-radius: 12px;
   color: #93c5fd;
-  font-size: 25px;
+  font-size: 20px;
 }
 
 .launcher-sync-button {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
-  font-size: 20px;
+  font-size: 16px;
 }
 
 .launcher-toolbar > i {
@@ -577,12 +577,12 @@ a {
 }
 
 .launcher-window-controls {
-  gap: 14px;
+  gap: 11px;
 }
 
 .launcher-window-controls span {
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
 }
 
@@ -598,24 +598,24 @@ a {
 
 .launcher-tabs {
   display: flex;
-  height: 62px;
+  height: 52px;
   align-items: flex-end;
-  gap: 56px;
-  padding: 0 0 0 22px;
+  gap: 42px;
+  padding: 0 0 0 18px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 
 .launcher-tabs button {
-  min-width: 96px;
-  height: 48px;
-  padding: 0 24px;
+  min-width: 82px;
+  height: 40px;
+  padding: 0 20px;
   border: 1px solid transparent;
   border-bottom: 5px solid transparent;
   border-radius: 12px 12px 0 0;
   background: transparent;
   color: rgba(228, 232, 242, 0.62);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 760;
   white-space: nowrap;
 }
@@ -629,9 +629,9 @@ a {
 }
 
 .launcher-tabs .add-tab {
-  min-width: 42px;
-  width: 44px;
-  height: 44px;
+  min-width: 36px;
+  width: 38px;
+  height: 36px;
   flex-shrink: 0;
   margin-bottom: 8px;
   padding: 0;
@@ -639,8 +639,74 @@ a {
   border-radius: 12px;
   background: linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.035));
   color: #34d399;
-  font-size: 30px;
+  font-size: 25px;
   line-height: 1;
+}
+
+.keyboard-operation-strip {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 28px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.065);
+  background: rgba(2, 6, 23, 0.16);
+}
+
+.operation-typed-line {
+  display: flex;
+  min-width: 260px;
+  align-items: center;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 14px;
+  text-align: left;
+}
+
+.operation-typed-line i {
+  display: inline-block;
+  width: 8px;
+  height: 16px;
+  margin-left: 3px;
+  background: rgba(6, 182, 212, 0.86);
+  animation: cursorPulse 1s step-end infinite;
+}
+
+.operation-flow {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.operation-flow span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: rgba(148, 163, 184, 0.7);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+
+.operation-flow span.is-active {
+  border-color: rgba(59, 130, 246, 0.42);
+  background: rgba(30, 41, 59, 0.72);
+  color: #e2e8f0;
+  transform: translateY(-1px);
+}
+
+.operation-flow b {
+  color: #22d3ee;
+  font-size: 10px;
 }
 
 .typed-line {
@@ -683,47 +749,47 @@ a {
   flex: 1;
   align-items: center;
   justify-content: center;
-  padding: 36px 54px 56px;
+  padding: 28px 42px 36px;
 }
 
 .keyboard-board {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
-  width: 1284px;
+  gap: 11px;
+  width: 1016px;
   max-width: 100%;
 }
 
 .keyboard-row {
   display: flex;
-  gap: 14px;
+  gap: 11px;
 }
 
 .keyboard-row.row-1 {
-  padding-left: 28px;
+  padding-left: 22px;
 }
 
 .keyboard-row.row-2 {
-  padding-left: 126px;
+  padding-left: 100px;
 }
 
 .keyboard-row.row-3 {
-  padding-left: 288px;
+  padding-left: 228px;
 }
 
 .keycap {
   position: relative;
   display: flex;
-  width: 114px;
-  height: 108px;
+  width: 90px;
+  height: 86px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   overflow: hidden;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.035);
-  border-radius: 13px;
+  border-radius: 11px;
   background:
     radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.025), transparent 46%),
     radial-gradient(circle at 70% 82%, rgba(255, 255, 255, 0.035), transparent 36%),
@@ -773,10 +839,10 @@ a {
 
 .key-label {
   position: absolute;
-  top: 12px;
-  left: 14px;
+  top: 9px;
+  left: 11px;
   color: rgba(220, 226, 239, 0.48);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 620;
   letter-spacing: 0;
   line-height: 1;
@@ -785,7 +851,7 @@ a {
 
 .key-icon {
   color: var(--accent);
-  font-size: 32px;
+  font-size: 25px;
   font-weight: 850;
   line-height: 1;
   filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 40%, transparent)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.42));
@@ -793,11 +859,11 @@ a {
 }
 
 .keycap strong {
-  max-width: 86px;
-  margin-top: 8px;
+  max-width: 70px;
+  margin-top: 6px;
   overflow: hidden;
   color: rgba(252, 253, 255, 0.9);
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 760;
   letter-spacing: 0;
   line-height: 1.15;
@@ -808,13 +874,13 @@ a {
 
 .keycap.has-tile-icon .key-icon {
   display: grid;
-  min-width: 52px;
-  height: 52px;
+  min-width: 42px;
+  height: 42px;
   place-items: center;
-  border-radius: 12px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--accent) 72%, #f8fafc);
   color: #1f2937;
-  font-size: 24px;
+  font-size: 20px;
   box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 46%, transparent);
 }
 
