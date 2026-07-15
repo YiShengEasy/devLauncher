@@ -33,9 +33,22 @@ const demoSteps = [
   { key: "N", text: "按下键位立即执行动作", title: "立即执行", type: "一键启动", detail: "按下高亮键位后，DevLauncher 立即运行已绑定的动作。", accent: "#fbbf24", mode: "execute" },
 ];
 
+const actionTypes = [
+  { id: "app", code: "APP", name: "应用程序", detail: "启动本机应用，并按需要附带启动参数。", accent: "#60a5fa" },
+  { id: "folder", code: "DIR", name: "文件夹", detail: "用 Finder、VS Code、Cursor 或指定工具打开项目目录。", accent: "#fbbf24" },
+  { id: "file", code: "FILE", name: "文件", detail: "直接打开文档、配置文件、图片或其他本地素材。", accent: "#facc15" },
+  { id: "url", code: "URL", name: "网址", detail: "打开常用网站、管理后台或本地开发服务。", accent: "#22d3ee" },
+  { id: "ssh", code: "SSH", name: "SSH", detail: "连接保存的远程主机，快速进入终端会话。", accent: "#4ade80" },
+  { id: "script", code: "CMD", name: "脚本", detail: "运行 Shell 命令或自动化脚本，把重复操作变成一个键位。", accent: "#a78bfa" },
+  { id: "system", code: "SYS", name: "系统", detail: "执行系统命令、桌面控制和常用系统动作。", accent: "#fb7185" },
+  { id: "builtin", code: "TOOL", name: "内置", detail: "打开剪切板、截图、JSON 助手、终端等内置工具。", accent: "#f59e0b" },
+  { id: "plugin", code: "PLUG", name: "插件", detail: "运行从插件市场安装的 WebView 工具和扩展能力。", accent: "#c4b5fd" },
+];
+
 const typedText = document.querySelector("#typedText");
 const keyboardBoard = document.querySelector("#keyboardBoard");
 const keyboardInspector = document.querySelector("#keyboardInspector");
+const actionTypeExplorer = document.querySelector("#actionTypeExplorer");
 const year = document.querySelector("#year");
 
 if (year) {
@@ -43,6 +56,7 @@ if (year) {
 }
 
 let stepIndex = 0;
+let typeIndex = 0;
 let text = "";
 let isDeleting = false;
 
@@ -103,6 +117,37 @@ function renderDemo() {
   renderInspector(activeStep);
 }
 
+function renderActionTypes() {
+  if (!actionTypeExplorer) return;
+
+  const activeType = actionTypes[typeIndex];
+  actionTypeExplorer.dataset.activeType = activeType.id;
+  actionTypeExplorer.innerHTML = `
+    <div class="action-type-copy" style="--accent: ${activeType.accent}">
+      <small>支持的动作类型</small>
+      <div><span>${activeType.code}</span><h3>${activeType.name}</h3></div>
+      <p>${activeType.detail}</p>
+    </div>
+    <div class="action-type-list" aria-label="应用程序、文件夹、文件、网址、SSH、脚本、系统、内置和插件">
+      ${actionTypes
+        .map((type, index) => `
+          <span class="action-type-item ${index === typeIndex ? "is-active" : ""}" style="--accent: ${type.accent}">
+            <b>${type.code}</b><em>${type.name}</em>
+          </span>
+        `)
+        .join("")}
+    </div>
+  `;
+}
+
+function tickActionTypes() {
+  window.setTimeout(() => {
+    typeIndex = (typeIndex + 1) % actionTypes.length;
+    renderActionTypes();
+    tickActionTypes();
+  }, 2200);
+}
+
 function tickTyping() {
   const currentPhrase = demoSteps[stepIndex].text;
   const complete = !isDeleting && text === currentPhrase;
@@ -129,4 +174,6 @@ function tickTyping() {
 }
 
 renderDemo();
+renderActionTypes();
 tickTyping();
+tickActionTypes();
