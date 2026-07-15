@@ -1,19 +1,29 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 #[cfg(not(target_os = "macos"))]
 use image::RgbaImage;
+use serde::Serialize;
+use std::collections::HashMap;
 use std::fs;
 #[cfg(target_os = "macos")]
 use std::process::Command;
 use std::sync::{Arc, Mutex};
-#[cfg(target_os = "macos")]
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(not(target_os = "macos"))]
 use crate::utils::image::encode_image_jpeg;
 
 pub struct ScreenshotCaptureState {
     pub image_data: Arc<Mutex<Option<String>>>,
+    pub pinned_images: Arc<Mutex<HashMap<String, PinnedScreenshotPayload>>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedScreenshotPayload {
+    pub data: String,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[cfg(target_os = "macos")]
@@ -161,6 +171,7 @@ fn capture_screen_b64() -> Result<String, String> {
 pub fn setup(app: &mut tauri::App) {
     app.manage(ScreenshotCaptureState {
         image_data: Arc::new(Mutex::new(None)),
+        pinned_images: Arc::new(Mutex::new(HashMap::new())),
     });
 }
 
@@ -183,7 +194,12 @@ pub fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
             let sw = screen.display_info.width;
             let sh = screen.display_info.height;
 
-            // Step 1: capture FIRST, preserving the user's current screen state.
+            // Step 1: prepare geometry before capture so both success and error
+            // paths can reuse the same overlay location.
+            set_capture_window_bounds(&win, sx, sy, sw, sh)?;
+            prepare_capture_window_for_current_space(&win)?;
+
+            // Step 2: capture FIRST, preserving the user's current screen state.
             // On macOS, use the system screencapture tool so Screen Recording
             // permission is handled by the OS capture path instead of the dev binary.
             #[cfg(target_os = "macos")]
@@ -191,7 +207,9 @@ pub fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
                 Ok(b64) => b64,
                 Err(e) => {
                     eprintln!("[screenshot] macOS screencapture failed: {e}");
-                    let _ = crate::entries::restore_main_window(&app);
+                    let _ = show_capture_window(&win);
+                    let _ = focus_capture_window(&win);
+                    let _ = app.emit_to("screenshot", "screenshot-error", e.clone());
                     return Err(e);
                 }
             };
@@ -201,8 +219,11 @@ pub fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
                 let captured = match screen.capture() {
                     Ok(captured) => captured,
                     Err(e) => {
-                        let _ = crate::entries::restore_main_window(&app);
-                        return Err(e.to_string());
+                        let message = e.to_string();
+                        let _ = show_capture_window(&win);
+                        let _ = focus_capture_window(&win);
+                        let _ = app.emit_to("screenshot", "screenshot-error", message.clone());
+                        return Err(message);
                     }
                 };
                 let w = captured.width();
@@ -211,13 +232,11 @@ pub fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
                 (w, h, raw)
             };
 
-            // Step 2: show window immediately after capture.
-            set_capture_window_bounds(&win, sx, sy, sw, sh)?;
-            prepare_capture_window_for_current_space(&win)?;
+            // Step 3: show window immediately after capture.
             show_capture_window(&win)?;
             focus_capture_window(&win)?;
 
-            // Step 3: publish screenshot data to the overlay.
+            // Step 4: publish screenshot data to the overlay.
             #[cfg(target_os = "macos")]
             {
                 app.emit_to("screenshot", "screenshot-ready", png_b64)
@@ -272,4 +291,75 @@ pub fn get_pending_screenshot(state: tauri::State<'_, ScreenshotCaptureState>) -
 pub fn screenshot_write_file(path: String, data: String) -> Result<(), String> {
     let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
     fs::write(&path, &bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn create_pinned_screenshot_window(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ScreenshotCaptureState>,
+    data: String,
+    width: u32,
+    height: u32,
+) -> Result<String, String> {
+    if data.trim().is_empty() {
+        return Err("pinned screenshot data is empty".to_string());
+    }
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let label = format!("screenshot-pin-{stamp}");
+    state.pinned_images.lock().unwrap().insert(
+        label.clone(),
+        PinnedScreenshotPayload {
+            data,
+            width,
+            height,
+        },
+    );
+
+    let max_w = 920.0_f64;
+    let max_h = 680.0_f64;
+    let scale = (max_w / width.max(1) as f64)
+        .min(max_h / height.max(1) as f64)
+        .min(1.0);
+    let win_w = (width as f64 * scale).round().max(160.0);
+    let win_h = (height as f64 * scale).round().max(120.0);
+
+    let win = WebviewWindowBuilder::new(
+        &app,
+        label.clone(),
+        WebviewUrl::App("index.html?entry=screenshot-pin".into()),
+    )
+    .title("DevLauncher Pinned Screenshot")
+    .inner_size(win_w, win_h)
+    .min_inner_size(120.0, 80.0)
+    .resizable(true)
+    .decorations(false)
+    .transparent(true)
+    .shadow(true)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    .visible(true)
+    .build()
+    .map_err(|e| e.to_string())?;
+
+    let _ = win.set_focus();
+    Ok(label)
+}
+
+#[tauri::command]
+pub fn get_pinned_screenshot(
+    state: tauri::State<'_, ScreenshotCaptureState>,
+    label: String,
+) -> Result<PinnedScreenshotPayload, String> {
+    state
+        .pinned_images
+        .lock()
+        .unwrap()
+        .get(&label)
+        .cloned()
+        .ok_or_else(|| format!("pinned screenshot not found: {label}"))
 }

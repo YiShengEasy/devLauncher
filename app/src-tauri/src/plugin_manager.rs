@@ -194,25 +194,19 @@ fn plugin_icon_path(
     app: &tauri::AppHandle,
     plugin: &InstalledPlugin,
 ) -> Result<Option<String>, String> {
-    if let Some(remote_icon) = plugin
+    if let Some(icon) = plugin.manifest.icon.as_deref() {
+        let plugin_dir = plugins_root(app)?.join(&plugin.id).join(&plugin.version);
+        let icon_path = safe_join(&plugin_dir, icon)?;
+        if icon_path.exists() {
+            return Ok(Some(icon_path.to_string_lossy().to_string()));
+        }
+    }
+
+    Ok(plugin
         .icon_path
         .as_deref()
         .filter(|icon| is_remote_icon(icon))
-    {
-        return Ok(Some(remote_icon.to_string()));
-    }
-
-    let Some(icon) = plugin.manifest.icon.as_deref() else {
-        return Ok(None);
-    };
-
-    let plugin_dir = plugins_root(app)?.join(&plugin.id).join(&plugin.version);
-    let icon_path = safe_join(&plugin_dir, icon)?;
-    if icon_path.exists() {
-        Ok(Some(icon_path.to_string_lossy().to_string()))
-    } else {
-        Ok(None)
-    }
+        .map(ToString::to_string))
 }
 
 fn hydrate_plugin_icon_paths(

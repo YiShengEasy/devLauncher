@@ -1,12 +1,48 @@
-// OCR MVP engine: Windows OCR API on Windows. Tesseract fallback is reserved for a separate implementation pass.
+// OCR engines: Windows uses Windows.Media.Ocr; macOS uses the built-in Vision framework.
+use serde::Serialize;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrRect {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrLine {
+    pub id: usize,
+    pub text: String,
+    pub rect: OcrRect,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrLayout {
+    pub text: String,
+    pub width: u32,
+    pub height: u32,
+    pub lines: Vec<OcrLine>,
+}
 
 #[tauri::command]
 pub fn ocr_recognize_image(data: String) -> Result<String, String> {
     recognize_image_data(data)
 }
 
+#[tauri::command]
+pub fn ocr_recognize_image_layout(data: String) -> Result<OcrLayout, String> {
+    recognize_layout_data(data)
+}
+
 fn recognize_image_data(data: String) -> Result<String, String> {
-    let text = recognize_windows_ocr(data)?;
+    let text = recognize_layout_data(data)?.text;
+    normalize_text_result(text)
+}
+
+fn normalize_text_result(text: String) -> Result<String, String> {
     let normalized = text
         .lines()
         .map(str::trim)
@@ -20,9 +56,54 @@ fn recognize_image_data(data: String) -> Result<String, String> {
     }
 }
 
-#[cfg(not(target_os = "windows"))]
-fn recognize_windows_ocr(_data: String) -> Result<String, String> {
-    Err("OCR is only supported on Windows in this MVP".to_string())
+fn recognize_layout_data(data: String) -> Result<OcrLayout, String> {
+    recognize_platform_layout(data)
+}
+
+#[cfg(target_os = "windows")]
+fn recognize_platform_layout(data: String) -> Result<OcrLayout, String> {
+    let text = recognize_windows_ocr(data)?;
+    Ok(layout_from_plain_text(text))
+}
+
+#[cfg(target_os = "macos")]
+fn recognize_platform_layout(data: String) -> Result<OcrLayout, String> {
+    recognize_macos_vision_layout(data)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn recognize_platform_layout(_data: String) -> Result<OcrLayout, String> {
+    Err("OCR is only supported on Windows and macOS".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn layout_from_plain_text(text: String) -> OcrLayout {
+    let normalized = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let lines = normalized
+        .lines()
+        .enumerate()
+        .map(|(id, line)| OcrLine {
+            id,
+            text: line.to_string(),
+            rect: OcrRect {
+                x: 0.0,
+                y: id as f64 * 24.0,
+                width: 0.0,
+                height: 22.0,
+            },
+        })
+        .collect();
+    OcrLayout {
+        text: normalized,
+        width: 0,
+        height: 0,
+        lines,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -180,4 +261,199 @@ foreach ($line in $result.Lines) {
     }
 
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn recognize_macos_vision_layout(data: String) -> Result<OcrLayout, String> {
+    use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+    use image::GenericImageView;
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send, sel};
+    use objc2_foundation::{NSArray, NSData, NSDictionary, NSError, NSRect, NSString};
+    use std::ptr;
+
+    #[link(name = "Vision", kind = "framework")]
+    extern "C" {}
+
+    let bytes = BASE64
+        .decode(data.trim())
+        .map_err(|e| format!("Failed to decode OCR image data: {e}"))?;
+    let (image_width, image_height) = image::load_from_memory(&bytes)
+        .map_err(|e| format!("Failed to inspect OCR image dimensions: {e}"))?
+        .dimensions();
+
+    let ns_data = NSData::with_bytes(&bytes);
+    let options = NSDictionary::<NSString, AnyObject>::new();
+    let request: *mut AnyObject = unsafe {
+        let allocated: *mut AnyObject = msg_send![class!(VNRecognizeTextRequest), alloc];
+        msg_send![allocated, init]
+    };
+    if request.is_null() {
+        return Err("macOS Vision OCR request could not be created".to_string());
+    }
+    let request = unsafe { &*request };
+
+    unsafe {
+        // Accurate mode is required for Chinese recognition on older Vision revisions.
+        let _: () = msg_send![request, setRecognitionLevel: 0usize];
+        let _: () = msg_send![request, setUsesLanguageCorrection: true];
+    }
+
+    unsafe {
+        let can_detect_language: bool =
+            msg_send![request, respondsToSelector: sel!(setAutomaticallyDetectsLanguage:)];
+        if can_detect_language {
+            let _: () = msg_send![request, setAutomaticallyDetectsLanguage: true];
+        }
+    }
+
+    let supported_languages = supported_macos_ocr_languages(request);
+    let preferred_languages = ["zh-Hans", "zh-Hant", "en-US"];
+    let enabled_language_values = preferred_languages
+        .iter()
+        .filter(|language| {
+            supported_languages.is_empty()
+                || supported_languages
+                    .iter()
+                    .any(|supported| supported.as_str() == **language)
+        })
+        .map(|language| NSString::from_str(language))
+        .collect::<Vec<_>>();
+
+    if !enabled_language_values.is_empty() {
+        let enabled_language_refs = enabled_language_values
+            .iter()
+            .map(|language| &**language)
+            .collect::<Vec<_>>();
+        let languages = NSArray::from_slice(&enabled_language_refs);
+        unsafe {
+            let _: () = msg_send![request, setRecognitionLanguages: &*languages];
+        }
+    }
+
+    let handler: *mut AnyObject = unsafe {
+        let allocated: *mut AnyObject = msg_send![class!(VNImageRequestHandler), alloc];
+        msg_send![
+            allocated,
+            initWithData: &*ns_data,
+            options: &*options
+        ]
+    };
+    if handler.is_null() {
+        return Err("macOS Vision OCR image handler could not be created".to_string());
+    }
+    let handler = unsafe { &*handler };
+    let requests = NSArray::from_slice(&[request]);
+    let mut error: *mut NSError = ptr::null_mut();
+    let ok: bool = unsafe {
+        msg_send![
+            handler,
+            performRequests: &*requests,
+            error: &mut error
+        ]
+    };
+
+    if !ok {
+        let detail = if error.is_null() {
+            "unknown Vision error".to_string()
+        } else {
+            unsafe { (*error).localizedDescription().to_string() }
+        };
+        return Err(format!("macOS Vision OCR failed: {detail}"));
+    }
+
+    let observations: *mut NSArray<AnyObject> = unsafe { msg_send![request, results] };
+    if observations.is_null() {
+        return Ok(OcrLayout {
+            text: String::new(),
+            width: image_width,
+            height: image_height,
+            lines: Vec::new(),
+        });
+    }
+
+    let observations = unsafe { &*observations };
+    let mut lines = Vec::new();
+    for (id, observation) in observations.iter().enumerate() {
+        let bounding_box: NSRect = unsafe { msg_send![&*observation, boundingBox] };
+        let candidates: *mut NSArray<AnyObject> =
+            unsafe { msg_send![&*observation, topCandidates: 1usize] };
+        if candidates.is_null() {
+            continue;
+        }
+        let candidates = unsafe { &*candidates };
+        if candidates.is_empty() {
+            continue;
+        }
+        let candidate = unsafe { candidates.objectAtIndex_unchecked(0) };
+        let recognized: *mut NSString = unsafe { msg_send![candidate, string] };
+        if recognized.is_null() {
+            continue;
+        }
+        let value = unsafe { &*recognized }.to_string();
+        let value = value.trim();
+        if !value.is_empty() {
+            lines.push(OcrLine {
+                id,
+                text: value.to_string(),
+                rect: vision_rect_to_image_rect(bounding_box, image_width, image_height),
+            });
+        }
+    }
+
+    let text = lines
+        .iter()
+        .map(|line| line.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(OcrLayout {
+        text,
+        width: image_width,
+        height: image_height,
+        lines,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn vision_rect_to_image_rect(rect: objc2_foundation::NSRect, width: u32, height: u32) -> OcrRect {
+    let width = f64::from(width);
+    let height = f64::from(height);
+    let x = rect.origin.x * width;
+    let y = (1.0 - rect.origin.y - rect.size.height) * height;
+    OcrRect {
+        x,
+        y,
+        width: rect.size.width * width,
+        height: rect.size.height * height,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn supported_macos_ocr_languages(request: &objc2::runtime::AnyObject) -> Vec<String> {
+    use objc2::{msg_send, sel};
+    use objc2_foundation::{NSArray, NSError, NSString};
+    use std::ptr;
+
+    let can_query: bool = unsafe {
+        msg_send![request, respondsToSelector: sel!(supportedRecognitionLanguagesAndReturnError:)]
+    };
+    if !can_query {
+        return Vec::new();
+    }
+
+    let mut error: *mut NSError = ptr::null_mut();
+    let languages: *mut NSArray<NSString> = unsafe {
+        msg_send![
+            request,
+            supportedRecognitionLanguagesAndReturnError: &mut error
+        ]
+    };
+    if languages.is_null() {
+        return Vec::new();
+    }
+
+    unsafe { &*languages }
+        .iter()
+        .map(|language| language.to_string())
+        .collect()
 }

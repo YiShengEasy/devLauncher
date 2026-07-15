@@ -968,7 +968,9 @@ a {
 }
 
 .site-footer {
+  flex-direction: column;
   justify-content: center;
+  gap: 8px;
   padding: 32px 24px;
   border-top: 1px solid rgba(30, 41, 59, 0.5);
   background: #020617;
@@ -979,6 +981,15 @@ a {
 
 .site-footer p {
   margin: 0;
+}
+
+.icp-link {
+  color: #94a3b8;
+  transition: color 160ms ease;
+}
+
+.icp-link:hover {
+  color: #22d3ee;
 }
 
 @media (max-width: 980px) {

@@ -19,6 +19,14 @@ import { motionDuration, motionEase } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
 import { getGlobalShortcuts, keyIdToShortcut } from "@/platform/shortcuts";
+import {
+  dismissPermissionFeatureForSession,
+  getPermissionHealthIssue,
+  markPermissionFeatureUsed,
+  openPermissionSettings,
+  recordConfiguredPermissionFeatures,
+  type PermissionHealthIssue,
+} from "@/permissions/permissionHealth";
 import { listInstalledPlugins } from "@/plugins/api";
 import { pluginIconSrc } from "@/plugins/registry";
 import "./index.css";
@@ -108,6 +116,7 @@ export default function App() {
   } = useKeyboardStore();
 
   const [bindingKey, setBindingKey] = useState<KeyId | null>(null);
+  const [permissionIssue, setPermissionIssue] = useState<PermissionHealthIssue | null>(null);
   // Tab editing state
   const [editingTabIndex, setEditingTabIndex] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -311,6 +320,32 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [config, extractAllAppIcons, loadFavicons]);
 
+  useEffect(() => {
+    recordConfiguredPermissionFeatures(config);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      getPermissionHealthIssue()
+        .then((issue) => {
+          if (!cancelled) setPermissionIssue(issue);
+        })
+        .catch((err) => {
+          console.warn("permission health check failed", err);
+        });
+    }, 900);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [config]);
+
+  const refreshPermissionIssue = useCallback(async () => {
+    try {
+      setPermissionIssue(await getPermissionHealthIssue());
+    } catch (err) {
+      console.warn("permission health refresh failed", err);
+    }
+  }, []);
+
   // Inject theme as CSS custom properties so any panel can read them
   useEffect(() => {
     const r = document.documentElement.style;
@@ -340,14 +375,21 @@ export default function App() {
     if (!action) return;
 
     try {
+      if (action.type === "builtin" && action.feature === "screenshot") {
+        markPermissionFeatureUsed("screenshot");
+      }
       await executeAction(action, { invoke });
+      if (action.type === "builtin" && action.feature === "screenshot") {
+        void refreshPermissionIssue();
+      }
     } catch (e) {
       console.error("action execution failed:", e);
       if (action.type === "builtin" && action.feature === "screenshot") {
+        void refreshPermissionIssue();
         window.alert(`截图失败：${String(e)}`);
       }
     }
-  }, [config, activePageIndex]);
+  }, [config, activePageIndex, refreshPermissionIssue]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -389,12 +431,19 @@ export default function App() {
         // Capture action value for the callback closure
         const capturedAction = action;
         const handler = makeDebounced(async () => {
+          if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
+            markPermissionFeatureUsed("screenshot");
+          }
           executeAction(capturedAction, { invoke }).catch((e) => {
             console.error("shortcut action failed:", e);
             if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
+              void refreshPermissionIssue();
               window.alert(`截图失败：${String(e)}`);
             }
           });
+          if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
+            void refreshPermissionIssue();
+          }
         });
         try {
           await registerShortcut(shortcut, handler);
@@ -441,7 +490,7 @@ export default function App() {
       registeredFrontendShortcutsRef.current = [];
       if (shortcuts.length > 0) unregisterShortcut(shortcuts).catch(() => {});
     };
-  }, [config, activePageIndex]);
+  }, [config, activePageIndex, refreshPermissionIssue]);
 
   // Persist config helper
   const persistConfig = useCallback(() => {
@@ -779,6 +828,82 @@ export default function App() {
 
         {/* Keyboard area */}
         <div style={{ padding: "22px 40px 34px" }}>
+          {permissionIssue && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 14,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid rgba(251,191,36,0.26)",
+                background: "rgba(120,73,15,0.18)",
+                color: "rgba(255,244,210,0.92)",
+                boxShadow: "0 10px 26px rgba(0,0,0,0.18)",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 800 }}>{permissionIssue.title}</div>
+                <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: "rgba(255,244,210,0.68)" }}>
+                  {permissionIssue.description}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <button
+                  onClick={() => {
+                    void openPermissionSettings(permissionIssue.permission);
+                  }}
+                  style={{
+                    border: "1px solid rgba(251,191,36,0.34)",
+                    background: "rgba(251,191,36,0.16)",
+                    color: "rgba(255,244,210,0.96)",
+                    borderRadius: 8,
+                    padding: "6px 9px",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  去修复
+                </button>
+                <button
+                  onClick={() => void refreshPermissionIssue()}
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    background: "rgba(255,255,255,0.08)",
+                    color: "rgba(255,255,255,0.76)",
+                    borderRadius: 8,
+                    padding: "6px 9px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  重新检测
+                </button>
+                <button
+                  onClick={() => {
+                    dismissPermissionFeatureForSession(permissionIssue.feature);
+                    setPermissionIssue(null);
+                  }}
+                  style={{
+                    border: "1px solid rgba(255,255,255,0.1)",
+                    background: "transparent",
+                    color: "rgba(255,255,255,0.5)",
+                    borderRadius: 8,
+                    padding: "6px 9px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
+                >
+                  稍后
+                </button>
+              </div>
+            </div>
+          )}
           {loading ? (
             <div style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "40px 0", fontSize: 13 }}>
               {"Loading..."}

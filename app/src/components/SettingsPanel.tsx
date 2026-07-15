@@ -1,8 +1,17 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
+import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabledApi } from "@tauri-apps/plugin-autostart";
 import type { CSSProperties } from "react";
-import { saveConfig } from "@/api/config";
+import { loadConfig, saveConfig } from "@/api/config";
+import {
+  generateCloudSyncKey,
+  getCloudSyncStatus,
+  restoreLatestCloudSyncSnapshot,
+  saveCloudSyncKey,
+  uploadCloudSyncSnapshot,
+  type CloudSyncSnapshotMeta,
+} from "@/api/cloudSync";
 import { ActionIcon } from "@/components/ActionIcon";
 import { BindingModal } from "@/components/BindingModal";
 import { MacWindowControls } from "@/components/MacWindowControls";
@@ -51,7 +60,7 @@ const THEME_PRESETS: { name: string; theme: ThemeConfig }[] = [
   },
 ];
 
-type SettingsSection = "appearance" | "webaccounts" | "entries" | "plugins";
+type SettingsSection = "appearance" | "webaccounts" | "entries" | "cloudSync" | "plugins";
 
 interface WebAccountEntry {
   id: string;
@@ -180,6 +189,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const editingEntry = webAccounts.find((entry) => entry.id === editingId) ?? webAccounts[0] ?? null;
   const [editState, setEditState] = useState<EditState | null>(null);
   const [status, setStatus] = useState("");
+  const [cloudSyncBaseUrl, setCloudSyncBaseUrl] = useState("http://127.0.0.1:8787");
+  const [cloudSyncKey, setCloudSyncKey] = useState("");
+  const [cloudSyncMessage, setCloudSyncMessage] = useState("");
+  const [cloudSyncLoading, setCloudSyncLoading] = useState<"status" | "generate" | "save" | "upload" | "restore" | null>(null);
+  const [cloudSyncHasKey, setCloudSyncHasKey] = useState(false);
+  const [cloudSyncLatest, setCloudSyncLatest] = useState<CloudSyncSnapshotMeta | null>(null);
+  const [cloudSyncBackups, setCloudSyncBackups] = useState<string[]>([]);
+  const [isAutostartEnabled, setIsAutostartEnabled] = useState(false);
+  const [isAutostartLoading, setIsAutostartLoading] = useState(true);
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
@@ -194,6 +212,48 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     if (!children?.length) return;
     animateListEnter(Array.from(children), reducedMotion);
   }, [activeSection, webAccounts.length, editingId, reducedMotion]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    isAutostartEnabledApi()
+      .then((enabled) => {
+        if (!cancelled) setIsAutostartEnabled(enabled);
+      })
+      .catch((error) => {
+        if (!cancelled) setStatus(`读取开机自启动状态失败：${String(error)}`);
+      })
+      .finally(() => {
+        if (!cancelled) setIsAutostartLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCloudSyncLoading("status");
+    getCloudSyncStatus()
+      .then((syncStatus) => {
+        if (cancelled) return;
+        setCloudSyncBaseUrl(syncStatus.baseUrl);
+        setCloudSyncHasKey(syncStatus.hasSyncKey);
+        setCloudSyncLatest(syncStatus.latestSnapshot ?? null);
+        setCloudSyncMessage(syncStatus.hasSyncKey ? "云端同步已连接。" : "尚未保存同步密钥。");
+      })
+      .catch((error) => {
+        if (!cancelled) setCloudSyncMessage(`读取同步状态失败：${String(error)}`);
+      })
+      .finally(() => {
+        if (!cancelled) setCloudSyncLoading(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const persistTheme = (partial: Partial<ThemeConfig>) => {
     setTheme(partial);
@@ -263,6 +323,120 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     writePetCodexEnabled(enabled);
     await persistConfig(next);
     setStatus(enabled ? "Codex 联动已开启。未检测到状态事件时，宠物会显示未连接。" : "Codex 联动已关闭。");
+  };
+
+  const setAutostartEnabled = async (enabled: boolean) => {
+    setIsAutostartLoading(true);
+    try {
+      if (enabled) {
+        await enableAutostart();
+      } else {
+        await disableAutostart();
+      }
+      const nextEnabled = await isAutostartEnabledApi();
+      setIsAutostartEnabled(nextEnabled);
+      setStatus(nextEnabled ? "开机自启动已开启。" : "开机自启动已关闭。");
+    } catch (error) {
+      setStatus(`开机自启动设置失败：${String(error)}`);
+    } finally {
+      setIsAutostartLoading(false);
+    }
+  };
+
+  const refreshCloudSyncStatus = async () => {
+    setCloudSyncLoading("status");
+    try {
+      const syncStatus = await getCloudSyncStatus();
+      setCloudSyncBaseUrl(syncStatus.baseUrl);
+      setCloudSyncHasKey(syncStatus.hasSyncKey);
+      setCloudSyncLatest(syncStatus.latestSnapshot ?? null);
+      setCloudSyncMessage(syncStatus.hasSyncKey ? "云端同步状态已刷新。" : "尚未保存同步密钥。");
+    } catch (error) {
+      setCloudSyncMessage(`读取同步状态失败：${String(error)}`);
+    } finally {
+      setCloudSyncLoading(null);
+    }
+  };
+
+  const saveCloudSyncConnection = async () => {
+    setCloudSyncLoading("save");
+    setCloudSyncBackups([]);
+    try {
+      const syncStatus = await saveCloudSyncKey(cloudSyncKey, cloudSyncBaseUrl);
+      setCloudSyncBaseUrl(syncStatus.baseUrl);
+      setCloudSyncHasKey(syncStatus.hasSyncKey);
+      setCloudSyncLatest(syncStatus.latestSnapshot ?? null);
+      setCloudSyncKey("");
+      setCloudSyncMessage("同步密钥已保存到本机凭据存储。请保存好密钥，新设备恢复时需要它，丢失后无法从本机找回。");
+    } catch (error) {
+      setCloudSyncMessage(`保存同步密钥失败：${String(error)}`);
+    } finally {
+      setCloudSyncLoading(null);
+    }
+  };
+
+  const generateCloudSyncConnection = async () => {
+    setCloudSyncLoading("generate");
+    setCloudSyncBackups([]);
+    try {
+      const generated = await generateCloudSyncKey(cloudSyncBaseUrl, "primary");
+      setCloudSyncBaseUrl(generated.status.baseUrl);
+      setCloudSyncHasKey(generated.status.hasSyncKey);
+      setCloudSyncLatest(generated.status.latestSnapshot ?? null);
+      setCloudSyncKey(generated.syncKey);
+      setCloudSyncMessage("已生成并保存同步密钥。请立即保存好输入框里的密钥，新设备恢复时需要它，丢失后无法找回。");
+    } catch (error) {
+      setCloudSyncMessage(`生成同步密钥失败：${String(error)}`);
+    } finally {
+      setCloudSyncLoading(null);
+    }
+  };
+
+  const uploadCloudSync = async () => {
+    if (!cloudSyncHasKey) {
+      setCloudSyncMessage("请先输入同步密钥并点击“保存密钥”。");
+      return;
+    }
+
+    setCloudSyncLoading("upload");
+    setCloudSyncBackups([]);
+    try {
+      const snapshot = await uploadCloudSyncSnapshot();
+      setCloudSyncLatest(snapshot);
+      setCloudSyncHasKey(true);
+      setCloudSyncMessage(`已上传云端快照：${new Date(snapshot.createdAt).toLocaleString()}`);
+    } catch (error) {
+      setCloudSyncMessage(`上传失败：${String(error)}`);
+    } finally {
+      setCloudSyncLoading(null);
+    }
+  };
+
+  const restoreCloudSync = async () => {
+    if (!cloudSyncHasKey) {
+      setCloudSyncMessage("请先输入同步密钥并点击“保存密钥”。");
+      return;
+    }
+
+    const confirmed = window.confirm("从云端恢复会覆盖当前本机配置。DevLauncher 会先创建本地备份，继续吗？");
+    if (!confirmed) return;
+
+    setCloudSyncLoading("restore");
+    try {
+      const result = await restoreLatestCloudSyncSnapshot();
+      const restoredConfig = await loadConfig();
+      useKeyboardStore.setState((state) => ({
+        config: restoredConfig,
+        theme: restoredConfig.theme ?? state.theme,
+      }));
+      setCloudSyncLatest(result.snapshot);
+      setCloudSyncBackups(result.backupPaths);
+      setCloudSyncMessage("已从云端恢复。网页/SSH 密码需要在本机重新录入。");
+    } catch (error) {
+      setCloudSyncMessage(`恢复失败：${String(error)}`);
+    } finally {
+      setCloudSyncLoading(null);
+    }
   };
 
   const beginEdit = (entry: WebAccountEntry) => {
@@ -445,12 +619,13 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.86)", marginBottom: 12 }}>
           设置
         </div>
-        {[
-          ["appearance", "外观"],
-          ["webaccounts", "网页账号"],
-          ["entries", "入口"],
-          ["plugins", "插件"],
-        ].map(([id, label]) => (
+	        {[
+	          ["appearance", "外观"],
+	          ["webaccounts", "网页账号"],
+	          ["entries", "入口"],
+	          ["cloudSync", "云同步"],
+	          ["plugins", "插件"],
+	        ].map(([id, label]) => (
           <button
             key={id}
             onClick={() => setActiveSection(id as SettingsSection)}
@@ -486,13 +661,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           }}
         >
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.84)" }}>
-            {activeSection === "appearance"
-              ? "外观设置"
-              : activeSection === "entries"
-                ? "入口设置"
-                : activeSection === "plugins"
-                  ? "插件中心"
-                  : "URL 与账号密码本"}
+	            {activeSection === "appearance"
+	              ? "外观设置"
+	              : activeSection === "entries"
+	                ? "入口设置"
+	                : activeSection === "cloudSync"
+	                  ? "云端同步"
+	                  : activeSection === "plugins"
+	                    ? "插件中心"
+	                    : "URL 与账号密码本"}
           </div>
           <MacWindowControls onClose={onClose} closeTitle="关闭设置" />
         </header>
@@ -577,6 +754,39 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           ) : activeSection === "entries" ? (
             <section className="motion-list" style={{ padding: 2 }}>
               <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>入口</h2>
+              <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>开机自启动</div>
+                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
+                      登录系统后自动启动 DevLauncher，保持虚拟键盘、搜索和桌面宠物入口可用。
+                    </div>
+                  </div>
+                  <label
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: "rgba(255,255,255,0.66)",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      cursor: isAutostartLoading ? "default" : "pointer",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isAutostartEnabled}
+                      disabled={isAutostartLoading}
+                      onChange={(event) => setAutostartEnabled(event.target.checked)}
+                    />
+                    {isAutostartLoading ? "读取中" : "随系统启动"}
+                  </label>
+                </div>
+                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", marginTop: 8, lineHeight: 1.6 }}>
+                  macOS 使用 LaunchAgent 登录项；Windows/Linux 由 Tauri 自启动插件按平台处理。
+                </div>
+              </div>
               <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Search</div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
@@ -669,8 +879,115 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 )}
               </div>
             </section>
-          ) : activeSection === "plugins" ? (
-            <PluginCenter />
+	          ) : activeSection === "cloudSync" ? (
+	            <section className="motion-list" style={{ padding: 2 }}>
+	              <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>云端同步</h2>
+	              <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
+	                <div style={{ fontSize: 13, fontWeight: 700 }}>同步密钥</div>
+	                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6, lineHeight: 1.6 }}>
+	                  用同步密钥连接你的私有同步服务。密钥会保存到本机凭据存储；真实密码、私钥和本地文件内容不会上传。
+	                </div>
+	                <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10, marginTop: 12 }}>
+	                  <div>
+	                    <div style={LABEL}>服务地址</div>
+	                    <input
+	                      style={INPUT}
+	                      value={cloudSyncBaseUrl}
+	                      onChange={(event) => setCloudSyncBaseUrl(event.target.value)}
+	                      placeholder="http://127.0.0.1:8787"
+	                    />
+	                  </div>
+	                  <div>
+	                    <div style={LABEL}>同步密钥</div>
+	                    <input
+	                      style={INPUT}
+	                      type="password"
+	                      value={cloudSyncKey}
+	                      onChange={(event) => setCloudSyncKey(event.target.value)}
+	                      placeholder={cloudSyncHasKey ? "已保存，留空保持不变" : "输入 dlsk_..."}
+	                      autoComplete="new-password"
+	                    />
+	                  </div>
+	                </div>
+	                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+	                  <button
+	                    type="button"
+	                    onClick={generateCloudSyncConnection}
+	                    disabled={cloudSyncLoading !== null}
+	                    style={{ ...BUTTON, background: "rgba(14,165,233,0.22)", color: "rgba(186,230,253,0.94)", borderColor: "rgba(125,211,252,0.28)" }}
+	                  >
+	                    {cloudSyncLoading === "generate" ? "生成中" : "生成并保存密钥"}
+	                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={saveCloudSyncConnection}
+	                    disabled={cloudSyncLoading !== null || !cloudSyncKey.trim()}
+	                    style={BUTTON}
+	                  >
+	                    {cloudSyncLoading === "save" ? "保存中" : "保存密钥"}
+	                  </button>
+	                  <button
+	                    type="button"
+	                    onClick={refreshCloudSyncStatus}
+	                    disabled={cloudSyncLoading !== null}
+	                    style={BUTTON}
+	                  >
+	                    {cloudSyncLoading === "status" ? "刷新中" : "刷新状态"}
+	                  </button>
+	                </div>
+	              </div>
+
+	              <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
+	                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+	                  <div>
+	                    <div style={{ fontSize: 13, fontWeight: 700 }}>配置快照</div>
+	                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6, lineHeight: 1.6 }}>
+	                      上传当前 `keyboard.yaml` 与 QuickMemory 自定义数据；恢复时会先备份本机文件再覆盖。
+	                    </div>
+	                  </div>
+	                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+	                    <button
+	                      type="button"
+	                      onClick={uploadCloudSync}
+	                      disabled={cloudSyncLoading !== null}
+	                      style={{ ...BUTTON, background: "rgba(37,99,235,0.70)", color: "#fff", borderColor: "rgba(96,165,250,0.32)" }}
+	                    >
+	                      {cloudSyncLoading === "upload" ? "上传中" : "上传当前配置"}
+	                    </button>
+	                    <button
+	                      type="button"
+	                      onClick={restoreCloudSync}
+	                      disabled={cloudSyncLoading !== null}
+	                      style={{ ...BUTTON, borderColor: "rgba(251,191,36,0.28)", color: "rgba(253,224,71,0.9)" }}
+	                    >
+	                      {cloudSyncLoading === "restore" ? "恢复中" : "从云端恢复"}
+	                    </button>
+	                  </div>
+	                </div>
+	                <div style={{ marginTop: 12, fontSize: 11, color: "rgba(255,255,255,0.46)", lineHeight: 1.7 }}>
+	                  {cloudSyncLatest ? (
+	                    <>
+	                      最近快照：{new Date(cloudSyncLatest.createdAt).toLocaleString()}
+	                      {cloudSyncLatest.deviceName ? ` / ${cloudSyncLatest.deviceName}` : ""}
+	                      {cloudSyncLatest.appVersion ? ` / v${cloudSyncLatest.appVersion}` : ""}
+	                    </>
+	                  ) : (
+	                    "暂无云端快照。"
+	                  )}
+	                </div>
+	                {cloudSyncBackups.length > 0 && (
+	                  <div style={{ marginTop: 8, fontSize: 11, color: "rgba(255,255,255,0.42)", lineHeight: 1.7 }}>
+	                    本机备份：{cloudSyncBackups.join(" / ")}
+	                  </div>
+	                )}
+	              </div>
+
+	              <div style={{ fontSize: 11, color: cloudSyncMessage.includes("失败") ? "rgba(248,113,113,0.9)" : "rgba(74,222,128,0.86)", lineHeight: 1.7 }}>
+	                {cloudSyncMessage}
+	              </div>
+	            </section>
+	          ) : activeSection === "plugins" ? (
+	            <PluginCenter />
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "minmax(190px, 0.9fr) minmax(280px, 1.1fr)", gap: 12, minHeight: 0 }}>
               <section style={{ border: "1px solid rgba(255,255,255,0.09)", borderRadius: 10, overflow: "hidden", minHeight: 0 }}>

@@ -6,6 +6,7 @@ import { SearchEntryApp } from "./entry/SearchEntryApp";
 import { PetEntryApp } from "./entry/PetEntryApp";
 import { BrowserPreviewApp } from "./entry/BrowserPreviewApp";
 import { PluginHostApp } from "./plugins/PluginHostApp";
+import { PinnedScreenshotApp } from "./builtins/screenshot/PinnedScreenshotApp";
 import "./index.css";
 
 const params = new URLSearchParams(window.location.search);
@@ -20,6 +21,7 @@ function RoutedApp() {
   if (entry === "search") return <SearchEntryApp />;
   if (entry === "pet") return <PetEntryApp />;
   if (entry === "plugin-host") return <PluginHostApp />;
+  if (entry === "screenshot-pin") return <PinnedScreenshotApp />;
 
   if (plugin) {
     return (

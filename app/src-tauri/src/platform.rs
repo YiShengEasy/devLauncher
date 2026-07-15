@@ -1,4 +1,6 @@
 use serde::Serialize;
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Platform {
@@ -19,8 +21,71 @@ pub struct PlatformCapabilities {
     pub platform: String,
     pub supports_windows_rdp: bool,
     pub supports_windows_ocr: bool,
+    pub supports_ocr: bool,
     pub supports_wsl: bool,
     pub preferred_shortcut_modifier: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MacPermissionStatus {
+    pub permission: String,
+    pub supported: bool,
+    pub granted: bool,
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+fn screen_recording_granted() -> bool {
+    unsafe { CGPreflightScreenCaptureAccess() }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn screen_recording_granted() -> bool {
+    true
+}
+
+#[tauri::command]
+pub fn get_macos_permission_status(permission: String) -> Result<MacPermissionStatus, String> {
+    let supported = cfg!(target_os = "macos");
+    let granted = match permission.as_str() {
+        "screenRecording" => screen_recording_granted(),
+        _ => return Err(format!("unsupported macOS permission: {permission}")),
+    };
+    Ok(MacPermissionStatus {
+        permission,
+        supported,
+        granted: if supported { granted } else { true },
+    })
+}
+
+#[tauri::command]
+pub fn open_macos_permission_settings(permission: String) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let pane = match permission.as_str() {
+            "screenRecording" => {
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+            }
+            _ => return Err(format!("unsupported macOS permission: {permission}")),
+        };
+        Command::new("open")
+            .arg(pane)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = permission;
+        Ok(())
+    }
 }
 
 pub fn current_platform() -> Platform {
@@ -46,6 +111,7 @@ pub fn capabilities_for(platform: Platform) -> PlatformCapabilities {
         platform: platform_name(platform).to_string(),
         supports_windows_rdp: platform == Platform::Windows,
         supports_windows_ocr: platform == Platform::Windows,
+        supports_ocr: matches!(platform, Platform::Windows | Platform::Macos),
         supports_wsl: platform == Platform::Windows,
         preferred_shortcut_modifier: if platform == Platform::Macos {
             "Cmd+Opt".to_string()
@@ -269,6 +335,7 @@ mod tests {
         assert_eq!(caps.platform, "windows");
         assert!(caps.supports_windows_rdp);
         assert!(caps.supports_windows_ocr);
+        assert!(caps.supports_ocr);
         assert!(caps.supports_wsl);
         assert_eq!(caps.preferred_shortcut_modifier, "Ctrl+Alt");
     }
@@ -279,6 +346,7 @@ mod tests {
         assert_eq!(caps.platform, "macos");
         assert!(!caps.supports_windows_rdp);
         assert!(!caps.supports_windows_ocr);
+        assert!(caps.supports_ocr);
         assert!(!caps.supports_wsl);
         assert_eq!(caps.preferred_shortcut_modifier, "Cmd+Opt");
     }

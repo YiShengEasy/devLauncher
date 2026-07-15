@@ -1,5 +1,6 @@
 mod actions;
 mod builtins;
+mod cloud_sync;
 mod config;
 mod entries;
 mod keyboard_control_tap;
@@ -7,6 +8,7 @@ mod ocr;
 mod platform;
 mod plugin_manager;
 mod plugin_manifest;
+mod translation;
 mod types;
 mod utils;
 mod video_tools;
@@ -17,6 +19,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager,
 };
+use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 const KEYBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+J";
@@ -34,6 +37,10 @@ pub fn run() {
         )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_shortcuts([KEYBOARD_GLOBAL_SHORTCUT, PET_GLOBAL_SHORTCUT])
@@ -69,8 +76,15 @@ pub fn run() {
             config::load_config,
             config::save_config,
             config::get_config_path,
+            cloud_sync::sync_get_status,
+            cloud_sync::sync_generate_key,
+            cloud_sync::sync_save_key,
+            cloud_sync::sync_upload_snapshot,
+            cloud_sync::sync_restore_latest_snapshot,
             platform::get_platform_capabilities,
             platform::get_default_shell,
+            platform::get_macos_permission_status,
+            platform::open_macos_permission_settings,
             plugin_manager::list_installed_plugins,
             plugin_manager::install_plugin_from_zip,
             plugin_manager::fetch_marketplace_index,
@@ -132,6 +146,8 @@ pub fn run() {
             builtins::screenshot::show_screenshot_editor_window,
             builtins::screenshot::get_pending_screenshot,
             builtins::screenshot::screenshot_write_file,
+            builtins::screenshot::create_pinned_screenshot_window,
+            builtins::screenshot::get_pinned_screenshot,
             builtins::webaccounts::toggle_webaccounts_window,
             builtins::quickmemory::load_quickmemory_data,
             builtins::quickmemory::save_quickmemory_data,
@@ -146,6 +162,8 @@ pub fn run() {
             entries::set_pet_codex_status,
             entries::take_pet_mcp_events,
             ocr::ocr_recognize_image,
+            ocr::ocr_recognize_image_layout,
+            translation::translate_text,
             utils::icon::extract_app_icons,
             utils::favicon::get_cached_favicons,
             utils::favicon::refresh_favicons,

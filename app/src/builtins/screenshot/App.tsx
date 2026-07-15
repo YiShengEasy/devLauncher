@@ -7,15 +7,39 @@ import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { CaptureIcon, CheckIcon, CloseIcon, CopyIcon, DownloadIcon, RetryIcon } from "@/icons/controlIcons";
 import { addScreenshot, takePendingScreenshotEdit, updateScreenshot } from "../screenshotStore";
+import {
+  clampPointToRect,
+  clampRectToBounds,
+  constrainTextWidth,
+  fitImageInViewport,
+  normRect,
+  placeFloatingPanel,
+  placeTextInput,
+} from "./geometry";
+import type { Pt, Rect } from "./geometry";
 import type { StoredScreenshotAnnotation } from "../screenshotStore";
 
 // 鈹€鈹€ Types 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 type Phase = "init" | "selecting" | "annotating";
 type Tool = "move" | "marker" | "boxCallout" | "rect" | "ellipse" | "arrow" | "pencil" | "text" | "mosaic";
-
-interface Pt { x: number; y: number }
-interface Rect { x: number; y: number; w: number; h: number }
 type TextInputState = { pos: Pt; val: string; target?: { kind: "ann-note"; annIndex: number } };
+type PickedColor = { hex: string; rgb: string; r: number; g: number; b: number };
+type OcrLine = { id: number; text: string; rect: { x: number; y: number; width: number; height: number } };
+type OcrLayout = { text: string; width: number; height: number; lines: OcrLine[] };
+type OcrTextLayer = {
+  layout: OcrLayout;
+  selectionRect: Rect;
+  selectedText?: string;
+  translatedText?: string;
+  translateError?: string;
+  translateBusy?: boolean;
+};
+type TranslateResponse = {
+  sourceLanguage: string;
+  targetLanguage: string;
+  sourceText: string;
+  targetText: string;
+};
 
 type Ann =
   | { t: "marker";  pos: Pt; label: number; color: string; note?: string }
@@ -35,15 +59,21 @@ const HANDLE_R = 5;
 const SEL_COLOR = "rgba(78, 186, 255, 0.9)";
 const BADGE_R = 13;
 const CALLOUT_GAP = 30;
+const OCR_ACTION_BTN: CSSProperties = {
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(255,255,255,0.08)",
+  color: "rgba(255,255,255,0.82)",
+  borderRadius: 8,
+  padding: "6px 9px",
+  fontSize: 11,
+  fontWeight: 800,
+  cursor: "pointer",
+  flexShrink: 0,
+};
 
 // 鈹€鈹€ Rect helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 function norm(r: Rect): Rect {
-  return {
-    x: Math.min(r.x, r.x + r.w),
-    y: Math.min(r.y, r.y + r.h),
-    w: Math.abs(r.w),
-    h: Math.abs(r.h),
-  };
+  return normRect(r);
 }
 
 /** 8 handle points: TL TC TR ML MR BL BC BR */
@@ -154,9 +184,28 @@ function drawCalloutBadge(ctx: CanvasRenderingContext2D, pos: Pt, label: number,
 
 function calloutTextPos(pos: Pt, label: number): Pt {
   const r = Math.max(BADGE_R, 9 + String(label).length * 4);
-  const x = Math.min(window.innerWidth - 190, Math.max(8, pos.x + r + 10));
-  const y = Math.min(window.innerHeight - 44, Math.max(8, pos.y - 12));
-  return { x, y };
+  return placeTextInput(
+    { x: pos.x + r + 10, y: pos.y - 12 },
+    { w: window.innerWidth, h: window.innerHeight },
+    { width: 190, height: 44, margin: 8 },
+  ).point;
+}
+
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(/(\s+)/).filter(Boolean);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const next = line ? line + word : word;
+    if (ctx.measureText(next).width <= maxWidth || !line) {
+      line = next;
+    } else {
+      lines.push(line.trimEnd());
+      line = word.trimStart();
+    }
+  }
+  if (line) lines.push(line.trimEnd());
+  return lines.length ? lines : [text];
 }
 
 function drawCalloutNote(ctx: CanvasRenderingContext2D, pos: Pt, label: number, note: string | undefined) {
@@ -167,8 +216,12 @@ function drawCalloutNote(ctx: CanvasRenderingContext2D, pos: Pt, label: number, 
   ctx.font = "600 13px -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif";
   ctx.textBaseline = "middle";
   const padX = 8;
-  const w = ctx.measureText(text).width + padX * 2;
-  const h = 24;
+  const maxTextWidth = Math.max(72, Math.min(280, window.innerWidth - p.x - 16 - padX * 2));
+  const lines = wrapCanvasText(ctx, text, maxTextWidth);
+  const textWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
+  const w = constrainTextWidth(textWidth + padX * 2, p.x, window.innerWidth, 8);
+  const lineHeight = 18;
+  const h = Math.max(24, lines.length * lineHeight + 6);
   ctx.shadowColor = "rgba(0,0,0,0.22)";
   ctx.shadowBlur = 10;
   ctx.shadowOffsetY = 4;
@@ -185,7 +238,9 @@ function drawCalloutNote(ctx: CanvasRenderingContext2D, pos: Pt, label: number, 
   ctx.strokeStyle = "rgba(255,255,255,0.16)";
   ctx.stroke();
   ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.fillText(text, p.x + padX, p.y + h / 2 + 0.5);
+  lines.forEach((line, index) => {
+    ctx.fillText(line, p.x + padX, p.y + 12 + index * lineHeight + 0.5);
+  });
   ctx.restore();
 }
 
@@ -341,7 +396,10 @@ function renderAnnotation(ctx: CanvasRenderingContext2D, ann: Ann, bgImg?: HTMLI
       // Subtle text shadow for readability
       ctx.shadowColor = "rgba(0,0,0,0.5)";
       ctx.shadowBlur = 3;
-      ctx.fillText(ann.text, ann.pos.x, ann.pos.y);
+      const maxWidth = Math.max(80, window.innerWidth - ann.pos.x - 12);
+      wrapCanvasText(ctx, ann.text, maxWidth).forEach((line, index) => {
+        ctx.fillText(line, ann.pos.x, ann.pos.y + index * (ann.fs + 5));
+      });
       break;
     }
     case "mosaic": {
@@ -388,6 +446,105 @@ function displayRectToImageRect(rect: Rect, bgImg: HTMLImageElement, bgRect: Rec
   };
 }
 
+function displayPointToImagePoint(point: Pt, bgImg: HTMLImageElement, bgRect: Rect | null): Pt {
+  if (!bgRect) return point;
+  const scale = imageDisplayScale(bgImg, bgRect);
+  return {
+    x: (point.x - bgRect.x) * scale.x,
+    y: (point.y - bgRect.y) * scale.y,
+  };
+}
+
+function componentToHex(value: number): string {
+  return Math.round(value).toString(16).padStart(2, "0").toUpperCase();
+}
+
+function rgbaToPickedColor(r: number, g: number, b: number): PickedColor {
+  return {
+    r,
+    g,
+    b,
+    hex: `#${componentToHex(r)}${componentToHex(g)}${componentToHex(b)}`,
+    rgb: `rgb(${r}, ${g}, ${b})`,
+  };
+}
+
+function samplePickedColor(
+  sampler: HTMLCanvasElement,
+  bgImg: HTMLImageElement | null,
+  bgRect: Rect | null,
+  point: Pt | null,
+): PickedColor | null {
+  if (!sampler || !bgImg || !point) return null;
+  if (bgRect && !inRect(point, bgRect)) return null;
+  const imagePoint = displayPointToImagePoint(point, bgImg, bgRect);
+  const sx = Math.max(0, Math.min(bgImg.width - 1, Math.floor(imagePoint.x)));
+  const sy = Math.max(0, Math.min(bgImg.height - 1, Math.floor(imagePoint.y)));
+  sampler.width = 1;
+  sampler.height = 1;
+  const ctx = sampler.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, 1, 1);
+  ctx.drawImage(bgImg, sx, sy, 1, 1, 0, 0, 1, 1);
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+  return rgbaToPickedColor(r, g, b);
+}
+
+function drawCursorGuide(ctx: CanvasRenderingContext2D, pos: Pt, selection: Rect | null, width: number, height: number, pickedColor: PickedColor | null) {
+  ctx.save();
+  ctx.setLineDash([5, 5]);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(255,255,255,0.72)";
+  ctx.shadowColor = "rgba(0,0,0,0.68)";
+  ctx.shadowBlur = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, pos.y + 0.5);
+  ctx.lineTo(width, pos.y + 0.5);
+  ctx.moveTo(pos.x + 0.5, 0);
+  ctx.lineTo(pos.x + 0.5, height);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const n = selection ? norm(selection) : null;
+  const label = n ? `${Math.round(n.w)} x ${Math.round(n.h)}  ${Math.round(pos.x)},${Math.round(pos.y)}` : `${Math.round(pos.x)},${Math.round(pos.y)}`;
+  const colorLabel = pickedColor ? `  ${pickedColor.hex}` : "";
+  const fullLabel = `${label}${colorLabel}`;
+  ctx.font = "700 12px -apple-system, BlinkMacSystemFont, 'SF Pro Text', monospace";
+  const badgeW = Math.min(290, Math.max(82, ctx.measureText(fullLabel).width + (pickedColor ? 34 : 16)));
+  const badgeH = 24;
+  const p = placeTextInput({ x: pos.x + 14, y: pos.y + 14 }, { w: width, h: height }, { width: badgeW, height: badgeH, margin: 8 }).point;
+  ctx.shadowColor = "rgba(0,0,0,0.32)";
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetY = 4;
+  ctx.fillStyle = "rgba(18,18,22,0.84)";
+  ctx.beginPath();
+  if ((ctx as any).roundRect) {
+    (ctx as any).roundRect(p.x, p.y, badgeW, badgeH, 7);
+  } else {
+    ctx.rect(p.x, p.y, badgeW, badgeH);
+  }
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  ctx.strokeStyle = "rgba(78,186,255,0.54)";
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.textBaseline = "middle";
+  if (pickedColor) {
+    ctx.fillStyle = pickedColor.hex;
+    ctx.beginPath();
+    ctx.arc(p.x + 13, p.y + badgeH / 2, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.85)";
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.fillText(fullLabel, p.x + 24, p.y + badgeH / 2 + 0.5);
+  } else {
+    ctx.fillText(fullLabel, p.x + 8, p.y + badgeH / 2 + 0.5);
+  }
+  ctx.restore();
+}
+
 function renderFrame(
   canvas: HTMLCanvasElement,
   bgImg: HTMLImageElement | null,
@@ -398,6 +555,8 @@ function renderFrame(
   selectedAnnIndex: number | null = null,
   bgRect: Rect | null = null,
   editMode = false,
+  cursor: Pt | null = null,
+  pickedColor: PickedColor | null = null,
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -494,6 +653,10 @@ function renderFrame(
       }
     }
   }
+
+  if (!editMode && cursor && (phase === "selecting" || phase === "annotating")) {
+    drawCursorGuide(ctx, cursor, sel, W, H, pickedColor);
+  }
 }
 
 // 鈹€鈹€ ArrayBuffer 鈫?base64 (chunked, avoids stack overflow) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -581,6 +744,14 @@ function IconBoxCallout() {
     </svg>
   );
 }
+function IconPinToScreen() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+      <path d="M8 4h8l-1 5 4 4v2H5v-2l4-4L8 4z" stroke="currentColor" strokeWidth={1.9} strokeLinejoin="round" />
+      <path d="M12 15v6" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" />
+    </svg>
+  );
+}
 // 鈹€鈹€ Toolbar 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const TOOLS: { key: Tool; icon: () => ReactElement; title: string }[] = [
   { key: "move",       icon: IconMove,       title: "拖拽编辑痕迹 (V)" },
@@ -600,6 +771,8 @@ interface ToolbarProps {
   onTool: (t: Tool | null) => void;
   onColor: (c: string) => void;
   onUndo: () => void;
+  onSelectFullScreen: () => void;
+  onPinScreenshot: () => void;
   onCopy: () => void;
   onOcr: () => void;
   onSave: () => void;
@@ -613,7 +786,7 @@ interface ToolbarProps {
 function Toolbar({
   activeTool, activeColor,
   onTool, onColor,
-  onUndo, onCopy, onOcr, onSave, onPin,
+  onUndo, onSelectFullScreen, onPinScreenshot, onCopy, onOcr, onSave, onPin,
   onCancel, onConfirm,
   ocrBusy,
   style,
@@ -652,6 +825,8 @@ function Toolbar({
         position: "absolute",
         display: "flex",
         alignItems: "center",
+        justifyContent: "center",
+        flexWrap: "nowrap",
         gap: 2,
         padding: "7px 12px",
         maxWidth: "calc(100vw - 16px)",
@@ -724,11 +899,17 @@ function Toolbar({
       <div style={sep} />
 
       {/* Actions */}
+      <button title="选择全屏 (F)" onClick={onSelectFullScreen} style={{ ...baseBtn, fontWeight: 800, fontSize: 13 }}>
+        F
+      </button>
       <button title="撤销 (Ctrl+Z)" onClick={onUndo} style={baseBtn}>
         <RetryIcon size={18} />
       </button>
       <button title="保存图片" onClick={onSave} style={baseBtn}>
         <DownloadIcon size={18} />
+      </button>
+      <button title="钉住到屏幕" onClick={onPinScreenshot} style={baseBtn}>
+        <IconPinToScreen />
       </button>
       <button title="复制到剪贴板" onClick={onCopy} style={baseBtn}>
         <CopyIcon size={18} />
@@ -761,6 +942,7 @@ function Toolbar({
 // 鈹€鈹€ Main component 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 export function ScreenshotApp() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const colorSamplerRef = useRef<HTMLCanvasElement | null>(null);
   const bgImgRef  = useRef<HTMLImageElement | null>(null);
   const bgRectRef = useRef<Rect | null>(null);
   const editScaleRef = useRef(1);
@@ -773,9 +955,11 @@ export function ScreenshotApp() {
   const [activeColor, setColorState]  = useState("#ff3b30");
   const [textInput,   setTextInput]   = useState<TextInputState | null>(null);
   const [toast,       setToast]       = useState<string | null>(null);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [cursorPos,   setCursorPos]   = useState<Pt | null>(null);
   const [selectedAnnIndex, setSelectedAnnIndexState] = useState<number | null>(null);
   const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrTextLayer, setOcrTextLayer] = useState<OcrTextLayer | null>(null);
   const [, setAnnEditVersion] = useState(0);
 
   // 鈹€鈹€ Refs (fast access in canvas callbacks without stale closures) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
@@ -787,7 +971,10 @@ export function ScreenshotApp() {
   const colorRef  = useRef("#ff3b30");
   const lwRef     = useRef(2);
   const curAnnRef = useRef<Ann | null>(null);
+  const cursorPosRef = useRef<Pt | null>(null);
+  const pickedColorRef = useRef<PickedColor | null>(null);
   const selectedAnnIndexRef = useRef<number | null>(null);
+  const ocrSelectableLayerRef = useRef<HTMLDivElement | null>(null);
   const dragRef   = useRef<{
     mode: "sel-new" | "sel-move" | "sel-resize" | "ann" | "ann-move";
     startMouse: Pt;
@@ -803,6 +990,12 @@ export function ScreenshotApp() {
   const showToast = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast(null), 1500);
+  };
+  const setCursor = (pos: Pt | null) => {
+    cursorPosRef.current = pos;
+    if (!colorSamplerRef.current) colorSamplerRef.current = document.createElement("canvas");
+    pickedColorRef.current = samplePickedColor(colorSamplerRef.current, bgImgRef.current, bgRectRef.current, pos);
+    setCursorPos(pos);
   };
   const setTool  = (t: Tool | null)     => {
     toolRef.current = t;
@@ -848,6 +1041,8 @@ export function ScreenshotApp() {
       selectedAnnIndexRef.current,
       bgRectRef.current,
       Boolean(editingScreenshotIdRef.current),
+      cursorPosRef.current,
+      pickedColorRef.current,
     );
   }, []);
 
@@ -910,10 +1105,12 @@ export function ScreenshotApp() {
     selectedAnnIndexRef.current = null;
     bgImgRef.current    = null;
     bgRectRef.current   = null;
+    pickedColorRef.current = null;
     editScaleRef.current = 1;
     setSelState(null);
     setSelectedAnnIndexState(null);
     setTextInput(null);
+    setCaptureError(null);
     setToolState(null);
     toolRef.current = null;
     phaseRef.current = "init";
@@ -927,18 +1124,16 @@ export function ScreenshotApp() {
       if (options?.fullImageSelection) {
         const w = options.width ?? img.width;
         const h = options.height ?? img.height;
-        const toolbarReserve = 96;
-        const maxW = Math.max(1, window.innerWidth - 48);
-        const maxH = Math.max(1, window.innerHeight - toolbarReserve - 48);
-        const displayScale = Math.min(1, maxW / w, maxH / h);
-        const displayW = Math.round(w * displayScale);
-        const displayH = Math.round(h * displayScale);
-        const x = Math.max(24, Math.round((window.innerWidth - displayW) / 2));
-        const y = Math.max(18, Math.round((window.innerHeight - toolbarReserve - displayH) / 2));
+        const fitted = fitImageInViewport(
+          { w, h },
+          { w: window.innerWidth, h: window.innerHeight },
+          { margin: 24, toolbarReserve: 96 },
+        );
+        const displayScale = fitted.w / Math.max(1, w);
         editScaleRef.current = displayScale;
-        bgRectRef.current = { x, y, w: displayW, h: displayH };
-        selRef.current = { x, y, w: displayW, h: displayH };
-        annsRef.current = toEditorAnnotations(options.annotations, w, h, { x, y }, displayScale);
+        bgRectRef.current = fitted;
+        selRef.current = fitted;
+        annsRef.current = toEditorAnnotations(options.annotations, w, h, { x: fitted.x, y: fitted.y }, displayScale);
         setSelState(selRef.current);
         phaseRef.current = "annotating";
         setPhaseState("annotating");
@@ -957,6 +1152,8 @@ export function ScreenshotApp() {
         selectedAnnIndexRef.current,
         bgRectRef.current,
         Boolean(editingScreenshotIdRef.current),
+        cursorPosRef.current,
+        pickedColorRef.current,
       );
     };
     img.src = "data:image/png;base64," + data;
@@ -974,6 +1171,61 @@ export function ScreenshotApp() {
     });
   }, [loadScreenshotData]);
 
+  const selectFullScreenshot = useCallback(() => {
+    const bgRect = bgRectRef.current;
+    if (!bgRect) {
+      showToast("截图还没准备好");
+      return;
+    }
+    setTextInput(null);
+    dragRef.current = null;
+    curAnnRef.current = null;
+    setSelectedAnnIndex(null);
+    setTool(null);
+    setSel(norm(bgRect));
+    setPhase("annotating");
+    showToast("已选择全屏");
+    doRender();
+  }, [doRender]);
+
+  const copyPickedColor = useCallback(async () => {
+    if (!pickedColorRef.current) {
+      const fallbackPoint =
+        cursorPosRef.current ??
+        (selRef.current
+          ? { x: norm(selRef.current).x + norm(selRef.current).w / 2, y: norm(selRef.current).y + norm(selRef.current).h / 2 }
+          : null);
+      if (!colorSamplerRef.current) colorSamplerRef.current = document.createElement("canvas");
+      pickedColorRef.current = samplePickedColor(colorSamplerRef.current, bgImgRef.current, bgRectRef.current, fallbackPoint);
+    }
+    const picked = pickedColorRef.current;
+    if (!picked) {
+      showToast("当前没有可复制颜色");
+      return;
+    }
+    try {
+      await invoke("set_clipboard_text", { text: picked.hex });
+      showToast(`已复制颜色 ${picked.hex}`);
+    } catch (err) {
+      console.error("copy picked color failed", err);
+      showToast("复制颜色失败");
+    }
+  }, []);
+
+  const handleRetryCapture = async () => {
+    setCaptureError(null);
+    setPhase("init");
+    setSel(null);
+    doRender();
+    await getCurrentWindow().hide();
+    window.setTimeout(() => {
+      void invoke("toggle_screenshot_window").catch(err => {
+        setCaptureError(String(err));
+        setPhase("init");
+      });
+    }, 80);
+  };
+
   // 鈹€鈹€ Init: size canvas, set up keyboard + screenshot-ready listener 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   useEffect(() => {
     resizeCanvas();
@@ -986,8 +1238,30 @@ export function ScreenshotApp() {
         target?.tagName === "TEXTAREA" ||
         target?.isContentEditable;
       if (isTyping) return;
-      if (e.key === "Escape")                                        handleEscape();
-      if (e.key === "Enter" && phaseRef.current === "annotating")   void handleConfirm();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        handleEscape();
+        return;
+      }
+      if (e.key === "Enter" && phaseRef.current === "annotating") {
+        e.preventDefault();
+        e.stopPropagation();
+        void handleConfirm();
+        return;
+      }
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        e.stopPropagation();
+        selectFullScreenshot();
+        return;
+      }
+      if (!e.metaKey && !e.ctrlKey && (e.key === "c" || e.key === "C")) {
+        e.preventDefault();
+        e.stopPropagation();
+        void copyPickedColor();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key === "z")                handleUndo();
       if (e.key === "v" || e.key === "V")  setTool("move");
       if (e.key === "n" || e.key === "N")  setTool("marker");
@@ -999,23 +1273,30 @@ export function ScreenshotApp() {
       if (e.key === "t" || e.key === "T")  setTool("text");
       if (e.key === "m" || e.key === "M")  setTool("mosaic");
     };
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
 
     // Rust emits this event every time a new screenshot is ready.
     // Payload IS the base64 JPEG string 鈥?no second IPC call needed.
     const unlistenPromise = listen<string>("screenshot-ready", (event) => {
       if (event.payload) loadScreenshotData(event.payload);
     });
+    const unlistenErrorPromise = listen<string>("screenshot-error", (event) => {
+      setCaptureError(event.payload || "截图失败");
+      setPhase("init");
+      resizeCanvas();
+      doRender();
+    });
     window.addEventListener("storage", loadPendingEdit);
     window.addEventListener("devlauncher-pending-screenshot-edit", loadPendingEdit);
 
     return () => {
-      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keydown", onKey, true);
       window.removeEventListener("storage", loadPendingEdit);
       window.removeEventListener("devlauncher-pending-screenshot-edit", loadPendingEdit);
       unlistenPromise.then(fn => fn());
+      unlistenErrorPromise.then(fn => fn());
     };
-  }, [resizeCanvas, loadScreenshotData, loadPendingEdit]);
+  }, [resizeCanvas, loadScreenshotData, loadPendingEdit, selectFullScreenshot, copyPickedColor, doRender]);
 
   // 鈹€鈹€ Mouse position helper 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const getPos = (e: RMouseEvent<HTMLCanvasElement>): Pt => {
@@ -1026,8 +1307,9 @@ export function ScreenshotApp() {
   // 鈹€鈹€ Mouse Down 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const onMouseDown = (e: RMouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0 || textInput) return;
-    const pos  = getPos(e);
-    setCursorPos(pos);
+    const rawPos = getPos(e);
+    const pos = bgRectRef.current ? clampPointToRect(rawPos, bgRectRef.current) : rawPos;
+    setCursor(pos);
     const ph   = phaseRef.current;
     const sel  = selRef.current;
     const tool = toolRef.current;
@@ -1125,19 +1407,27 @@ export function ScreenshotApp() {
   // 鈹€鈹€ Mouse Move 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const onMouseMove = (e: RMouseEvent<HTMLCanvasElement>) => {
     const pos = getPos(e);
-    setCursorPos(pos);
+    setCursor(pos);
     const dr  = dragRef.current;
-    if (!dr) return;
+    if (!dr) {
+      doRender();
+      return;
+    }
 
+    const bounds = bgRectRef.current ?? { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
     if (dr.mode === "sel-new") {
-      selRef.current = { x: dr.startMouse.x, y: dr.startMouse.y, w: pos.x - dr.startMouse.x, h: pos.y - dr.startMouse.y };
+      const boundedPos = clampPointToRect(pos, bounds);
+      selRef.current = clampRectToBounds(
+        { x: dr.startMouse.x, y: dr.startMouse.y, w: boundedPos.x - dr.startMouse.x, h: boundedPos.y - dr.startMouse.y },
+        bounds,
+      );
     } else if (dr.mode === "sel-move") {
       const dx = pos.x - dr.startMouse.x;
       const dy = pos.y - dr.startMouse.y;
       const s  = dr.initSel!;
-      selRef.current = { x: s.x + dx, y: s.y + dy, w: s.w, h: s.h };
+      selRef.current = clampRectToBounds({ x: s.x + dx, y: s.y + dy, w: s.w, h: s.h }, bounds);
     } else if (dr.mode === "sel-resize") {
-      selRef.current = resizeRect(dr.initSel!, dr.handleIdx!, dr.startMouse, pos);
+      selRef.current = clampRectToBounds(resizeRect(dr.initSel!, dr.handleIdx!, dr.startMouse, pos), bounds);
     } else if (dr.mode === "ann-move") {
       const dx = pos.x - dr.startMouse.x;
       const dy = pos.y - dr.startMouse.y;
@@ -1370,7 +1660,8 @@ export function ScreenshotApp() {
     if (ocrBusy) return;
     commitTextInput();
     const out = buildBaseResult();
-    if (!out) {
+    const selectedRect = selRef.current ? norm(selRef.current) : null;
+    if (!out || !selectedRect) {
       showToast("没有可识别截图");
       return;
     }
@@ -1388,20 +1679,97 @@ export function ScreenshotApp() {
           reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
           reader.onerror = () => reject(new Error("截图图片读取失败"));
           reader.readAsDataURL(blob);
-        }, "image/jpeg", 0.92);
+        }, "image/png");
       });
-      const text = (await invoke<string>("ocr_recognize_image", { data: base64 })).trim();
-      if (!text) {
+      const layout = await invoke<OcrLayout>("ocr_recognize_image_layout", { data: base64 });
+      if (!layout.text.trim() || layout.lines.length === 0) {
         showToast("未识别到文字");
         return;
       }
-      await invoke("set_clipboard_text", { text });
-      showToast("已识别并复制文字");
+      setOcrTextLayer({
+        layout,
+        selectionRect: selectedRect,
+        selectedText: "",
+      });
+      showToast("已识别，可拖选文字");
     } catch (err) {
       console.error("ocr failed", err);
       showToast(`OCR 失败：${String(err)}`);
     } finally {
       setOcrBusy(false);
+    }
+  };
+
+  const readOcrSelectedText = useCallback(() => {
+    const root = ocrSelectableLayerRef.current;
+    const selection = window.getSelection();
+    if (!root || !selection || selection.rangeCount === 0 || selection.isCollapsed) return "";
+    const { anchorNode, focusNode } = selection;
+    if (!anchorNode || !focusNode || !root.contains(anchorNode) || !root.contains(focusNode)) return "";
+    return selection.toString().trim();
+  }, []);
+
+  const syncOcrSelectionText = useCallback(() => {
+    const text = readOcrSelectedText();
+    setOcrTextLayer(layer => layer ? { ...layer, selectedText: text, translatedText: undefined, translateError: undefined } : layer);
+  }, [readOcrSelectedText]);
+
+  const getOcrLayerText = (layer = ocrTextLayer) => {
+    if (!layer) return "";
+    const liveSelection = readOcrSelectedText();
+    if (liveSelection) return liveSelection;
+    if (layer.selectedText?.trim()) return layer.selectedText.trim();
+    return layer.layout.lines.map(line => line.text).join("\n").trim();
+  };
+
+  const friendlyTranslateError = (err: unknown) => {
+    const message = String(err);
+    const languagePair = message.split(":").slice(1).join(":").trim();
+    if (message.includes("LANGUAGE_PACK_REQUIRED")) {
+      return languagePair
+        ? `需要先安装 macOS 系统翻译语言包（${languagePair}）。请打开“翻译”App下载对应语言后重试。`
+        : "需要先安装 macOS 系统翻译语言包。请打开“翻译”App下载对应语言后重试。";
+    }
+    if (message.includes("UNSUPPORTED_LANGUAGE_PAIR")) {
+      return languagePair ? `macOS 系统翻译暂不支持这个语言对（${languagePair}）。` : "macOS 系统翻译暂不支持这个语言对。";
+    }
+    if (message.includes("macOS system translation requires macOS 15")) {
+      return "系统翻译需要 macOS 15 或更高版本。";
+    }
+    if (message.includes("TRANSLATION_TIMEOUT")) {
+      return "macOS 系统翻译响应超时。请先打开“翻译”App确认对应语言已下载，然后重试。";
+    }
+    if (message.includes("unable to identify source language")) {
+      return "无法识别这段文字的语言，请多选一点文字再试。";
+    }
+    return `翻译失败：${message}`;
+  };
+
+  const copyOcrSelection = async () => {
+    const text = getOcrLayerText();
+    if (!text) {
+      showToast("没有可复制文字");
+      return;
+    }
+    await invoke("set_clipboard_text", { text });
+    showToast("已复制文字");
+  };
+
+  const translateOcrSelection = async (targetLanguage: "zh-Hans" | "en-US") => {
+    const text = getOcrLayerText();
+    if (!text) {
+      showToast("没有可翻译文字");
+      return;
+    }
+    setOcrTextLayer(layer => layer ? { ...layer, translateBusy: true, translatedText: undefined, translateError: undefined } : layer);
+    try {
+      const result = await invoke<TranslateResponse>("translate_text", { text, targetLanguage });
+      setOcrTextLayer(layer => layer ? { ...layer, translateBusy: false, translatedText: result.targetText, translateError: undefined } : layer);
+      showToast("已翻译");
+    } catch (err) {
+      const errorText = friendlyTranslateError(err);
+      setOcrTextLayer(layer => layer ? { ...layer, translateBusy: false, translateError: errorText } : layer);
+      showToast("翻译暂不可用");
     }
   };
 
@@ -1460,6 +1828,37 @@ export function ScreenshotApp() {
     }, "image/png");
   };
 
+  const handlePinScreenshot = async () => {
+    commitTextInput();
+    const out = buildResult();
+    if (!out) {
+      showToast("没有可钉住内容");
+      return;
+    }
+    await new Promise<void>(resolve => {
+      out.toBlob(async blob => {
+        if (!blob) {
+          showToast("钉住失败");
+          resolve();
+          return;
+        }
+        try {
+          const base64 = toBase64(await blob.arrayBuffer());
+          await invoke("create_pinned_screenshot_window", {
+            data: base64,
+            width: out.width,
+            height: out.height,
+          });
+          showToast("已钉住到屏幕");
+        } catch (err) {
+          console.error("pin screenshot failed", err);
+          showToast("钉住失败");
+        }
+        resolve();
+      }, "image/png");
+    });
+  };
+
   /** Save to screenshot library (for screenshotai plugin) and close */
   const handlePin = async () => {
     commitTextInput();
@@ -1497,6 +1896,7 @@ export function ScreenshotApp() {
     setSel(null);
     setSelectedAnnIndexState(null);
     setTextInput(null);
+    setOcrTextLayer(null);
     doRender();
     getCurrentWindow().hide();
   };
@@ -1508,6 +1908,10 @@ export function ScreenshotApp() {
   const handleEscape = () => {
     if (textInput) {
       setTextInput(null);
+      return;
+    }
+    if (ocrTextLayer) {
+      setOcrTextLayer(null);
       return;
     }
     if (selectedAnnIndexRef.current !== null) {
@@ -1531,7 +1935,9 @@ export function ScreenshotApp() {
     if (phaseRef.current === "selecting" && selRef.current) {
       setSel(null);
       doRender();
+      return;
     }
+    handleCancel();
   };
 
   const getCursor = () => {
@@ -1554,18 +1960,11 @@ export function ScreenshotApp() {
     const n    = norm(selection);
     const winW = window.innerWidth;
     const winH = window.innerHeight;
-    const TB_H = 48;
     const GAP  = 8;
-    const TB_W = Math.min(704, winW - GAP * 2);
-
-    let top: number;
-    if (n.y + n.h + TB_H + GAP <= winH) top = n.y + n.h + GAP;
-    else if (n.y - TB_H - GAP >= 0) top = n.y - TB_H - GAP;
-    else top = n.y + n.h - TB_H - 4;
-
-    top = Math.max(GAP, Math.min(winH - TB_H - GAP, top));
-    const left = Math.max(GAP, Math.min(winW - TB_W - GAP, n.x + n.w / 2 - TB_W / 2));
-    return { top, left, width: TB_W };
+    const TB_W = Math.min(920, winW - GAP * 2);
+    const TB_H = 52;
+    const point = placeFloatingPanel(n, { w: TB_W, h: TB_H }, { w: winW, h: winH }, { gap: GAP, margin: GAP });
+    return { top: point.y, left: point.x, width: TB_W };
   };
 
   const tbStyle = getToolbarStyle();
@@ -1574,6 +1973,23 @@ export function ScreenshotApp() {
   const selectedCalloutPos = selectedCalloutAnn
     ? calloutTextPos(selectedCalloutAnn.t === "marker" ? selectedCalloutAnn.pos : selectedCalloutAnn.labelPos, selectedCalloutAnn.label)
     : null;
+  const selectedCalloutInput = selectedCalloutPos
+    ? placeTextInput(selectedCalloutPos, { w: window.innerWidth, h: window.innerHeight }, { width: 180, height: 34, margin: 8 })
+    : null;
+  const textInputPlacement = textInput
+    ? placeTextInput(textInput.pos, { w: window.innerWidth, h: window.innerHeight }, {
+        width: textInput.target ? 180 : 220,
+        height: textInput.target ? 34 : 40,
+        margin: 8,
+      })
+    : null;
+  const ocrScale = ocrTextLayer && ocrTextLayer.layout.width > 0 && ocrTextLayer.layout.height > 0
+    ? {
+        x: ocrTextLayer.selectionRect.w / ocrTextLayer.layout.width,
+        y: ocrTextLayer.selectionRect.h / ocrTextLayer.layout.height,
+      }
+    : null;
+  const ocrSelectedText = getOcrLayerText();
 
   // 鈹€鈹€ JSX 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   return (
@@ -1581,7 +1997,6 @@ export function ScreenshotApp() {
       style={{ width: "100vw", height: "100vh", overflow: "hidden", userSelect: "none", background: "transparent" }}
       onContextMenu={(event) => {
         event.preventDefault();
-        handleCancel();
       }}
     >
       {/* Full-screen canvas */}
@@ -1591,8 +2006,145 @@ export function ScreenshotApp() {
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
-        onMouseLeave={() => setCursorPos(null)}
+        onMouseLeave={() => {
+          setCursor(null);
+          doRender();
+        }}
       />
+
+      {ocrTextLayer && ocrScale && (
+        <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 10020 }}>
+          <div
+            ref={ocrSelectableLayerRef}
+            onMouseDown={event => {
+              event.stopPropagation();
+              setOcrTextLayer(layer => layer ? { ...layer, selectedText: "", translatedText: undefined, translateError: undefined } : layer);
+            }}
+            onMouseUp={event => {
+              event.stopPropagation();
+              window.setTimeout(syncOcrSelectionText, 0);
+            }}
+            onDoubleClick={event => {
+              event.stopPropagation();
+              window.setTimeout(syncOcrSelectionText, 0);
+            }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              userSelect: "text",
+              WebkitUserSelect: "text",
+              zIndex: 1,
+            }}
+          >
+          {ocrTextLayer.layout.lines.map(line => {
+            const left = ocrTextLayer.selectionRect.x + line.rect.x * ocrScale.x;
+            const top = ocrTextLayer.selectionRect.y + line.rect.y * ocrScale.y;
+            const width = Math.max(12, line.rect.width * ocrScale.x);
+            const height = Math.max(10, line.rect.height * ocrScale.y);
+            const fontSize = Math.max(10, Math.min(22, height * 0.82));
+            return (
+              <div
+                key={line.id}
+                title={line.text}
+                style={{
+                  position: "absolute",
+                  left,
+                  top,
+                  width,
+                  height,
+                  pointerEvents: "auto",
+                  border: "1px solid rgba(255,255,255,0.18)",
+                  background: "rgba(59,130,246,0.1)",
+                  borderRadius: 4,
+                  boxShadow: "none",
+                  cursor: "text",
+                  padding: "0 2px",
+                  zIndex: 1,
+                  color: "rgba(255,255,255,0.02)",
+                  fontSize,
+                  lineHeight: `${height}px`,
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textAlign: "left",
+                  userSelect: "text",
+                  WebkitUserSelect: "text",
+                }}
+              >
+                {line.text}
+              </div>
+            );
+          })}
+          </div>
+
+          <div
+            style={{
+              position: "fixed",
+              left: "50%",
+              bottom: 22,
+              transform: "translateX(-50%)",
+              width: Math.min(520, window.innerWidth - 16),
+              pointerEvents: "auto",
+              padding: 8,
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(20,20,24,0.96)",
+              backdropFilter: "blur(28px)",
+              WebkitBackdropFilter: "blur(28px)",
+              boxShadow: "0 18px 50px rgba(0,0,0,0.52)",
+              color: "rgba(255,255,255,0.9)",
+              zIndex: 2147483000,
+            }}
+            onMouseDown={event => event.stopPropagation()}
+            onMouseUp={event => event.stopPropagation()}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flexWrap: "nowrap", position: "relative", zIndex: 2 }}>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginRight: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 80 }}>
+                {ocrTextLayer.selectedText?.trim() ? "处理拖选文字" : "未拖选时处理全文"}
+              </div>
+              <button type="button" onClick={copyOcrSelection} style={OCR_ACTION_BTN}>复制</button>
+              <button type="button" onClick={() => translateOcrSelection("en-US")} disabled={ocrTextLayer.translateBusy || !ocrSelectedText} style={OCR_ACTION_BTN}>
+                译成英文
+              </button>
+              <button type="button" onClick={() => translateOcrSelection("zh-Hans")} disabled={ocrTextLayer.translateBusy || !ocrSelectedText} style={OCR_ACTION_BTN}>
+                译成中文
+              </button>
+              <button type="button" onClick={() => setOcrTextLayer(null)} style={OCR_ACTION_BTN}>关闭</button>
+            </div>
+            {ocrTextLayer.translateBusy && (
+              <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.58)", position: "relative", zIndex: 1 }}>正在调用系统翻译...</div>
+            )}
+            {ocrTextLayer.translateError && (
+              <div style={{
+                marginTop: 8,
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: "rgba(255,210,120,0.95)",
+                position: "relative",
+                zIndex: 1,
+              }}>
+                {ocrTextLayer.translateError}
+              </div>
+            )}
+            {ocrTextLayer.translatedText && (
+              <div style={{
+                marginTop: 8,
+                maxHeight: 92,
+                overflow: "auto",
+                whiteSpace: "pre-wrap",
+                fontSize: 12,
+                lineHeight: 1.55,
+                color: "rgba(255,255,255,0.86)",
+                position: "relative",
+                zIndex: 1,
+              }}>
+                {ocrTextLayer.translatedText}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {showCustomCursor && cursorPos && (
         <div style={{
@@ -1643,13 +2195,56 @@ export function ScreenshotApp() {
         <div style={{
           position: "absolute", inset: 0,
           display: "flex", alignItems: "center", justifyContent: "center",
-          pointerEvents: "none",
+          pointerEvents: captureError ? "auto" : "none",
         }}>
           <div style={{
-            color: "rgba(255,255,255,0.55)", fontSize: 13,
-            background: "rgba(0,0,0,0.5)", borderRadius: 10, padding: "6px 14px",
+            color: "rgba(255,255,255,0.78)", fontSize: 13,
+            background: "rgba(0,0,0,0.62)",
+            border: "1px solid rgba(255,255,255,0.12)",
+            borderRadius: 12,
+            padding: captureError ? "14px 16px" : "6px 14px",
+            maxWidth: "min(420px, calc(100vw - 32px))",
+            boxShadow: "0 14px 40px rgba(0,0,0,0.34)",
           }}>
-            正在截图...
+            {captureError ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ color: "rgba(255,255,255,0.94)", fontWeight: 700 }}>截图失败</div>
+                <div style={{ lineHeight: 1.45, wordBreak: "break-word" }}>
+                  {captureError.includes("screencapture")
+                    ? "系统截图没有返回图片。请检查 macOS 屏幕录制权限后重试。"
+                    : captureError}
+                </div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                  <button
+                    onClick={handleCancel}
+                    style={{
+                      border: "1px solid rgba(255,255,255,0.14)",
+                      background: "rgba(255,255,255,0.08)",
+                      color: "rgba(255,255,255,0.84)",
+                      borderRadius: 8,
+                      padding: "6px 10px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    取消
+                  </button>
+                  <button
+                    onClick={handleRetryCapture}
+                    style={{
+                      border: "1px solid rgba(78,186,255,0.4)",
+                      background: "rgba(78,186,255,0.16)",
+                      color: "rgba(255,255,255,0.94)",
+                      borderRadius: 8,
+                      padding: "6px 10px",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                  >
+                    重试
+                  </button>
+                </div>
+              </div>
+            ) : "正在截图..."}
           </div>
         </div>
       )}
@@ -1662,7 +2257,25 @@ export function ScreenshotApp() {
           background: "rgba(0,0,0,0.5)", borderRadius: 10, padding: "6px 16px",
           pointerEvents: "none",
         }}>
-          拖动鼠标选择截图区域 · Esc 取消
+          拖动鼠标选择截图区域 · F 全屏 · C 复制颜色 · Esc 取消
+        </div>
+      )}
+
+      {phase === "annotating" && selection && (
+        <div style={{
+          position: "absolute",
+          bottom: 20,
+          left: "50%",
+          transform: "translateX(-50%)",
+          color: "rgba(255,255,255,0.58)",
+          fontSize: 12,
+          background: "rgba(0,0,0,0.38)",
+          borderRadius: 9,
+          padding: "5px 12px",
+          pointerEvents: "none",
+          zIndex: 9998,
+        }}>
+          F 全屏 · C 复制颜色 · Enter 复制 · Esc 取消
         </div>
       )}
 
@@ -1674,6 +2287,8 @@ export function ScreenshotApp() {
           onTool={setTool}
           onColor={setColor}
           onUndo={handleUndo}
+          onSelectFullScreen={selectFullScreenshot}
+          onPinScreenshot={handlePinScreenshot}
           onCopy={handleCopy}
           onOcr={handleOcr}
           onSave={handleSave}
@@ -1708,7 +2323,7 @@ export function ScreenshotApp() {
         </div>
       )}
 
-      {selectedCalloutAnn && selectedCalloutPos && !textInput && (
+      {selectedCalloutAnn && selectedCalloutInput && !textInput && (
         <input
           autoFocus
           value={selectedCalloutAnn.note ?? ""}
@@ -1723,9 +2338,9 @@ export function ScreenshotApp() {
           placeholder="输入说明，可留空"
           style={{
             position: "absolute",
-            left: selectedCalloutPos.x,
-            top: selectedCalloutPos.y,
-            width: 180,
+            left: selectedCalloutInput.point.x,
+            top: selectedCalloutInput.point.y,
+            width: selectedCalloutInput.width,
             boxSizing: "border-box",
             background: "rgba(28,28,30,0.88)",
             border: "1px solid rgba(255,255,255,0.22)",
@@ -1734,6 +2349,7 @@ export function ScreenshotApp() {
             fontWeight: 600,
             fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
             outline: "none",
+            textOverflow: "ellipsis",
             padding: "6px 9px",
             borderRadius: 8,
             boxShadow: "0 10px 28px rgba(0,0,0,0.34)",
@@ -1743,7 +2359,7 @@ export function ScreenshotApp() {
       )}
 
       {/* Floating text input */}
-      {textInput && (
+      {textInput && textInputPlacement && (
         <input
           autoFocus
           value={textInput.val}
@@ -1760,8 +2376,8 @@ export function ScreenshotApp() {
           placeholder={textInput.target ? "输入说明..." : "输入文字..."}
           style={{
             position: "absolute",
-            left: textInput.pos.x,
-            top: textInput.pos.y,
+            left: textInputPlacement.point.x,
+            top: textInputPlacement.point.y,
             background: textInput.target ? "rgba(28,28,30,0.82)" : "rgba(0,0,0,0.55)",
             border: textInput.target ? "1px solid rgba(255,255,255,0.18)" : "none",
             borderBottom: textInput.target ? "1px solid rgba(255,255,255,0.22)" : `2.5px solid ${activeColor}`,
@@ -1770,7 +2386,9 @@ export function ScreenshotApp() {
             fontWeight: textInput.target ? 600 : "bold",
             fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
             outline: "none",
-            minWidth: textInput.target ? 150 : 130,
+            width: textInputPlacement.width,
+            minWidth: Math.min(textInputPlacement.width, textInput.target ? 150 : 130),
+            boxSizing: "border-box",
             padding: textInput.target ? "6px 8px" : "3px 4px",
             borderRadius: textInput.target ? 8 : "4px 4px 0 0",
             boxShadow: textInput.target ? "0 8px 24px rgba(0,0,0,0.28)" : "none",

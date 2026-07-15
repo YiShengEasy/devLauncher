@@ -51,14 +51,14 @@ pub struct QuickMemoryItem {
     pub updated_at: String,
 }
 
-fn quickmemory_data_path(app: &tauri::AppHandle) -> PathBuf {
+pub fn quickmemory_data_path(app: &tauri::AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
         .join("quickmemory_data.json")
 }
 
-fn read_quickmemory_data_from_path(path: &Path) -> Result<QuickMemoryData, String> {
+pub fn read_quickmemory_data_from_path(path: &Path) -> Result<QuickMemoryData, String> {
     if !path.exists() {
         return Ok(QuickMemoryData::default());
     }
@@ -67,7 +67,7 @@ fn read_quickmemory_data_from_path(path: &Path) -> Result<QuickMemoryData, Strin
     serde_json::from_str(&content).map_err(|e| e.to_string())
 }
 
-fn write_quickmemory_data_to_path(path: &Path, data: &QuickMemoryData) -> Result<(), String> {
+pub fn write_quickmemory_data_to_path(path: &Path, data: &QuickMemoryData) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

@@ -24,6 +24,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
@@ -37,6 +38,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png"]
 objc2 = "0.6.4"
 block2 = "0.6.2"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSEvent", "NSWindow", "block2"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSObject", "NSString", "std"] }
 # Remote desktop: screen capture + WebSocket streaming
 # Use screenshots (GDI-based) instead of scrap (DXGI) for better Windows compatibility
 screenshots = "0.8"
