@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="DevLauncher 是本地优先的桌面工作流引擎，通过全局命令搜索、桌面宠物入口、虚拟快捷键和插件生态连接开发者的高频动作。"
+      content="DevLauncher 通过可绑定的虚拟键盘、桌面宠物入口、内置工具和插件生态，把开发者的高频桌面动作沉淀成本地优先的工作流。"
     />
     <meta name="theme-color" content="#030712" />
-    <title>DevLauncher - 本地优先的工作流引擎</title>
+    <title>DevLauncher - 可绑定的桌面虚拟键盘</title>
     <link rel="icon" href="./public/devlauncher-icon.png" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
@@ -30,10 +30,11 @@
     <header class="site-header">
       <div class="header-inner">
         <a class="brand" href="#top" aria-label="DevLauncher 首页">
-          <span class="brand-icon">▣</span>
+          <span class="brand-icon"><img src="./public/devlauncher-icon.png" alt="" /></span>
           <span>DevLauncher</span>
         </a>
         <nav class="nav-links" aria-label="主导航">
+          <a href="#keyboard">虚拟键盘</a>
           <a href="#features">特性</a>
           <a href="#ecosystem">插件</a>
           <a href="https://github.com/YiShengEasy/devLauncher/blob/main/README.md">文档</a>
@@ -53,11 +54,11 @@
 
           <h1>
             <span class="gradient-title">DevLauncher</span>
-            <span>本地优先的工作流引擎</span>
+            <span>把高频动作绑定到一张虚拟键盘</span>
           </h1>
 
           <p class="hero-copy">
-            告别繁琐的窗口切换。通过桌面宠物入口、虚拟快捷键、内置工具与 WebView 插件，将分散的开发动作重塑为本地优先的桌面工作流。
+            双击 Control 或使用全局快捷键唤起真实的 DevLauncher 虚拟键盘，把应用、文件夹、网址、SSH、脚本、内置工具和插件动作放到最顺手的位置。
           </p>
 
           <div class="hero-actions">
@@ -65,19 +66,60 @@
             <a class="secondary-action" href="https://github.com/YiShengEasy/devLauncher/releases"><span class="icon search-icon"></span>前往 GitHub Releases</a>
           </div>
 
-          <section class="command-demo" aria-label="命令搜索演示">
+          <section class="keyboard-demo" aria-label="虚拟键盘演示">
             <div class="glow-edge"></div>
-            <div class="command-window">
-              <div class="command-search">
-                <span class="icon search-icon"></span>
+            <div class="keyboard-window">
+              <div class="keyboard-titlebar">
+                <div class="window-dots"><span></span><span></span><span></span></div>
                 <div class="typed-line">
                   <span id="typedText"></span><i></i>
                 </div>
-                <div class="window-dots"><span></span><span></span><span></span></div>
+                <kbd>Double Ctrl</kbd>
               </div>
-              <div class="command-list" id="commandList"></div>
+              <div class="keyboard-stage">
+                <div class="keyboard-board" id="keyboardBoard" aria-hidden="true"></div>
+                <aside class="keyboard-inspector" id="keyboardInspector"></aside>
+              </div>
             </div>
           </section>
+        </div>
+      </section>
+
+      <section id="keyboard" class="virtual-keyboard-section">
+        <div class="section-heading centered">
+          <h2>虚拟键盘是 DevLauncher 的主入口</h2>
+          <p>按键就是动作。常用工作流绑定一次，之后用肌肉记忆直接触发。</p>
+        </div>
+        <div class="keyboard-feature-layout">
+          <article>
+            <span>⌃</span>
+            <small>Summon</small>
+            <h3>快捷唤起</h3>
+            <p>macOS 下双击 Control 快速打开或隐藏虚拟键盘，也可以使用 Cmd+Opt+J 作为备用组合键。</p>
+          </article>
+          <article>
+            <span>⌘</span>
+            <small>Bind</small>
+            <h3>点击绑定</h3>
+            <p>点击空键位，选择动作类型，填写目标后保存。已绑定键位可以再次编辑或拖拽交换位置。</p>
+          </article>
+          <article>
+            <span>▦</span>
+            <small>Actions</small>
+            <h3>覆盖高频动作</h3>
+            <p>支持应用、文件夹、文件、网址、SSH、脚本、系统命令、内置功能和 marketplace 插件动作。</p>
+          </article>
+        </div>
+        <div class="binding-type-strip" aria-label="支持的绑定类型">
+          <span>应用程序</span>
+          <span>文件夹</span>
+          <span>文件</span>
+          <span>网址</span>
+          <span>SSH</span>
+          <span>脚本</span>
+          <span>系统</span>
+          <span>内置</span>
+          <span>插件</span>
         </div>
       </section>
 
