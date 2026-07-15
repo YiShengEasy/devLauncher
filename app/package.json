@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev:mac": "scripts/dev-mac-signed.sh",
+    "release:mac": "scripts/build-mac-release.sh",
     "test": "vitest run"
   },
   "dependencies": {
