@@ -226,7 +226,7 @@ a {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 96px 0 112px;
+  padding: 82px 0 104px;
 }
 
 .hero-inner,
@@ -248,6 +248,7 @@ a {
   position: relative;
   z-index: 1;
   display: flex;
+  width: min(1440px, 100%);
   flex-direction: column;
   align-items: center;
   text-align: center;
@@ -255,7 +256,7 @@ a {
 
 .release-badge {
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 18px;
   padding: 6px 12px;
   border: 1px solid #1e293b;
   border-radius: 999px;
@@ -283,9 +284,9 @@ a {
 }
 
 .hero-section h1 {
-  margin: 0 0 20px;
+  margin: 0 0 16px;
   color: #fff;
-  font-size: clamp(44px, 7vw, 74px);
+  font-size: clamp(42px, 6.4vw, 66px);
   font-weight: 850;
   letter-spacing: -0.045em;
   line-height: 1.06;
@@ -297,8 +298,8 @@ a {
 }
 
 .hero-section h1 span:last-child {
-  margin-top: 12px;
-  font-size: clamp(34px, 5.4vw, 56px);
+  margin-top: 10px;
+  font-size: clamp(32px, 4.8vw, 50px);
 }
 
 .gradient-title {
@@ -317,9 +318,9 @@ a {
 
 .hero-copy {
   max-width: 760px;
-  margin: 0 0 36px;
+  margin: 0 0 28px;
   color: #94a3b8;
-  font-size: clamp(18px, 2.2vw, 22px);
+  font-size: clamp(17px, 2vw, 20px);
   line-height: 1.62;
   animation: riseIn 500ms 200ms ease both;
 }
@@ -379,7 +380,7 @@ a {
 .keyboard-demo {
   position: relative;
   width: min(768px, 100%);
-  margin: 56px auto 0;
+  margin: 34px auto 0;
   padding: 8px;
   border: 1px solid #1e293b;
   border-radius: 18px;
@@ -390,7 +391,12 @@ a {
 }
 
 .keyboard-demo {
-  width: min(1280px, 100%);
+  width: min(1440px, 100%);
+  padding: 0;
+  border-radius: 26px;
+  border-color: rgba(148, 163, 184, 0.32);
+  background: rgba(24, 31, 49, 0.86);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.32), 0 0 110px -28px rgba(96, 165, 250, 0.28);
 }
 
 @keyframes commandFloat {
@@ -419,11 +425,30 @@ a {
 }
 
 .keyboard-window {
-  min-height: 472px;
+  position: relative;
+  min-height: 704px;
+  border-color: rgba(148, 163, 184, 0.28);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 8% 100%, rgba(92, 37, 78, 0.88), transparent 30%),
+    radial-gradient(circle at 94% 20%, rgba(78, 32, 59, 0.48), transparent 32%),
+    linear-gradient(110deg, rgba(30, 37, 63, 0.98), rgba(8, 18, 31, 0.98) 60%, rgba(7, 16, 28, 0.99));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 20px 48px rgba(0, 0, 0, 0.28);
 }
 
-.command-search,
-.keyboard-titlebar {
+.keyboard-window::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.62;
+}
+
+.command-search {
   height: 56px;
   gap: 16px;
   padding: 0 16px;
@@ -435,15 +460,187 @@ a {
   color: #64748b;
 }
 
-.keyboard-titlebar kbd {
+.launcher-preview-header,
+.launcher-tabs,
+.keyboard-stage {
+  position: relative;
+  z-index: 1;
+}
+
+.launcher-preview-header {
+  display: flex;
+  height: 82px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px 17px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.launcher-brand-block,
+.launcher-toolbar,
+.launcher-window-controls {
+  display: flex;
+  align-items: center;
+}
+
+.launcher-brand-block {
+  gap: 16px;
+  min-width: 0;
+}
+
+.launcher-logo-button {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.025));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 6px 15px rgba(0, 0, 0, 0.28);
+}
+
+.launcher-logo-button img {
+  width: 31px;
+  height: 31px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.launcher-brand-block strong {
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 22px;
+  font-weight: 760;
+  letter-spacing: 0;
+}
+
+.launcher-brand-block > span {
+  width: 1px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.launcher-brand-block p {
+  margin: 0;
+  color: rgba(222, 227, 238, 0.58);
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+
+.launcher-toolbar {
+  gap: 14px;
+}
+
+.launcher-search-button,
+.launcher-icon-button,
+.launcher-sync-button {
+  display: inline-flex;
+  height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.035));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 13px rgba(0, 0, 0, 0.22);
+  color: rgba(241, 244, 252, 0.76);
+}
+
+.launcher-search-button {
+  width: 150px;
+  gap: 12px;
+  border-radius: 15px;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.launcher-icon-button,
+.launcher-sync-button {
+  width: 48px;
+  padding: 0;
+  border-radius: 15px;
+  color: #93c5fd;
+  font-size: 25px;
+}
+
+.launcher-sync-button {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 20px;
+}
+
+.launcher-toolbar > i {
+  width: 1px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.2);
+  opacity: 0.35;
+}
+
+.launcher-window-controls {
+  gap: 14px;
+}
+
+.launcher-window-controls span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.launcher-window-controls span:first-child {
+  background: #ff5f57;
+  box-shadow: 0 0 0 2px rgba(255, 95, 87, 0.28);
+}
+
+.launcher-window-controls span:last-child {
+  background: #ffbd2e;
+  box-shadow: 0 0 0 2px rgba(255, 189, 46, 0.25);
+}
+
+.launcher-tabs {
+  display: flex;
+  height: 62px;
+  align-items: flex-end;
+  gap: 56px;
+  padding: 0 0 0 22px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.launcher-tabs button {
+  min-width: 96px;
+  height: 48px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-radius: 12px 12px 0 0;
+  background: transparent;
+  color: rgba(228, 232, 242, 0.62);
+  font-size: 22px;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.launcher-tabs button.is-active {
+  border-color: rgba(255, 255, 255, 0.08);
+  border-bottom-color: #3f90ff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09), 0 7px 16px rgba(0, 0, 0, 0.18);
+  color: #fbfcff;
+}
+
+.launcher-tabs .add-tab {
+  min-width: 42px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
-  padding: 5px 9px;
-  border: 1px solid #334155;
-  border-radius: 7px;
-  background: #0f172a;
-  color: #cbd5e1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
+  margin-bottom: 8px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.035));
+  color: #34d399;
+  font-size: 30px;
+  line-height: 1;
 }
 
 .typed-line {
@@ -482,58 +679,51 @@ a {
 }
 
 .keyboard-stage {
-  display: grid;
+  display: flex;
   flex: 1;
-  grid-template-columns: minmax(860px, 1fr) 280px;
-  gap: 24px;
   align-items: center;
-  padding: 28px;
+  justify-content: center;
+  padding: 36px 54px 56px;
 }
 
 .keyboard-board {
   display: flex;
-  min-width: 0;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 26px 22px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  background: rgba(16, 22, 34, 0.92);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 24px 64px rgba(0, 0, 0, 0.34);
-  backdrop-filter: blur(24px) saturate(180%);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  gap: 14px;
+  width: 1284px;
+  max-width: 100%;
 }
 
 .keyboard-row {
   display: flex;
-  gap: 8px;
+  gap: 14px;
 }
 
 .keyboard-row.row-1 {
-  padding-left: 18px;
+  padding-left: 28px;
 }
 
 .keyboard-row.row-2 {
-  padding-left: 45px;
+  padding-left: 126px;
 }
 
 .keyboard-row.row-3 {
-  padding-left: 90px;
+  padding-left: 288px;
 }
 
 .keycap {
   position: relative;
   display: flex;
-  width: 72px;
-  height: 68px;
+  width: 114px;
+  height: 108px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   overflow: hidden;
   padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.035);
-  border-radius: 8px;
+  border-radius: 13px;
   background:
     radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.025), transparent 46%),
     radial-gradient(circle at 70% 82%, rgba(255, 255, 255, 0.035), transparent 36%),
@@ -542,6 +732,7 @@ a {
   font-family: inherit;
   outline: none;
   transition: background 180ms ease, border-color 180ms ease, box-shadow 220ms ease, transform 160ms ease, opacity 160ms ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
   animation: itemIn 260ms ease both;
 }
 
@@ -551,7 +742,7 @@ a {
     radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 46%),
     radial-gradient(circle at 70% 82%, rgba(255, 255, 255, 0.035), transparent 36%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.035));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 13px rgba(0, 0, 0, 0.22), 0 0 5px color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 13px rgba(0, 0, 0, 0.22), 0 0 18px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .keycap.is-bound:hover,
@@ -582,10 +773,10 @@ a {
 
 .key-label {
   position: absolute;
-  top: 5px;
-  left: 8px;
+  top: 12px;
+  left: 14px;
   color: rgba(220, 226, 239, 0.48);
-  font-size: 9px;
+  font-size: 16px;
   font-weight: 620;
   letter-spacing: 0;
   line-height: 1;
@@ -594,7 +785,7 @@ a {
 
 .key-icon {
   color: var(--accent);
-  font-size: 18px;
+  font-size: 32px;
   font-weight: 850;
   line-height: 1;
   filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 40%, transparent)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.42));
@@ -602,12 +793,12 @@ a {
 }
 
 .keycap strong {
-  max-width: 58px;
-  margin-top: 4px;
+  max-width: 86px;
+  margin-top: 8px;
   overflow: hidden;
   color: rgba(252, 253, 255, 0.9);
-  font-size: 10px;
-  font-weight: 640;
+  font-size: 16px;
+  font-weight: 760;
   letter-spacing: 0;
   line-height: 1.15;
   text-align: center;
@@ -615,90 +806,16 @@ a {
   white-space: nowrap;
 }
 
-.keyboard-inspector {
-  min-width: 0;
-  padding: 22px;
-  border: 1px solid #1e293b;
-  border-radius: 13px;
-  background: rgba(15, 23, 42, 0.58);
-  text-align: left;
-}
-
-.inspector-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 18px;
-  padding: 6px 9px;
-  border: 1px solid color-mix(in srgb, var(--accent) 34%, #1e293b);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-}
-
-.inspector-badge span {
+.keycap.has-tile-icon .key-icon {
   display: grid;
-  width: 24px;
-  height: 24px;
+  min-width: 52px;
+  height: 52px;
   place-items: center;
-  border-radius: 6px;
-  background: #020617;
-  color: #f8fafc;
-  font-weight: 800;
-}
-
-.inspector-badge strong {
-  font-weight: 700;
-}
-
-.keyboard-inspector h3 {
-  margin: 0 0 10px;
-  color: #f8fafc;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 72%, #f8fafc);
+  color: #1f2937;
   font-size: 24px;
-  font-weight: 850;
-}
-
-.keyboard-inspector > p {
-  margin: 0 0 22px;
-  color: #94a3b8;
-  font-size: 14px;
-  line-height: 1.7;
-}
-
-.binding-flow {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-}
-
-.flow-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
-  border: 1px solid transparent;
-  border-radius: 9px;
-  color: #64748b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-  animation: itemIn 220ms ease both;
-}
-
-.flow-item.is-active {
-  border-color: #334155;
-  background: rgba(30, 41, 59, 0.78);
-  color: #e2e8f0;
-}
-
-.flow-item span {
-  color: #22d3ee;
-  font-size: 11px;
-}
-
-.flow-item p {
-  margin: 0;
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 46%, transparent);
 }
 
 .command-list {
@@ -1340,23 +1457,8 @@ a {
   }
 
   .keyboard-stage {
-    grid-template-columns: 1fr;
-  }
-
-  .keyboard-inspector {
-    display: grid;
-    grid-template-columns: 220px 1fr;
-    gap: 0 18px;
-    align-items: start;
-  }
-
-  .keyboard-inspector > p {
-    margin-bottom: 0;
-  }
-
-  .binding-flow {
-    grid-column: 1 / -1;
-    margin-top: 18px;
+    justify-content: flex-start;
+    overflow-x: auto;
   }
 
   .workflow-line {
@@ -1444,30 +1546,89 @@ a {
     min-height: 0;
   }
 
-  .keyboard-titlebar {
+  .launcher-preview-header {
+    height: auto;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 14px;
+  }
+
+  .launcher-brand-block {
     gap: 10px;
-    padding-inline: 12px;
   }
 
-  .keyboard-titlebar .typed-line {
-    min-width: 0;
-    font-size: 13px;
+  .launcher-brand-block strong {
+    font-size: 17px;
   }
 
-  .keyboard-titlebar kbd {
+  .launcher-brand-block > span,
+  .launcher-brand-block p,
+  .launcher-sync-button,
+  .launcher-window-controls {
     display: none;
   }
 
+  .launcher-logo-button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .launcher-logo-button img {
+    width: 26px;
+    height: 26px;
+  }
+
+  .launcher-toolbar {
+    gap: 8px;
+  }
+
+  .launcher-search-button {
+    width: 92px;
+    height: 36px;
+    gap: 7px;
+    border-radius: 11px;
+    font-size: 14px;
+  }
+
+  .launcher-icon-button {
+    width: 36px;
+    height: 36px;
+    border-radius: 11px;
+    font-size: 18px;
+  }
+
+  .launcher-tabs {
+    height: 48px;
+    gap: 12px;
+    padding-left: 12px;
+    overflow-x: auto;
+  }
+
+  .launcher-tabs button {
+    min-width: 68px;
+    height: 38px;
+    padding-inline: 14px;
+    border-radius: 9px 9px 0 0;
+    font-size: 15px;
+  }
+
+  .launcher-tabs .add-tab {
+    width: 36px;
+    height: 34px;
+    min-width: 36px;
+    margin-bottom: 5px;
+    font-size: 23px;
+  }
+
   .keyboard-stage {
-    gap: 18px;
-    padding: 18px 12px;
+    padding: 18px 12px 22px;
+    overflow-x: auto;
   }
 
   .keyboard-board {
-    width: 100%;
-    align-items: flex-start;
-    overflow-x: auto;
-    padding: 18px 14px;
+    width: max-content;
+    max-width: none;
+    align-items: center;
   }
 
   .keycap {
@@ -1506,15 +1667,6 @@ a {
   .keycap strong {
     max-width: 40px;
     font-size: 8px;
-  }
-
-  .keyboard-inspector {
-    display: block;
-    padding: 18px;
-  }
-
-  .keyboard-inspector h3 {
-    font-size: 20px;
   }
 
   .workflow-section,

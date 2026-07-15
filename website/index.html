@@ -69,16 +69,31 @@
           <section class="keyboard-demo" aria-label="虚拟键盘演示">
             <div class="glow-edge"></div>
             <div class="keyboard-window">
-              <div class="keyboard-titlebar">
-                <div class="window-dots"><span></span><span></span><span></span></div>
-                <div class="typed-line">
-                  <span id="typedText"></span><i></i>
+              <div class="launcher-preview-header">
+                <div class="launcher-brand-block">
+                  <button class="launcher-logo-button" type="button" aria-label="键盘模式">
+                    <img src="./public/devlauncher-icon.png" alt="" />
+                  </button>
+                  <strong>DevLauncher</strong>
+                  <span></span>
+                  <p>一键启动你的开发工作流</p>
                 </div>
-                <kbd>Double Ctrl</kbd>
+                <div class="launcher-toolbar" aria-hidden="true">
+                  <button class="launcher-search-button" type="button"><span class="icon search-icon"></span>搜索</button>
+                  <button class="launcher-icon-button" type="button">⚙</button>
+                  <i></i>
+                  <button class="launcher-sync-button" type="button">📡</button>
+                  <div class="launcher-window-controls"><span></span><span></span></div>
+                </div>
+              </div>
+              <div class="launcher-tabs" aria-hidden="true">
+                <button class="is-active" type="button">开发</button>
+                <button type="button">网站</button>
+                <button type="button">程序启动</button>
+                <button class="add-tab" type="button">+</button>
               </div>
               <div class="keyboard-stage">
                 <div class="keyboard-board" id="keyboardBoard" aria-hidden="true"></div>
-                <aside class="keyboard-inspector" id="keyboardInspector"></aside>
               </div>
             </div>
           </section>
