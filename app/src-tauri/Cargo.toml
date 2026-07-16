@@ -35,10 +35,6 @@ arboard = "3"
 keyring = "3"
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
-objc2 = "0.6.4"
-block2 = "0.6.2"
-objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSEvent", "NSWindow", "block2"] }
-objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSObject", "NSString", "std"] }
 # Remote desktop: screen capture + WebSocket streaming
 # Use screenshots (GDI-based) instead of scrap (DXGI) for better Windows compatibility
 screenshots = "0.8"
@@ -50,3 +46,9 @@ rand = "0.8"
 ureq = "2"
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging"] }
 portable-pty = "0.8"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.4"
+block2 = "0.6.2"
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["NSEvent", "NSWindow", "block2"] }
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["NSArray", "NSData", "NSDictionary", "NSError", "NSGeometry", "NSObject", "NSString", "std"] }

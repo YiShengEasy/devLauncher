@@ -1,6 +1,7 @@
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
-#[derive(Debug, Deserialize)]
+#[cfg(target_os = "macos")]
+#[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TranslateHelperResponse {
     source_language: Option<String>,
