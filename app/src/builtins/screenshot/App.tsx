@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
-import { CaptureIcon, CheckIcon, CloseIcon, CopyIcon, DownloadIcon, RetryIcon } from "@/icons/controlIcons";
+import { CaptureIcon, CheckIcon, CloseIcon, CopyIcon, DownloadIcon, PinIcon, RetryIcon } from "@/icons/controlIcons";
 import { addScreenshot, takePendingScreenshotEdit, updateScreenshot } from "../screenshotStore";
 import {
   clampPointToRect,
@@ -744,14 +744,6 @@ function IconBoxCallout() {
     </svg>
   );
 }
-function IconPinToScreen() {
-  return (
-    <svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <path d="M8 4h8l-1 5 4 4v2H5v-2l4-4L8 4z" stroke="currentColor" strokeWidth={1.9} strokeLinejoin="round" />
-      <path d="M12 15v6" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" />
-    </svg>
-  );
-}
 // 鈹€鈹€ Toolbar 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 const TOOLS: { key: Tool; icon: () => ReactElement; title: string }[] = [
   { key: "move",       icon: IconMove,       title: "拖拽编辑痕迹 (V)" },
@@ -909,7 +901,7 @@ function Toolbar({
         <DownloadIcon size={18} />
       </button>
       <button title="钉住到屏幕" onClick={onPinScreenshot} style={baseBtn}>
-        <IconPinToScreen />
+        <PinIcon size={20} decorative />
       </button>
       <button title="复制到剪贴板" onClick={onCopy} style={baseBtn}>
         <CopyIcon size={18} />

@@ -145,6 +145,37 @@ fn prepare_pinned_window_for_current_space(_win: &tauri::WebviewWindow) -> Resul
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn apply_always_on_top(win: &tauri::WebviewWindow, pinned: bool) -> Result<(), String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, HWND_NOTOPMOST, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    };
+
+    let hwnd = win.hwnd().map_err(|error| error.to_string())?.0;
+    let insert_after = if pinned { HWND_TOPMOST } else { HWND_NOTOPMOST };
+    let ok = unsafe {
+        SetWindowPos(
+            hwnd,
+            insert_after,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error().to_string());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn apply_always_on_top(win: &tauri::WebviewWindow, pinned: bool) -> Result<(), String> {
+    win.set_always_on_top(pinned)
+        .map_err(|error| error.to_string())
+}
+
 pub fn apply_window_pin_state(
     app: &tauri::AppHandle,
     label: &str,
@@ -154,8 +185,7 @@ pub fn apply_window_pin_state(
         .get_webview_window(label)
         .ok_or_else(|| format!("window not found: {label}"))?;
 
-    win.set_always_on_top(state.pinned)
-        .map_err(|e| e.to_string())?;
+    apply_always_on_top(&win, state.pinned)?;
 
     if state.pinned {
         prepare_pinned_window_for_current_space(&win)?;
@@ -165,16 +195,31 @@ pub fn apply_window_pin_state(
 }
 
 #[tauri::command]
-pub fn set_window_pin_state(
+pub async fn set_window_pin_state(
     app: tauri::AppHandle,
     label: String,
     pinned: bool,
 ) -> Result<WindowPinState, String> {
-    let state = set_state_for_app(&app, &label, pinned)?;
-    apply_window_pin_state(&app, &label)?;
-    app.emit(WINDOW_PIN_CHANGED_EVENT, state.clone())
-        .map_err(|e| e.to_string())?;
-    Ok(state)
+    if !is_supported_window(&label) {
+        return Err(format!("window does not support pinning: {label}"));
+    }
+
+    let operation_app = app.clone();
+    crate::main_window_control::run_serialized(&app, move || {
+        let win = operation_app
+            .get_webview_window(&label)
+            .ok_or_else(|| format!("window not found: {label}"))?;
+        apply_always_on_top(&win, pinned)?;
+        if pinned {
+            prepare_pinned_window_for_current_space(&win)?;
+        }
+        let state = set_state_for_app(&operation_app, &label, pinned)?;
+        operation_app
+            .emit(WINDOW_PIN_CHANGED_EVENT, state.clone())
+            .map_err(|error| error.to_string())?;
+        Ok(state)
+    })
+    .await
 }
 
 pub fn apply_all_startup_pin_states(app: &tauri::AppHandle) {
