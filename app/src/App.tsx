@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { register as registerShortcut, unregister as unregisterShortcut } from "@tauri-apps/plugin-global-shortcut";
@@ -10,6 +9,7 @@ import { KeyboardPanel } from "@/components/KeyboardPanel";
 import { BindingModal } from "@/components/BindingModal";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { MacWindowControls } from "@/components/MacWindowControls";
+import { hideMainWindowToTray, minimizeMainWindow } from "@/mainWindowControl";
 import type { Action, KeyId, KeyboardConfig, ThemeConfig } from "@/types/actions";
 import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon } from "@/icons";
 import { SearchIcon } from "@/icons/entryIcons";
@@ -18,7 +18,7 @@ import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
 import { motionDuration, motionEase } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
-import { getGlobalShortcuts, keyIdToShortcut } from "@/platform/shortcuts";
+import { getGlobalShortcuts, isMacPlatform, keyIdToShortcut } from "@/platform/shortcuts";
 import {
   dismissPermissionFeatureForSession,
   getPermissionHealthIssue,
@@ -552,7 +552,7 @@ export default function App() {
           backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           border: `1px solid ${theme.borderColor}`,
-          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06), 0 20px 48px rgba(0,0,0,0.28)",
+          boxShadow: "none",
           position: "relative",
         }}
       >
@@ -568,7 +568,7 @@ export default function App() {
             cursor: "move",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               ref={petModeButtonRef}
               title="Keyboard mode"
@@ -587,9 +587,10 @@ export default function App() {
               }}
               type="button"
               tabIndex={-1}
-              data-tauri-drag-region="false"
+              data-tauri-drag-region
             >
               <img
+                data-tauri-drag-region
                 src="/devlauncher-icon.png"
                 alt=""
                 draggable={false}
@@ -602,13 +603,18 @@ export default function App() {
                 }}
               />
             </button>
-            <span style={{ fontSize: 12, fontWeight: 650, color: "rgba(255,255,255,0.86)", letterSpacing: 0, pointerEvents: "none" }}>
+            <span data-tauri-drag-region style={{ fontSize: 12, fontWeight: 650, color: "rgba(255,255,255,0.86)", letterSpacing: 0, pointerEvents: "none" }}>
               DevLauncher
             </span>
-            <span style={{ width: 1, height: 13, background: "rgba(255,255,255,0.2)", display: "inline-block" }} />
-            <span style={{ color: "rgba(222,227,238,0.58)", fontSize: 10, fontWeight: 500, letterSpacing: 0, pointerEvents: "none" }}>
+            <span data-tauri-drag-region style={{ width: 1, height: 13, background: "rgba(255,255,255,0.2)", display: "inline-block" }} />
+            <span data-tauri-drag-region style={{ color: "rgba(222,227,238,0.58)", fontSize: 10, fontWeight: 500, letterSpacing: 0, pointerEvents: "none" }}>
               {"\u4e00\u952e\u542f\u52a8\u4f60\u7684\u5f00\u53d1\u5de5\u4f5c\u6d41"}
             </span>
+            {!isMacPlatform() && (
+              <span data-tauri-drag-region style={{ color: "rgba(222,227,238,0.46)", fontSize: 9, fontWeight: 500, letterSpacing: 0, pointerEvents: "none", whiteSpace: "nowrap" }}>
+                · 双击 Ctrl 唤起 · Alt + 字母/数字执行
+              </span>
+            )}
           </div>
 
           <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
@@ -664,11 +670,11 @@ export default function App() {
             <MacWindowControls
               onClose={() => {
                 setPetActionState("cozy");
-                getCurrentWindow().hide();
+                hideMainWindowToTray().catch(console.error);
               }}
               onMinimize={() => {
                 setPetActionState("cozy");
-                getCurrentWindow().minimize();
+                minimizeMainWindow().catch(console.error);
               }}
               closeTitle="Hide to tray"
               minimizeTitle="Minimize"
