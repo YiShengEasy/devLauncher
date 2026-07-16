@@ -54,6 +54,10 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
         SW_MINIMIZE, SW_RESTORE, SW_SHOW,
     };
 
+    if matches!(action, MainWindowAction::Toggle) {
+        crate::entries::set_pet_action(app, "cozy");
+    }
+
     let win = app
         .get_webview_window("main")
         .ok_or_else(|| "window not found: main".to_string())?;
@@ -95,6 +99,10 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
 
 #[cfg(not(target_os = "windows"))]
 fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), String> {
+    if matches!(action, MainWindowAction::Toggle) {
+        crate::entries::set_pet_action(app, "cozy");
+    }
+
     let win = app
         .get_webview_window("main")
         .ok_or_else(|| "window not found: main".to_string())?;
