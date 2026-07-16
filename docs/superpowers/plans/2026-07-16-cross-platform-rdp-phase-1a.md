@@ -537,7 +537,7 @@ git commit -m "feat: add RDP client selection to profiles"
 - Modify: `app/src/builtins/remotedesk/App.tsx`
 - Modify: `app/src/builtins/remotedesk/rdpModel.test.ts`
 
-- [ ] **Step 1: Add failing host-status formatting tests**
+- [x] **Step 1: Add failing host-status formatting tests**
 
 Add tests proving that the UI distinguishes RDP and compatibility transports and never displays a password after host stop:
 
@@ -551,7 +551,7 @@ it("hides credentials when the RDP host is stopped", () => {
 });
 ```
 
-- [ ] **Step 2: Split the current host UI into primary and compatibility sections**
+- [x] **Step 2: Split the current host UI into primary and compatibility sections**
 
 Keep the existing three tabs but change their labels to:
 
@@ -567,11 +567,11 @@ At the top of `HostTab`, add the RDP host control using `start_rdp_host`, `stop_
 
 Move the existing WebSocket start/stop block under a collapsed section titled `JPEG/WebSocket 兼容模式`. Keep its behavior and stored frp/ngrok settings intact.
 
-- [ ] **Step 3: Add explicit failure and dependency states**
+- [x] **Step 3: Add explicit failure and dependency states**
 
 Render stable messages for `rdp_client_missing`, `host_backend_missing`, `unsupported_wayland`, `macos_host_phase_2`, `port_in_use`, `permission_missing`, `existing_rdp_service`, and `host_exited`. Do not auto-start compatibility mode after an RDP failure.
 
-- [ ] **Step 4: Run tests, build, and commit**
+- [x] **Step 4: Run tests, build, and commit**
 
 Run the focused frontend tests and `npm --prefix app run build`. Expected: PASS with no text overflow introduced in the existing remote window.
 
@@ -590,7 +590,7 @@ git commit -m "feat: make RDP the primary remote desktop mode"
 - Verify: `app/src-tauri/src/builtins/remotedesk.rs`
 - Verify: `app/src/builtins/remotedesk/App.tsx`
 
-- [ ] **Step 1: Run the complete automated suite**
+- [x] **Step 1: Run the complete automated suite**
 
 ```bash
 npm --prefix app test
@@ -634,7 +634,7 @@ Run the same interaction and credential checks on:
 
 Pass condition: both supported session types control the visible desktop and stop without leaving DevLauncher-created credentials enabled.
 
-- [ ] **Step 5: Mark completed checkboxes and commit verification notes**
+- [x] **Step 5: Mark completed checkboxes and commit verification notes**
 
 Update only checkboxes actually verified and add a short `Verification Results` section containing command results and platform versions. Do not mark Windows/Linux manual gates complete from macOS evidence.
 
@@ -644,6 +644,24 @@ Commit:
 git add docs/superpowers/plans/2026-07-16-cross-platform-rdp-phase-1a.md
 git commit -m "docs: record RDP phase 1A verification"
 ```
+
+## Verification Results
+
+Local automated verification on macOS, 2026-07-16:
+
+- `npm --prefix app test`: PASS, 15 test files and 78 tests.
+- `npm --prefix app run build`: PASS.
+- `cargo test --manifest-path app/src-tauri/Cargo.toml`: PASS, 44 tests. Existing warnings remain in `src/utils/icon.rs` for unused icon imports.
+- `cargo check --manifest-path app/src-tauri/Cargo.toml`: PASS with the same existing icon import warnings.
+- `git diff --check`: PASS.
+- `iconv -f UTF-8 -t UTF-8` on modified text files: PASS.
+
+Current manual gate status:
+
+- macOS host behavior is intentionally Phase 2 and was not marked complete from browser preview evidence.
+- Windows FreeRDP Shadow gate is still required before Phase 1B.
+- Linux X11 FreeRDP Shadow gate is still required before Phase 1B.
+- Linux GNOME Wayland remote assistance gate is still required before Phase 1B.
 
 ## Phase 1B Entry Criteria
 

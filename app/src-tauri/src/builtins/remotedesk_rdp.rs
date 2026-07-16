@@ -748,6 +748,19 @@ fn is_systemd_user_active(systemctl: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn is_systemd_user_enabled(systemctl: &str) -> bool {
+    Command::new(systemctl)
+        .args([
+            "--user",
+            "is-enabled",
+            "--quiet",
+            "gnome-remote-desktop.service",
+        ])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
 fn stop_gnome_runtime(capabilities: &RdpCapabilities) {
     if let Some(grdctl) = capabilities.executables.get("grdctl") {
         let _ = Command::new(grdctl).args(["rdp", "disable"]).status();
@@ -776,9 +789,10 @@ fn start_gnome_runtime(
         .executables
         .get("winpr-makecert")
         .ok_or_else(|| "certificate_tool_missing: 未找到 winpr-makecert".to_string())?;
-    if is_systemd_user_active(systemctl) {
+    if is_systemd_user_active(systemctl) || is_systemd_user_enabled(systemctl) {
         return Err(
-            "existing_rdp_service: GNOME 远程桌面已运行，DevLauncher 不会覆盖现有配置".to_string(),
+            "existing_rdp_service: GNOME 远程桌面已由系统启用，DevLauncher 不会覆盖现有配置"
+                .to_string(),
         );
     }
 
@@ -951,6 +965,16 @@ pub fn get_rdp_host_status(app: tauri::AppHandle) -> RdpHostStatus {
     let mut runtime_guard = state.runtime.lock().unwrap();
 
     let unexpected_exit = runtime_guard.as_mut().and_then(|runtime| {
+        if runtime.gnome_managed {
+            if let Some(systemctl) = capabilities.executables.get("systemctl") {
+                if !is_systemd_user_active(systemctl) {
+                    return Some((
+                        "host_exited".to_string(),
+                        "GNOME RDP 主机服务已停止".to_string(),
+                    ));
+                }
+            }
+        }
         runtime
             .child
             .as_mut()
@@ -972,8 +996,25 @@ pub fn get_rdp_host_status(app: tauri::AppHandle) -> RdpHostStatus {
             })
     });
     if let Some(error) = unexpected_exit {
-        runtime_guard.take();
+        let runtime = runtime_guard.take();
+        drop(runtime_guard);
+        if let Some(runtime) = runtime {
+            stop_runtime(&app, runtime);
+        }
         *state.last_error.lock().unwrap() = Some(error);
+
+        let error = state.last_error.lock().unwrap().clone();
+        return RdpHostStatus {
+            running: false,
+            backend: None,
+            desktop_session: capabilities.desktop_session,
+            address: None,
+            port: None,
+            tls: false,
+            nla: false,
+            error_code: error.as_ref().map(|value| value.0.clone()),
+            error_message: error.map(|value| value.1),
+        };
     }
 
     if let Some(runtime) = runtime_guard.as_ref() {

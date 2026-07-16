@@ -6,19 +6,23 @@ import { MacWindowControls } from "@/components/MacWindowControls";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
+import {
+  backendLabel,
+  clientLabel,
+  desktopLabel,
+  hostAvailabilityMessage,
+  normalizeProfile,
+  visibleHostCredentials,
+  type RdpCapabilities,
+  type RdpHostInfo,
+  type RdpHostStatus,
+  type RdpLaunchResult,
+  type RemoteDeskProfile,
+} from "./rdpModel";
 
 // -----------------------------------------------
 // Types
 // -----------------------------------------------
-
-interface RemoteDeskProfile {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-  username: string;
-  has_password?: boolean;
-}
 
 interface HostInfo {
   pin: string;
@@ -30,14 +34,6 @@ interface HostStatus {
   running: boolean;
   connections: number;
   pin: string | null;
-}
-
-interface PlatformCapabilities {
-  platform: string;
-  supportsWindowsRdp: boolean;
-  supportsWindowsOcr: boolean;
-  supportsWsl: boolean;
-  preferredShortcutModifier: string;
 }
 
 type Tab = "rdp" | "host" | "connect";
@@ -115,20 +111,28 @@ function RdpTab() {
   const [password, setPassword] = useState("");
   const [launching, setLaunching] = useState<string | null>(null);
   const [msg, setMsg] = useState("");
-  const [platformCaps, setPlatformCaps] = useState<PlatformCapabilities | null>(null);
+  const [rdpCaps, setRdpCaps] = useState<RdpCapabilities | null>(null);
   const reducedMotion = useReducedMotion();
 
   useEffect(() => {
     invoke<RemoteDeskProfile[]>("load_remotedesk_profiles")
-      .then(setProfiles)
+      .then(items => setProfiles(items.map(normalizeProfile)))
       .catch(() => {});
-    invoke<PlatformCapabilities>("get_platform_capabilities")
-      .then(setPlatformCaps)
-      .catch(() => setPlatformCaps(null));
+    invoke<RdpCapabilities>("get_rdp_capabilities")
+      .then(setRdpCaps)
+      .catch(() => setRdpCaps(null));
   }, []);
 
   function startNew() {
-    setEditing({ id: generateId(), name: "", host: "", port: 3389, username: "", has_password: false });
+    setEditing({
+      id: generateId(),
+      name: "",
+      host: "",
+      port: 3389,
+      username: "",
+      client_mode: "auto",
+      has_password: false,
+    });
     setPassword("");
     setIsNew(true);
   }
@@ -172,8 +176,8 @@ function RdpTab() {
     setLaunching(id);
     setMsg("");
     try {
-      await invoke("launch_rdp", { id });
-      setMsg("已启动 mstsc");
+      const result = await invoke<RdpLaunchResult>("launch_rdp", { id });
+      setMsg("已启动 " + clientLabel(result.client));
     } catch (e) {
       setMsg(String(e));
     }
@@ -226,6 +230,21 @@ function RdpTab() {
             />
           </div>
         </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <label style={{ fontSize: 11, color: "rgba(255,255,255,0.5)" }}>连接客户端</label>
+          <select
+            value={editing.client_mode}
+            onChange={event => setEditing({
+              ...editing,
+              client_mode: event.target.value as RemoteDeskProfile["client_mode"],
+            })}
+            style={inputStyle}
+          >
+            <option value="auto">自动选择</option>
+            <option value="system">系统 RDP</option>
+            <option value="free_rdp">FreeRDP</option>
+          </select>
+        </div>
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <button onClick={handleSave} style={btnPrimary}>保存</button>
           <button onClick={() => setEditing(null)} style={btnSecondary}>取消</button>
@@ -243,9 +262,9 @@ function RdpTab() {
         <button onClick={startNew} style={btnPrimary}>+ 新建</button>
       </div>
 
-      {platformCaps && !platformCaps.supportsWindowsRdp && (
+      {rdpCaps && !rdpCaps.recommendedClient && (
         <div style={{ color: "#fbbf24", fontSize: 12, lineHeight: 1.6 }}>
-          macOS 当前不支持 mstsc/RDP 一键启动；此页其他远程能力可继续按实际权限验证。
+          未检测到 RDP 客户端。安装 FreeRDP 后即可从此处连接。
         </div>
       )}
 
@@ -262,6 +281,9 @@ function RdpTab() {
             <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>{p.name}</div>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 }}>
               {p.username}@{p.host}:{p.port}
+              <span style={{ marginLeft: 6, color: "rgba(255,255,255,0.32)" }}>
+                {clientLabel(p.client_mode)}
+              </span>
               {p.has_password && <span style={{ marginLeft: 6, color: "#4ade80" }}>🔑</span>}
             </div>
           </div>
@@ -292,6 +314,21 @@ function RdpTab() {
 // -----------------------------------------------
 
 function HostTab() {
+  const [rdpCaps, setRdpCaps] = useState<RdpCapabilities | null>(null);
+  const [rdpStatus, setRdpStatus] = useState<RdpHostStatus>({
+    running: false,
+    backend: null,
+    desktopSession: "unknown",
+    address: null,
+    port: null,
+    tls: false,
+    nla: false,
+    errorCode: null,
+    errorMessage: null,
+  });
+  const [rdpHostInfo, setRdpHostInfo] = useState<RdpHostInfo | null>(null);
+  const [rdpStarting, setRdpStarting] = useState(false);
+  const [rdpError, setRdpError] = useState("");
   const [status, setStatus] = useState<HostStatus>({ running: false, connections: 0, pin: null });
   const [hostInfo, setHostInfo] = useState<HostInfo | null>(null);
   const [starting, setStarting] = useState(false);
@@ -314,6 +351,10 @@ function HostTab() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const poll = useCallback(() => {
+    invoke<RdpHostStatus>("get_rdp_host_status").then(next => {
+      setRdpStatus(next);
+      if (!next.running) setRdpHostInfo(null);
+    }).catch(() => {});
     invoke<HostStatus>("get_remotedesk_host_status").then(setStatus).catch(() => {});
     invoke<{ running: boolean }>("get_frp_status").then(s => setFrpRunning(s.running)).catch(() => {});
     invoke<{ running: boolean; public_addr: string | null; error: string | null }>("get_ngrok_status").then(s => {
@@ -325,12 +366,53 @@ function HostTab() {
   }, []);
 
   useEffect(() => {
+    invoke<RdpCapabilities>("get_rdp_capabilities")
+      .then(setRdpCaps)
+      .catch(() => setRdpCaps(null));
     poll();
     pollRef.current = setInterval(poll, 2000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [poll]);
 
   function save(key: string, val: string) { localStorage.setItem(key, val); }
+
+  async function handleRdpStart() {
+    setRdpStarting(true);
+    setRdpError("");
+    try {
+      const info = await invoke<RdpHostInfo>("start_rdp_host");
+      setRdpHostInfo(info);
+      setRdpStatus(current => ({
+        ...current,
+        running: true,
+        backend: info.backend,
+        desktopSession: info.desktopSession,
+        address: info.address,
+        port: info.port,
+        tls: info.tls,
+        nla: info.nla,
+        errorCode: null,
+        errorMessage: null,
+      }));
+    } catch (error) {
+      setRdpError(String(error));
+    }
+    setRdpStarting(false);
+  }
+
+  async function handleRdpStop() {
+    await invoke("stop_rdp_host").catch(error => setRdpError(String(error)));
+    setRdpHostInfo(null);
+    setRdpStatus(current => ({
+      ...current,
+      running: false,
+      backend: null,
+      address: null,
+      port: null,
+      tls: false,
+      nla: false,
+    }));
+  }
 
   async function handleStart() {
     setStarting(true); setError("");
@@ -390,11 +472,97 @@ function HostTab() {
   const localPort = hostInfo?.port ?? 19090;
   const publicWs = vpsIp && frpRunning ? `ws://${vpsIp}:${remotePort}` : null;
   const publicHttp = vpsIp && frpRunning ? `http://${vpsIp}:${remotePort}` : null;
+  const rdpCredentials = visibleHostCredentials(rdpStatus, rdpHostInfo);
+  const capabilityMessage = hostAvailabilityMessage(rdpCaps?.hostErrorCode);
+  const runtimeMessage = hostAvailabilityMessage(rdpStatus.errorCode)
+    || rdpStatus.errorMessage
+    || rdpError.split(":").slice(1).join(":").trim()
+    || rdpError;
 
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+      <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.88)" }}>
+              RDP 当前桌面
+            </div>
+            <div style={{ marginTop: 2, fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+              {desktopLabel(rdpStatus.desktopSession || rdpCaps?.desktopSession || "unknown")}
+            </div>
+          </div>
+          <span style={{
+            flexShrink: 0,
+            padding: "2px 7px",
+            borderRadius: 5,
+            background: rdpStatus.running ? "rgba(74,222,128,0.14)" : "rgba(255,255,255,0.06)",
+            color: rdpStatus.running ? "#4ade80" : "rgba(255,255,255,0.38)",
+            fontSize: 10,
+          }}>
+            {rdpStatus.running ? "运行中" : backendLabel(rdpCaps?.recommendedHost ?? null)}
+          </span>
+        </div>
 
-      {/* Host mode control */}
+        {!rdpStatus.running ? (
+          <button
+            onClick={handleRdpStart}
+            disabled={rdpStarting || !rdpCaps?.recommendedHost}
+            style={{
+              ...btnPrimary,
+              width: "100%",
+              padding: "10px 0",
+              opacity: rdpStarting || !rdpCaps?.recommendedHost ? 0.45 : 1,
+            }}
+          >
+            {rdpStarting ? "启动中…" : "开启 RDP 主机"}
+          </button>
+        ) : (
+          <button onClick={handleRdpStop} style={{ ...btnDanger, width: "100%", padding: "10px 0" }}>
+            停止 RDP 主机
+          </button>
+        )}
+
+        {!rdpStatus.running && capabilityMessage && (
+          <div style={{ color: "#fbbf24", fontSize: 11, lineHeight: 1.6 }}>{capabilityMessage}</div>
+        )}
+        {runtimeMessage && (
+          <div style={{ color: "#f87171", fontSize: 11, lineHeight: 1.6 }}>{runtimeMessage}</div>
+        )}
+
+        {rdpStatus.running && rdpStatus.address && rdpStatus.port && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            <InfoRow
+              label="RDP 地址"
+              value={rdpStatus.address + ":" + rdpStatus.port}
+              onCopy={copy}
+            />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <InfoRow label="主机后端" value={backendLabel(rdpStatus.backend)} />
+              <InfoRow
+                label="连接安全"
+                value={(rdpStatus.tls ? "TLS" : "无 TLS") + " · " + (rdpStatus.nla ? "NLA" : "无 NLA")}
+              />
+            </div>
+            {rdpCredentials && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                <InfoRow label="临时用户名" value={rdpCredentials.username} onCopy={copy} />
+                <InfoRow label="临时密码" value={rdpCredentials.password} onCopy={copy} />
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 12 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.58)" }}>
+          JPEG/WebSocket 兼容模式
+        </div>
+        <div style={{ marginTop: 2, fontSize: 10, color: "rgba(255,255,255,0.28)" }}>
+          仅在目标系统没有可用 RDP 后端时手动使用
+        </div>
+      </div>
+
+      {/* Compatibility host mode control */}
       {!status.running ? (
         <button onClick={handleStart} disabled={starting} style={{ ...btnPrimary, width: "100%", padding: "10px 0" }}>
           {starting ? "启动中…" : "🖥️ 开启主机模式"}
@@ -542,12 +710,13 @@ function HostTab() {
   );
 }
 
-function InfoRow({ label, value, onCopy, large }: { label: string; value: string; onCopy: (v: string) => void; large?: boolean }) {
+function InfoRow({ label, value, onCopy, large }: { label: string; value: string; onCopy?: (v: string) => void; large?: boolean }) {
+  const copyable = Boolean(onCopy);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>{label}</div>
       <div
-        onClick={() => onCopy(value)}
+        onClick={() => onCopy?.(value)}
         style={{
           fontFamily: "monospace",
           fontSize: large ? 22 : 13,
@@ -556,10 +725,10 @@ function InfoRow({ label, value, onCopy, large }: { label: string; value: string
           background: "rgba(255,255,255,0.07)",
           borderRadius: 6,
           padding: "6px 10px",
-          cursor: "pointer",
+          cursor: copyable ? "pointer" : "default",
           letterSpacing: large ? 4 : 1,
         }}
-        title="点击复制"
+        title={copyable ? "点击复制" : undefined}
       >
         {value}
       </div>
@@ -873,9 +1042,9 @@ export function RemoteDeskApp() {
   }, []);
 
   const tabs: { id: Tab; label: string }[] = [
-    { id: "rdp", label: "RDP" },
+    { id: "rdp", label: "连接" },
     { id: "host", label: "我的设备" },
-    { id: "connect", label: "连接设备" },
+    { id: "connect", label: "兼容连接" },
   ];
 
   useGsapContext(rootRef, () => {
