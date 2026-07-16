@@ -34,7 +34,10 @@ export function getGlobalShortcutLabels(platform = navigator.platform): GlobalSh
     };
   }
 
-  return getGlobalShortcuts(platform);
+  return {
+    ...getGlobalShortcuts(platform),
+    keyboard: "双击 Ctrl / Ctrl+Alt+J",
+  };
 }
 
 export function keyIdToShortcut(keyId: string, platform = navigator.platform): string {

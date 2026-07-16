@@ -129,5 +129,108 @@ mod macos {
 #[cfg(target_os = "macos")]
 pub use macos::setup;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+mod windows {
+    use crate::entries;
+    use std::ptr::null_mut;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Mutex, OnceLock};
+    use std::time::{Duration, Instant};
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CallNextHookEx, GetMessageW, SetWindowsHookExW, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
+        WM_KEYDOWN, WM_KEYUP,
+    };
+
+    const DOUBLE_CONTROL_WINDOW: Duration = Duration::from_millis(350);
+    const VK_LCONTROL: u32 = 0xA2;
+    const VK_RCONTROL: u32 = 0xA3;
+
+    #[derive(Default)]
+    struct ControlTapState {
+        last_tap: Option<Instant>,
+        control_down: bool,
+    }
+
+    impl ControlTapState {
+        fn register_control_press(&mut self, now: Instant) -> bool {
+            if self.control_down {
+                return false;
+            }
+
+            self.control_down = true;
+            let is_double_tap = self
+                .last_tap
+                .map(|last| now.duration_since(last) <= DOUBLE_CONTROL_WINDOW)
+                .unwrap_or(false);
+            self.last_tap = if is_double_tap { None } else { Some(now) };
+            is_double_tap
+        }
+
+        fn register_control_release(&mut self) {
+            self.control_down = false;
+        }
+
+        fn cancel_pending_tap(&mut self) {
+            self.last_tap = None;
+        }
+    }
+
+    static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+    static CONTROL_TAP_STATE: OnceLock<Mutex<ControlTapState>> = OnceLock::new();
+    static HOOK_INSTALL_STARTED: AtomicBool = AtomicBool::new(false);
+
+    fn is_control_key(vk_code: u32) -> bool {
+        vk_code == VK_LCONTROL || vk_code == VK_RCONTROL
+    }
+
+    unsafe extern "system" fn keyboard_hook(code: i32, w_param: usize, l_param: isize) -> isize {
+        if code >= 0 {
+            let event = unsafe { &*(l_param as *const KBDLLHOOKSTRUCT) };
+            let state = CONTROL_TAP_STATE.get_or_init(|| Mutex::new(ControlTapState::default()));
+
+            if let Ok(mut state) = state.lock() {
+                if is_control_key(event.vkCode) {
+                    if w_param as u32 == WM_KEYDOWN {
+                        if state.register_control_press(Instant::now()) {
+                            if let Some(app) = APP_HANDLE.get() {
+                                let _ = entries::toggle_keyboard_window(app.clone());
+                            }
+                        }
+                    } else if w_param as u32 == WM_KEYUP {
+                        state.register_control_release();
+                    }
+                } else if w_param as u32 == WM_KEYDOWN {
+                    state.cancel_pending_tap();
+                }
+            }
+        }
+
+        unsafe { CallNextHookEx(null_mut(), code, w_param, l_param) }
+    }
+
+    pub fn setup(app: &tauri::AppHandle) {
+        let _ = APP_HANDLE.set(app.clone());
+        if HOOK_INSTALL_STARTED.swap(true, Ordering::Relaxed) {
+            return;
+        }
+
+        std::thread::spawn(|| unsafe {
+            let module = GetModuleHandleW(null_mut());
+            let hook = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_hook), module, 0);
+            if hook.is_null() {
+                HOOK_INSTALL_STARTED.store(false, Ordering::Relaxed);
+                return;
+            }
+
+            let mut message: MSG = std::mem::zeroed();
+            while GetMessageW(&mut message, null_mut(), 0, 0) > 0 {}
+        });
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub use windows::setup;
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn setup(_app: &tauri::AppHandle) {}
