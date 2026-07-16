@@ -4,6 +4,7 @@ mod cloud_sync;
 mod config;
 mod entries;
 mod keyboard_control_tap;
+mod main_window_control;
 mod ocr;
 mod platform;
 mod plugin_manager;
@@ -99,6 +100,7 @@ pub fn run() {
             video_tools::cancel_video_frame_sampler,
             video_tools::open_video_tool_path,
             actions::execute_action,
+            main_window_control::control_main_window,
             actions::save_ssh_password,
             actions::delete_ssh_password,
             actions::save_web_password,
