@@ -1,10 +1,18 @@
+use md4::{Digest, Md4};
+use rand::{distributions::Uniform, seq::SliceRandom, Rng};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
+use std::fs;
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream, UdpSocket};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::time::Duration;
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::Manager;
+use tempfile::TempDir;
+use zeroize::Zeroizing;
 
 use crate::builtins::remotedesk::RemoteDeskProfile;
 
@@ -17,7 +25,12 @@ const CLIENT_EXECUTABLES: &[&str] = &[
     "wfreerdp.exe",
     "wfreerdp",
 ];
-const HOST_EXECUTABLES: &[&str] = &["freerdp-shadow-cli", "grdctl", "systemctl"];
+const HOST_EXECUTABLES: &[&str] = &[
+    "freerdp-shadow-cli",
+    "grdctl",
+    "systemctl",
+    "winpr-makecert",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HostOs {
@@ -140,6 +153,57 @@ pub struct RdpLaunchResult {
 struct CommandSpec {
     executable: String,
     args: Vec<String>,
+}
+
+struct RdpHostRuntime {
+    backend: RdpHostBackend,
+    address: String,
+    port: u16,
+    _username: String,
+    _password: Zeroizing<String>,
+    child: Option<Child>,
+    _session_dir: TempDir,
+    stderr_tail: Arc<Mutex<String>>,
+    gnome_managed: bool,
+}
+
+pub(crate) struct RdpHostState {
+    runtime: Mutex<Option<RdpHostRuntime>>,
+    last_error: Mutex<Option<(String, String)>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpHostInfo {
+    pub backend: RdpHostBackend,
+    pub desktop_session: String,
+    pub address: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub tls: bool,
+    pub nla: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpHostStatus {
+    pub running: bool,
+    pub backend: Option<RdpHostBackend>,
+    pub desktop_session: String,
+    pub address: Option<String>,
+    pub port: Option<u16>,
+    pub tls: bool,
+    pub nla: bool,
+    pub error_code: Option<String>,
+    pub error_message: Option<String>,
+}
+
+pub fn setup(app: &mut tauri::App) {
+    app.manage(RdpHostState {
+        runtime: Mutex::new(None),
+        last_error: Mutex::new(None),
+    });
 }
 
 #[derive(Debug, Clone)]
@@ -414,6 +478,532 @@ pub(crate) fn launch_profile(
     })
 }
 
+fn local_ip() -> String {
+    if let Ok(socket) = UdpSocket::bind("0.0.0.0:0") {
+        if socket.connect("8.8.8.8:80").is_ok() {
+            if let Ok(address) = socket.local_addr() {
+                return address.ip().to_string();
+            }
+        }
+    }
+    "127.0.0.1".to_string()
+}
+
+fn generate_session_password() -> Zeroizing<String> {
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+    let distribution = Uniform::from(0..ALPHABET.len());
+    let mut rng = rand::thread_rng();
+    let mut characters = (0..20)
+        .map(|_| ALPHABET[rng.sample(distribution)] as char)
+        .collect::<Vec<_>>();
+    characters.extend(['A', 'a', '2', '!']);
+    characters.shuffle(&mut rng);
+    Zeroizing::new(characters.into_iter().collect())
+}
+
+fn build_sam_entry(username: &str, password: &str) -> String {
+    let mut utf16 = Zeroizing::new(Vec::with_capacity(password.len() * 2));
+    for unit in password.encode_utf16() {
+        utf16.extend_from_slice(&unit.to_le_bytes());
+    }
+    let hash = Md4::digest(utf16.as_slice());
+    let hex = hash
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("{username}:::{hex}:::\n")
+}
+
+fn create_session_dir(app: &tauri::AppHandle) -> Result<TempDir, String> {
+    let base = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("session_dir_failed: {error}"))?
+        .join("remotedesk-rdp");
+    fs::create_dir_all(&base).map_err(|error| format!("session_dir_failed: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&base, fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("session_dir_failed: {error}"))?;
+    }
+    tempfile::Builder::new()
+        .prefix("session-")
+        .tempdir_in(base)
+        .map_err(|error| format!("session_dir_failed: {error}"))
+}
+
+fn write_private_file(path: &Path, contents: &[u8]) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(path)
+            .map_err(|error| format!("credential_file_failed: {error}"))?;
+        file.write_all(contents)
+            .map_err(|error| format!("credential_file_failed: {error}"))?;
+    }
+    #[cfg(not(unix))]
+    {
+        fs::write(path, contents).map_err(|error| format!("credential_file_failed: {error}"))?;
+    }
+    Ok(())
+}
+
+fn choose_shadow_port() -> Result<u16, String> {
+    if let Ok(listener) = TcpListener::bind(("0.0.0.0", 3389)) {
+        drop(listener);
+        return Ok(3389);
+    }
+    let listener =
+        TcpListener::bind(("0.0.0.0", 0)).map_err(|error| format!("port_in_use: {error}"))?;
+    let port = listener
+        .local_addr()
+        .map_err(|error| format!("port_in_use: {error}"))?
+        .port();
+    drop(listener);
+    Ok(port)
+}
+
+fn build_shadow_spec(executable: &str, port: u16, sam_path: &Path) -> CommandSpec {
+    CommandSpec {
+        executable: executable.to_string(),
+        args: vec![
+            format!("/port:{port}"),
+            "/sec:nla".to_string(),
+            format!("/sam-file:{}", sam_path.to_string_lossy()),
+            "+may-view".to_string(),
+            "+may-interact".to_string(),
+        ],
+    }
+}
+
+fn wait_for_port(port: u16, timeout: Duration) -> bool {
+    let started = Instant::now();
+    while started.elapsed() < timeout {
+        if TcpStream::connect_timeout(
+            &format!("127.0.0.1:{port}")
+                .parse()
+                .expect("loopback socket address"),
+            Duration::from_millis(200),
+        )
+        .is_ok()
+        {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    false
+}
+
+fn collect_stderr(mut stderr: impl Read + Send + 'static, tail: Arc<Mutex<String>>) {
+    std::thread::spawn(move || {
+        let mut buffer = [0u8; 1024];
+        while let Ok(read) = stderr.read(&mut buffer) {
+            if read == 0 {
+                break;
+            }
+            let chunk = String::from_utf8_lossy(&buffer[..read]);
+            let mut current = tail.lock().unwrap();
+            current.push_str(&chunk);
+            if current.len() > 8192 {
+                let split_at = current.len() - 8192;
+                *current = current[split_at..].to_string();
+            }
+        }
+    });
+}
+
+fn redacted_tail(tail: &Arc<Mutex<String>>) -> String {
+    tail.lock()
+        .map(|value| value.lines().rev().take(6).collect::<Vec<_>>().join("\n"))
+        .unwrap_or_default()
+}
+
+fn run_checked(executable: &str, args: &[String], code: &str) -> Result<(), String> {
+    let output = Command::new(executable)
+        .args(args)
+        .output()
+        .map_err(|error| format!("{code}: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let detail = stderr.lines().rev().take(4).collect::<Vec<_>>().join("\n");
+        Err(format!("{code}: {detail}"))
+    }
+}
+
+fn run_with_credentials(
+    executable: &str,
+    args: &[String],
+    username: &str,
+    password: &str,
+) -> Result<(), String> {
+    let mut child = Command::new(executable)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("gnome_credentials_failed: {error}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin
+            .write_all(format!("{username}\n{password}\n").as_bytes())
+            .map_err(|error| format!("gnome_credentials_failed: {error}"))?;
+    }
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("gnome_credentials_failed: {error}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "gnome_credentials_failed: {}",
+            detail.lines().rev().take(4).collect::<Vec<_>>().join("\n")
+        ))
+    }
+}
+
+fn start_shadow_runtime(
+    app: &tauri::AppHandle,
+    capabilities: &RdpCapabilities,
+    backend: RdpHostBackend,
+    desktop_session: &str,
+) -> Result<(RdpHostRuntime, RdpHostInfo), String> {
+    let executable = capabilities
+        .executables
+        .get("freerdp-shadow-cli")
+        .ok_or_else(|| "host_backend_missing: 未找到 freerdp-shadow-cli".to_string())?;
+    let session_dir = create_session_dir(app)?;
+    let username = "devlauncher".to_string();
+    let password = generate_session_password();
+    let sam_path = session_dir.path().join("SAM");
+    write_private_file(
+        &sam_path,
+        build_sam_entry(&username, password.as_str()).as_bytes(),
+    )?;
+    let port = choose_shadow_port()?;
+    let spec = build_shadow_spec(executable, port, &sam_path);
+    let mut child = Command::new(&spec.executable)
+        .args(&spec.args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("host_start_failed: {error}"))?;
+    let stderr_tail = Arc::new(Mutex::new(String::new()));
+    if let Some(stderr) = child.stderr.take() {
+        collect_stderr(stderr, Arc::clone(&stderr_tail));
+    }
+    if !wait_for_port(port, Duration::from_secs(5)) {
+        let _ = child.kill();
+        let detail = redacted_tail(&stderr_tail);
+        return Err(if detail.is_empty() {
+            "host_not_ready: RDP 主机未在五秒内就绪".to_string()
+        } else {
+            format!("host_not_ready: {detail}")
+        });
+    }
+
+    let address = local_ip();
+    let info = RdpHostInfo {
+        backend,
+        desktop_session: desktop_session.to_string(),
+        address: address.clone(),
+        port,
+        username: username.clone(),
+        password: password.to_string(),
+        tls: true,
+        nla: true,
+    };
+    let runtime = RdpHostRuntime {
+        backend,
+        address,
+        port,
+        _username: username,
+        _password: password,
+        child: Some(child),
+        _session_dir: session_dir,
+        stderr_tail,
+        gnome_managed: false,
+    };
+    Ok((runtime, info))
+}
+
+fn is_systemd_user_active(systemctl: &str) -> bool {
+    Command::new(systemctl)
+        .args([
+            "--user",
+            "is-active",
+            "--quiet",
+            "gnome-remote-desktop.service",
+        ])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
+}
+
+fn stop_gnome_runtime(capabilities: &RdpCapabilities) {
+    if let Some(grdctl) = capabilities.executables.get("grdctl") {
+        let _ = Command::new(grdctl).args(["rdp", "disable"]).status();
+    }
+    if let Some(systemctl) = capabilities.executables.get("systemctl") {
+        let _ = Command::new(systemctl)
+            .args(["--user", "disable", "--now", "gnome-remote-desktop.service"])
+            .status();
+    }
+}
+
+fn start_gnome_runtime(
+    app: &tauri::AppHandle,
+    capabilities: &RdpCapabilities,
+    desktop_session: &str,
+) -> Result<(RdpHostRuntime, RdpHostInfo), String> {
+    let grdctl = capabilities
+        .executables
+        .get("grdctl")
+        .ok_or_else(|| "host_backend_missing: 未找到 grdctl".to_string())?;
+    let systemctl = capabilities
+        .executables
+        .get("systemctl")
+        .ok_or_else(|| "host_backend_missing: 未找到 systemctl".to_string())?;
+    let makecert = capabilities
+        .executables
+        .get("winpr-makecert")
+        .ok_or_else(|| "certificate_tool_missing: 未找到 winpr-makecert".to_string())?;
+    if is_systemd_user_active(systemctl) {
+        return Err(
+            "existing_rdp_service: GNOME 远程桌面已运行，DevLauncher 不会覆盖现有配置".to_string(),
+        );
+    }
+
+    let session_dir = create_session_dir(app)?;
+    let username = "devlauncher".to_string();
+    let password = generate_session_password();
+    run_checked(
+        makecert,
+        &[
+            "-silent".to_string(),
+            "-rdp".to_string(),
+            "-path".to_string(),
+            session_dir.path().to_string_lossy().to_string(),
+            "tls".to_string(),
+        ],
+        "certificate_generation_failed",
+    )?;
+    let key = session_dir.path().join("tls.key");
+    let certificate = session_dir.path().join("tls.crt");
+    if !key.exists() || !certificate.exists() {
+        return Err("certificate_generation_failed: 未生成 tls.key 和 tls.crt".to_string());
+    }
+
+    let configure_result = (|| {
+        run_checked(
+            grdctl,
+            &[
+                "rdp".to_string(),
+                "set-tls-key".to_string(),
+                key.to_string_lossy().to_string(),
+            ],
+            "gnome_config_failed",
+        )?;
+        run_checked(
+            grdctl,
+            &[
+                "rdp".to_string(),
+                "set-tls-cert".to_string(),
+                certificate.to_string_lossy().to_string(),
+            ],
+            "gnome_config_failed",
+        )?;
+        run_with_credentials(
+            grdctl,
+            &["rdp".to_string(), "set-credentials".to_string()],
+            &username,
+            password.as_str(),
+        )?;
+        run_checked(
+            grdctl,
+            &["rdp".to_string(), "disable-view-only".to_string()],
+            "gnome_config_failed",
+        )?;
+        run_checked(
+            grdctl,
+            &["rdp".to_string(), "enable".to_string()],
+            "gnome_config_failed",
+        )?;
+        run_checked(
+            systemctl,
+            &[
+                "--user".to_string(),
+                "enable".to_string(),
+                "--now".to_string(),
+                "gnome-remote-desktop.service".to_string(),
+            ],
+            "gnome_service_failed",
+        )
+    })();
+
+    if let Err(error) = configure_result {
+        stop_gnome_runtime(capabilities);
+        return Err(error);
+    }
+    if !wait_for_port(3389, Duration::from_secs(5)) {
+        stop_gnome_runtime(capabilities);
+        return Err("host_not_ready: GNOME RDP 主机未在五秒内就绪".to_string());
+    }
+
+    let address = local_ip();
+    let info = RdpHostInfo {
+        backend: RdpHostBackend::GnomeRemoteDesktop,
+        desktop_session: desktop_session.to_string(),
+        address: address.clone(),
+        port: 3389,
+        username: username.clone(),
+        password: password.to_string(),
+        tls: true,
+        nla: true,
+    };
+    let runtime = RdpHostRuntime {
+        backend: RdpHostBackend::GnomeRemoteDesktop,
+        address,
+        port: 3389,
+        _username: username,
+        _password: password,
+        child: None,
+        _session_dir: session_dir,
+        stderr_tail: Arc::new(Mutex::new(String::new())),
+        gnome_managed: true,
+    };
+    Ok((runtime, info))
+}
+
+fn stop_runtime(app: &tauri::AppHandle, mut runtime: RdpHostRuntime) {
+    if let Some(child) = runtime.child.as_mut() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    if runtime.gnome_managed {
+        stop_gnome_runtime(&current_capabilities(app));
+    }
+}
+
+#[tauri::command]
+pub fn start_rdp_host(app: tauri::AppHandle) -> Result<RdpHostInfo, String> {
+    let state = app.state::<RdpHostState>();
+    if let Some(runtime) = state.runtime.lock().unwrap().take() {
+        stop_runtime(&app, runtime);
+    }
+    *state.last_error.lock().unwrap() = None;
+
+    let capabilities = current_capabilities(&app);
+    let backend = capabilities.recommended_host.ok_or_else(|| {
+        let code = capabilities
+            .host_error_code
+            .clone()
+            .unwrap_or_else(|| "host_backend_missing".to_string());
+        format!("{code}: 当前环境没有可用的当前桌面 RDP 主机后端")
+    })?;
+    let result = match backend {
+        RdpHostBackend::FreeRdpShadow => {
+            start_shadow_runtime(&app, &capabilities, backend, &capabilities.desktop_session)
+        }
+        RdpHostBackend::GnomeRemoteDesktop => {
+            start_gnome_runtime(&app, &capabilities, &capabilities.desktop_session)
+        }
+    };
+
+    match result {
+        Ok((runtime, info)) => {
+            *state.runtime.lock().unwrap() = Some(runtime);
+            Ok(info)
+        }
+        Err(error) => {
+            let (code, message) = error
+                .split_once(':')
+                .map(|(code, message)| (code.trim().to_string(), message.trim().to_string()))
+                .unwrap_or_else(|| ("host_start_failed".to_string(), error.clone()));
+            *state.last_error.lock().unwrap() = Some((code, message));
+            Err(error)
+        }
+    }
+}
+
+#[tauri::command]
+pub fn stop_rdp_host(app: tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<RdpHostState>();
+    if let Some(runtime) = state.runtime.lock().unwrap().take() {
+        stop_runtime(&app, runtime);
+    }
+    *state.last_error.lock().unwrap() = None;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_rdp_host_status(app: tauri::AppHandle) -> RdpHostStatus {
+    let capabilities = current_capabilities(&app);
+    let state = app.state::<RdpHostState>();
+    let mut runtime_guard = state.runtime.lock().unwrap();
+
+    let unexpected_exit = runtime_guard.as_mut().and_then(|runtime| {
+        runtime
+            .child
+            .as_mut()
+            .and_then(|child| match child.try_wait() {
+                Ok(Some(status)) => Some((
+                    "host_exited".to_string(),
+                    format!(
+                        "RDP 主机已退出 ({status}) {}",
+                        redacted_tail(&runtime.stderr_tail)
+                    )
+                    .trim()
+                    .to_string(),
+                )),
+                Ok(None) => None,
+                Err(error) => Some((
+                    "host_status_failed".to_string(),
+                    format!("无法读取 RDP 主机状态: {error}"),
+                )),
+            })
+    });
+    if let Some(error) = unexpected_exit {
+        runtime_guard.take();
+        *state.last_error.lock().unwrap() = Some(error);
+    }
+
+    if let Some(runtime) = runtime_guard.as_ref() {
+        return RdpHostStatus {
+            running: true,
+            backend: Some(runtime.backend),
+            desktop_session: capabilities.desktop_session,
+            address: Some(runtime.address.clone()),
+            port: Some(runtime.port),
+            tls: true,
+            nla: true,
+            error_code: None,
+            error_message: None,
+        };
+    }
+
+    let error = state.last_error.lock().unwrap().clone();
+    RdpHostStatus {
+        running: false,
+        backend: None,
+        desktop_session: capabilities.desktop_session,
+        address: None,
+        port: None,
+        tls: false,
+        nla: false,
+        error_code: error.as_ref().map(|value| value.0.clone()),
+        error_message: error.map(|value| value.1),
+    }
+}
+
 #[tauri::command]
 pub fn get_rdp_capabilities(app: tauri::AppHandle) -> RdpCapabilities {
     current_capabilities(&app)
@@ -513,5 +1103,37 @@ mod tests {
         assert!(spec.args.contains(&"/v:10.0.0.8:3389".to_string()));
         assert!(spec.args.contains(&"/u:dev".to_string()));
         assert!(spec.args.iter().all(|arg| !arg.starts_with("/p:")));
+    }
+
+    #[test]
+    fn sam_entry_contains_nt_hash_and_not_plaintext_password() {
+        let entry = build_sam_entry("devlauncher", "Correct Horse Battery Staple!");
+        assert!(entry.starts_with("devlauncher:::"));
+        assert!(!entry.contains("Correct Horse"));
+        assert_eq!(entry.trim().split(':').nth(3).unwrap().len(), 32);
+    }
+
+    #[test]
+    fn generated_password_is_long_and_uses_multiple_character_classes() {
+        let password = generate_session_password();
+        assert_eq!(password.len(), 24);
+        assert!(password.chars().any(|value| value.is_ascii_uppercase()));
+        assert!(password.chars().any(|value| value.is_ascii_lowercase()));
+        assert!(password.chars().any(|value| value.is_ascii_digit()));
+        assert!(password.chars().any(|value| "!@#$%".contains(value)));
+    }
+
+    #[test]
+    fn shadow_spec_enables_nla_and_interaction() {
+        let spec = build_shadow_spec(
+            "freerdp-shadow-cli",
+            3391,
+            Path::new("/tmp/devlauncher-SAM"),
+        );
+        assert!(spec.args.contains(&"/sec:nla".to_string()));
+        assert!(spec
+            .args
+            .contains(&"/sam-file:/tmp/devlauncher-SAM".to_string()));
+        assert!(spec.args.contains(&"+may-interact".to_string()));
     }
 }

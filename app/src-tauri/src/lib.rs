@@ -141,6 +141,9 @@ pub fn run() {
             builtins::remotedesk::stop_ngrok,
             builtins::remotedesk::get_ngrok_status,
             builtins::remotedesk_rdp::get_rdp_capabilities,
+            builtins::remotedesk_rdp::start_rdp_host,
+            builtins::remotedesk_rdp::stop_rdp_host,
+            builtins::remotedesk_rdp::get_rdp_host_status,
             builtins::terminal::terminal_spawn,
             builtins::terminal::terminal_write,
             builtins::terminal::terminal_resize,
@@ -181,6 +184,7 @@ pub fn run() {
         .setup(|app| {
             utils::icon::setup(app);
             builtins::remotedesk::setup(app);
+            builtins::remotedesk_rdp::setup(app);
             builtins::terminal::setup(app);
             builtins::screenshot::setup(app);
             builtins::clipboard::setup(app);

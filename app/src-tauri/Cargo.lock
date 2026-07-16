@@ -69,6 +69,7 @@ dependencies = [
  "futures-util",
  "image 0.25.10",
  "keyring",
+ "md4",
  "objc2 0.6.4",
  "objc2-app-kit",
  "objc2-foundation",
@@ -87,10 +88,12 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "tokio-tungstenite",
  "ureq",
  "windows-sys 0.61.2",
+ "zeroize",
  "zip",
 ]
 
@@ -2596,6 +2599,15 @@ dependencies = [
  "log",
  "tendril",
  "web_atoms",
+]
+
+[[package]]
+name = "md4"
+version = "0.10.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7da5ac363534dce5fabf69949225e174fbf111a498bf0ff794c8ea1fba9f3dda"
+dependencies = [
+ "digest",
 ]
 
 [[package]]

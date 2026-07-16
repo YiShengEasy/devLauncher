@@ -320,7 +320,7 @@ fn shadow_spec_enables_nla_and_interaction() {
 Add to `Cargo.toml`:
 
 ```toml
-md-4 = "0.10"
+md4 = "0.10"
 tempfile = "3"
 zeroize = "1"
 ```
