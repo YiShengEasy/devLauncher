@@ -140,6 +140,7 @@ pub fn run() {
             builtins::remotedesk::start_ngrok,
             builtins::remotedesk::stop_ngrok,
             builtins::remotedesk::get_ngrok_status,
+            builtins::remotedesk_rdp::get_rdp_capabilities,
             builtins::terminal::terminal_spawn,
             builtins::terminal::terminal_write,
             builtins::terminal::terminal_resize,
