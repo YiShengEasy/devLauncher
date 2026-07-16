@@ -62,8 +62,12 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
         .get_webview_window("main")
         .ok_or_else(|| "window not found: main".to_string())?;
     let hwnd = win.hwnd().map_err(|error| error.to_string())?.0;
+    // Use Win32 IsWindowVisible/IsIconic directly – Tauri's is_visible() would
+    // return stale state here because we also show/hide via raw Win32, bypassing
+    // Tauri's internal cache.
     let visible = unsafe { IsWindowVisible(hwnd) != 0 };
     let minimized = unsafe { IsIconic(hwnd) != 0 };
+    eprintln!("[DBG] execute({:?}) visible={} minimized={}", action, visible, minimized);
     let show_pet_before_main =
         matches!(action, MainWindowAction::Toggle) && (!visible || minimized);
 
@@ -80,9 +84,27 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
             }
             crate::window_pinning::apply_window_pin_state(app, "main")?;
             unsafe {
+                use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+                use windows_sys::Win32::UI::WindowsAndMessaging::{
+                    GetForegroundWindow, GetWindowThreadProcessId,
+                };
+                // AttachThreadInput: temporarily join our thread's input queue to the
+                // current foreground thread's queue.  This grants us the foreground
+                // permission needed for SetForegroundWindow, even when we are a
+                // background process (i.e. no prior user interaction with our window).
+                let fg_hwnd = GetForegroundWindow();
+                let fg_tid = GetWindowThreadProcessId(fg_hwnd, std::ptr::null_mut());
+                let our_tid = GetCurrentThreadId();
+                let attached = fg_tid != 0 && fg_tid != our_tid;
+                if attached {
+                    AttachThreadInput(our_tid, fg_tid, 1);
+                }
                 ShowWindow(hwnd, if minimized { SW_RESTORE } else { SW_SHOW });
                 BringWindowToTop(hwnd);
                 SetForegroundWindow(hwnd);
+                if attached {
+                    AttachThreadInput(our_tid, fg_tid, 0);
+                }
             }
         }
         MainWindowAction::Hide => unsafe {
