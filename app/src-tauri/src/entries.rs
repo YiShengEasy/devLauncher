@@ -237,7 +237,7 @@ fn show_entry_mode_window(
     show_window(app, label)
 }
 
-fn show_pet_for_keyboard(app: &tauri::AppHandle) -> Result<(), String> {
+pub(crate) fn show_pet_for_keyboard(app: &tauri::AppHandle) -> Result<(), String> {
     show_window(app, "pet")
 }
 
@@ -317,12 +317,9 @@ pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 pub fn toggle_keyboard_window(app: tauri::AppHandle) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window("main") {
-        if win.is_visible().unwrap_or(false) {
-            set_pet_action(&app, "cozy");
-            return win.hide().map_err(|e| e.to_string());
-        }
-    }
-
-    show_keyboard_window(app, None)
+    set_pet_action(&app, "cozy");
+    crate::main_window_control::dispatch(
+        &app,
+        crate::main_window_control::MainWindowAction::Toggle,
+    )
 }

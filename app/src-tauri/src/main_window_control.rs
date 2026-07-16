@@ -60,6 +60,8 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
     let hwnd = win.hwnd().map_err(|error| error.to_string())?.0;
     let visible = unsafe { IsWindowVisible(hwnd) != 0 };
     let minimized = unsafe { IsIconic(hwnd) != 0 };
+    let show_pet_before_main =
+        matches!(action, MainWindowAction::Toggle) && (!visible || minimized);
 
     let resolved = match action {
         MainWindowAction::Toggle if visible && !minimized => MainWindowAction::Hide,
@@ -69,6 +71,9 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
 
     match resolved {
         MainWindowAction::Show => {
+            if show_pet_before_main {
+                crate::entries::show_pet_for_keyboard(app)?;
+            }
             crate::window_pinning::apply_window_pin_state(app, "main")?;
             unsafe {
                 ShowWindow(hwnd, if minimized { SW_RESTORE } else { SW_SHOW });
@@ -95,17 +100,14 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
         .ok_or_else(|| "window not found: main".to_string())?;
     let visible = win.is_visible().map_err(|error| error.to_string())?;
     let minimized = win.is_minimized().map_err(|error| error.to_string())?;
-    let resolved = match action {
-        MainWindowAction::Toggle if visible && !minimized => MainWindowAction::Hide,
-        MainWindowAction::Toggle => MainWindowAction::Show,
-        other => other,
-    };
-
-    match resolved {
+    match action {
+        MainWindowAction::Toggle if visible && !minimized => {
+            win.hide().map_err(|error| error.to_string())
+        }
+        MainWindowAction::Toggle => crate::entries::show_keyboard_window(app.clone(), None),
         MainWindowAction::Show => crate::entries::restore_main_window(app),
         MainWindowAction::Hide => win.hide().map_err(|error| error.to_string()),
         MainWindowAction::Minimize => win.minimize().map_err(|error| error.to_string()),
-        MainWindowAction::Toggle => unreachable!("toggle is resolved before execution"),
     }
 }
 

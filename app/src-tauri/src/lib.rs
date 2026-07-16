@@ -18,7 +18,7 @@ mod window_pinning;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager,
+    Emitter,
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
@@ -32,7 +32,10 @@ pub fn run() {
         .plugin(
             tauri_plugin_single_instance::Builder::new()
                 .callback(|app, _argv, _cwd| {
-                    let _ = entries::restore_main_window(app);
+                    let _ = main_window_control::dispatch(
+                        app,
+                        main_window_control::MainWindowAction::Show,
+                    );
                 })
                 .build(),
         )
@@ -197,10 +200,18 @@ pub fn run() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
-                        let _ = entries::restore_main_window(app);
+                        let _ = main_window_control::dispatch(
+                            app,
+                            main_window_control::MainWindowAction::Show,
+                        );
                     }
                     "settings" => {
-                        if entries::restore_main_window(app).is_ok() {
+                        if main_window_control::dispatch(
+                            app,
+                            main_window_control::MainWindowAction::Show,
+                        )
+                        .is_ok()
+                        {
                             let _ = app.emit("open-settings", ());
                         }
                     }
@@ -217,13 +228,10 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        if let Some(win) = app.get_webview_window("main") {
-                            if win.is_visible().unwrap_or(false) {
-                                let _ = win.hide();
-                            } else {
-                                let _ = entries::restore_main_window(app);
-                            }
-                        }
+                        let _ = main_window_control::dispatch(
+                            app,
+                            main_window_control::MainWindowAction::Toggle,
+                        );
                     }
                 })
                 .build(app)?;
@@ -235,7 +243,10 @@ pub fn run() {
         .run(|_app, event| match event {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
-                let _ = entries::restore_main_window(_app);
+                let _ = main_window_control::dispatch(
+                    _app,
+                    main_window_control::MainWindowAction::Show,
+                );
             }
             _ => {}
         });

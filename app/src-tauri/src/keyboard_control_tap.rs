@@ -138,11 +138,12 @@ mod windows {
     use std::time::{Duration, Instant};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetMessageW, SetWindowsHookExW, KBDLLHOOKSTRUCT, MSG, WH_KEYBOARD_LL,
-        WM_KEYDOWN, WM_KEYUP,
+        CallNextHookEx, GetMessageW, SetWindowsHookExW, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG,
+        WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
     };
 
-    const DOUBLE_CONTROL_WINDOW: Duration = Duration::from_millis(350);
+    const DOUBLE_CONTROL_WINDOW: Duration = Duration::from_millis(550);
+    const VK_CONTROL: u32 = 0x11;
     const VK_LCONTROL: u32 = 0xA2;
     const VK_RCONTROL: u32 = 0xA3;
 
@@ -150,15 +151,29 @@ mod windows {
     struct ControlTapState {
         last_tap: Option<Instant>,
         control_down: bool,
+        clean_control_press: bool,
     }
 
     impl ControlTapState {
-        fn register_control_press(&mut self, now: Instant) -> bool {
+        fn register_control_press(&mut self) {
             if self.control_down {
-                return false;
+                return;
             }
 
             self.control_down = true;
+            self.clean_control_press = true;
+        }
+
+        fn register_control_release(&mut self, now: Instant) -> bool {
+            if !self.control_down {
+                return false;
+            }
+
+            self.control_down = false;
+            if !self.clean_control_press {
+                return false;
+            }
+            self.clean_control_press = false;
             let is_double_tap = self
                 .last_tap
                 .map(|last| now.duration_since(last) <= DOUBLE_CONTROL_WINDOW)
@@ -167,12 +182,9 @@ mod windows {
             is_double_tap
         }
 
-        fn register_control_release(&mut self) {
-            self.control_down = false;
-        }
-
         fn cancel_pending_tap(&mut self) {
             self.last_tap = None;
+            self.clean_control_press = false;
         }
     }
 
@@ -181,24 +193,27 @@ mod windows {
     static HOOK_INSTALL_STARTED: AtomicBool = AtomicBool::new(false);
 
     fn is_control_key(vk_code: u32) -> bool {
-        vk_code == VK_LCONTROL || vk_code == VK_RCONTROL
+        vk_code == VK_CONTROL || vk_code == VK_LCONTROL || vk_code == VK_RCONTROL
     }
 
     unsafe extern "system" fn keyboard_hook(code: i32, w_param: usize, l_param: isize) -> isize {
         if code >= 0 {
             let event = unsafe { &*(l_param as *const KBDLLHOOKSTRUCT) };
+            if event.flags & LLKHF_INJECTED != 0 {
+                return unsafe { CallNextHookEx(null_mut(), code, w_param, l_param) };
+            }
             let state = CONTROL_TAP_STATE.get_or_init(|| Mutex::new(ControlTapState::default()));
 
             if let Ok(mut state) = state.lock() {
                 if is_control_key(event.vkCode) {
                     if w_param as u32 == WM_KEYDOWN {
-                        if state.register_control_press(Instant::now()) {
+                        state.register_control_press();
+                    } else if w_param as u32 == WM_KEYUP {
+                        if state.register_control_release(Instant::now()) {
                             if let Some(app) = APP_HANDLE.get() {
                                 let _ = entries::toggle_keyboard_window(app.clone());
                             }
                         }
-                    } else if w_param as u32 == WM_KEYUP {
-                        state.register_control_release();
                     }
                 } else if w_param as u32 == WM_KEYDOWN {
                     state.cancel_pending_tap();
