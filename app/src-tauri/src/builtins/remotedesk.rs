@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
+use crate::builtins::remotedesk_rdp::{self, RdpClientKind, RdpLaunchResult};
 use crate::window_pinning;
 
 // -----------------------------------------------
@@ -21,6 +22,8 @@ pub struct RemoteDeskProfile {
     pub host: String,
     pub port: u16,
     pub username: String,
+    #[serde(default)]
+    pub client_mode: RdpClientKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub has_password: Option<bool>,
 }
@@ -228,14 +231,7 @@ pub fn delete_remotedesk_password(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn launch_rdp(app: tauri::AppHandle, id: String) -> Result<(), String> {
-    if !cfg!(target_os = "windows") {
-        return Err(
-            "RDP/mstsc 暂不支持 macOS；可以先使用远程桌面的 Host/Connect 能力或系统自带远程工具。"
-                .to_string(),
-        );
-    }
-
+pub fn launch_rdp(app: tauri::AppHandle, id: String) -> Result<RdpLaunchResult, String> {
     let profiles = load_remotedesk_profiles(app.clone())?;
     let profile = profiles
         .iter()
@@ -243,28 +239,15 @@ pub fn launch_rdp(app: tauri::AppHandle, id: String) -> Result<(), String> {
         .ok_or_else(|| format!("Profile '{}' not found", id))?
         .clone();
 
-    let host_port = format!("{}:{}", profile.host, profile.port);
-
-    if profile.has_password.unwrap_or(false) {
+    let password = if profile.has_password.unwrap_or(false) {
         let entry =
             keyring::Entry::new("devlauncher-remotedesk", &id).map_err(|e| e.to_string())?;
-        if let Ok(password) = entry.get_password() {
-            let _ = std::process::Command::new("cmdkey")
-                .args([
-                    &format!("/add:{}", host_port),
-                    &format!("/user:{}", profile.username),
-                    &format!("/pass:{}", password),
-                ])
-                .output();
-        }
-    }
+        entry.get_password().ok()
+    } else {
+        None
+    };
 
-    std::process::Command::new("mstsc")
-        .arg(format!("/v:{}", host_port))
-        .spawn()
-        .map_err(|e| e.to_string())?;
-
-    Ok(())
+    remotedesk_rdp::launch_profile(&app, &profile, password.as_deref())
 }
 
 #[tauri::command]

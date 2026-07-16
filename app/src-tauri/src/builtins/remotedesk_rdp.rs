@@ -2,7 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
 use tauri::Manager;
+
+use crate::builtins::remotedesk::RemoteDeskProfile;
 
 const CLIENT_EXECUTABLES: &[&str] = &[
     "mstsc.exe",
@@ -123,6 +127,19 @@ pub struct RdpCapabilities {
     pub recommended_host: Option<RdpHostBackend>,
     pub host_error_code: Option<String>,
     pub executables: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RdpLaunchResult {
+    pub client: RdpClientKind,
+    pub executable: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandSpec {
+    executable: String,
+    args: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -280,6 +297,123 @@ pub(crate) fn current_capabilities(app: &tauri::AppHandle) -> RdpCapabilities {
     capabilities
 }
 
+fn endpoint(profile: &RemoteDeskProfile) -> String {
+    format!("{}:{}", profile.host.trim(), profile.port)
+}
+
+fn build_client_spec(
+    profile: &RemoteDeskProfile,
+    client: RdpClientKind,
+    executable: &str,
+) -> Result<CommandSpec, String> {
+    if profile.host.trim().is_empty() {
+        return Err("rdp_host_required: 请输入主机地址".to_string());
+    }
+
+    let destination = endpoint(profile);
+    let args = match client {
+        RdpClientKind::System => vec![format!("/v:{destination}")],
+        RdpClientKind::FreeRdp => {
+            let mut args = vec![format!("/v:{destination}")];
+            if !profile.username.trim().is_empty() {
+                args.push(format!("/u:{}", profile.username.trim()));
+            }
+            args
+        }
+        RdpClientKind::Auto => return Err("rdp_client_unresolved: RDP 客户端尚未解析".to_string()),
+    };
+
+    Ok(CommandSpec {
+        executable: executable.to_string(),
+        args,
+    })
+}
+
+fn resolved_executable<'a>(
+    capabilities: &'a RdpCapabilities,
+    kind: RdpClientKind,
+) -> Option<&'a str> {
+    let names: &[&str] = match kind {
+        RdpClientKind::System => &["mstsc.exe", "mstsc"],
+        RdpClientKind::FreeRdp => &[
+            "sdl-freerdp",
+            "xfreerdp3",
+            "xfreerdp",
+            "wfreerdp.exe",
+            "wfreerdp",
+        ],
+        RdpClientKind::Auto => &[],
+    };
+    names
+        .iter()
+        .find_map(|name| capabilities.executables.get(*name).map(String::as_str))
+}
+
+fn resolve_client(
+    profile: &RemoteDeskProfile,
+    capabilities: &RdpCapabilities,
+) -> Result<RdpClientKind, String> {
+    let kind = match profile.client_mode {
+        RdpClientKind::Auto => capabilities.recommended_client,
+        selected => Some(selected),
+    }
+    .ok_or_else(|| "rdp_client_missing: 未找到可用的 RDP 客户端".to_string())?;
+
+    if resolved_executable(capabilities, kind).is_none() {
+        return Err(match kind {
+            RdpClientKind::System => "rdp_system_client_missing: 未找到系统 RDP 客户端".to_string(),
+            _ => "rdp_client_missing: 未找到 FreeRDP 客户端".to_string(),
+        });
+    }
+    Ok(kind)
+}
+
+pub(crate) fn launch_profile(
+    app: &tauri::AppHandle,
+    profile: &RemoteDeskProfile,
+    password: Option<&str>,
+) -> Result<RdpLaunchResult, String> {
+    let capabilities = current_capabilities(app);
+    let client = resolve_client(profile, &capabilities)?;
+    let executable = resolved_executable(&capabilities, client)
+        .ok_or_else(|| "rdp_client_missing: 未找到可用的 RDP 客户端".to_string())?;
+    let spec = build_client_spec(profile, client, executable)?;
+
+    if client == RdpClientKind::System && cfg!(target_os = "windows") {
+        if let Some(password) = password {
+            let target = format!("TERMSRV/{}", profile.host.trim());
+            let result = Command::new("cmdkey")
+                .args([
+                    format!("/generic:{target}"),
+                    format!("/user:{}", profile.username.trim()),
+                    format!("/pass:{password}"),
+                ])
+                .status()
+                .map_err(|error| format!("rdp_credential_error: {error}"))?;
+            if !result.success() {
+                return Err("rdp_credential_error: 无法写入 Windows 凭据".to_string());
+            }
+
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(8));
+                let _ = Command::new("cmdkey")
+                    .arg(format!("/delete:{target}"))
+                    .status();
+            });
+        }
+    }
+
+    Command::new(&spec.executable)
+        .args(&spec.args)
+        .spawn()
+        .map_err(|error| format!("rdp_launch_failed: {error}"))?;
+
+    Ok(RdpLaunchResult {
+        client,
+        executable: spec.executable,
+    })
+}
+
 #[tauri::command]
 pub fn get_rdp_capabilities(app: tauri::AppHandle) -> RdpCapabilities {
     current_capabilities(&app)
@@ -348,5 +482,36 @@ mod tests {
             result.host_error_code.as_deref(),
             Some("macos_host_phase_2")
         );
+    }
+
+    fn fixture_profile(client_mode: RdpClientKind) -> RemoteDeskProfile {
+        RemoteDeskProfile {
+            id: "one".to_string(),
+            name: "Lab".to_string(),
+            host: "10.0.0.8".to_string(),
+            port: 3389,
+            username: "dev".to_string(),
+            client_mode,
+            has_password: Some(true),
+        }
+    }
+
+    #[test]
+    fn old_profile_defaults_to_auto_client() {
+        let profile: RemoteDeskProfile = serde_json::from_str(
+            r#"{"id":"one","name":"Lab","host":"10.0.0.8","port":3389,"username":"dev"}"#,
+        )
+        .unwrap();
+        assert_eq!(profile.client_mode, RdpClientKind::Auto);
+    }
+
+    #[test]
+    fn freerdp_launch_spec_contains_endpoint_and_username_but_not_password() {
+        let profile = fixture_profile(RdpClientKind::FreeRdp);
+        let spec =
+            build_client_spec(&profile, RdpClientKind::FreeRdp, "/usr/bin/sdl-freerdp").unwrap();
+        assert!(spec.args.contains(&"/v:10.0.0.8:3389".to_string()));
+        assert!(spec.args.contains(&"/u:dev".to_string()));
+        assert!(spec.args.iter().all(|arg| !arg.starts_with("/p:")));
     }
 }
