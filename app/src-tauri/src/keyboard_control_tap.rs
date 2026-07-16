@@ -131,7 +131,7 @@ pub use macos::setup;
 
 #[cfg(target_os = "windows")]
 mod windows {
-    use crate::entries;
+    use crate::main_window_control::{self, MainWindowAction};
     use std::ptr::null_mut;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock};
@@ -204,19 +204,29 @@ mod windows {
             }
             let state = CONTROL_TAP_STATE.get_or_init(|| Mutex::new(ControlTapState::default()));
 
-            if let Ok(mut state) = state.lock() {
+            let should_toggle = if let Ok(mut state) = state.lock() {
                 if is_control_key(event.vkCode) {
                     if w_param as u32 == WM_KEYDOWN {
                         state.register_control_press();
+                        false
                     } else if w_param as u32 == WM_KEYUP {
-                        if state.register_control_release(Instant::now()) {
-                            if let Some(app) = APP_HANDLE.get() {
-                                let _ = entries::toggle_keyboard_window(app.clone());
-                            }
-                        }
+                        state.register_control_release(Instant::now())
+                    } else {
+                        false
                     }
                 } else if w_param as u32 == WM_KEYDOWN {
                     state.cancel_pending_tap();
+                    false
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+
+            if should_toggle {
+                if let Some(app) = APP_HANDLE.get() {
+                    let _ = main_window_control::dispatch(app, MainWindowAction::Toggle);
                 }
             }
         }
