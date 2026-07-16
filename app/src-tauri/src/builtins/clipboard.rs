@@ -340,13 +340,39 @@ pub fn set_clipboard_image(
     if suppress_history.unwrap_or(false) {
         *state.suppressed_image_fp.lock().unwrap() = Some(image_fingerprint(width, height, &raw));
     }
+    set_clipboard_image_data(width, height, raw)
+}
+
+#[cfg(target_os = "windows")]
+fn set_clipboard_image_data(width: usize, height: usize, raw: Vec<u8>) -> Result<(), String> {
+    let mut last_error = None;
+    for _ in 0..5 {
+        match arboard::Clipboard::new().and_then(|mut clipboard| {
+            clipboard.set_image(arboard::ImageData {
+                width,
+                height,
+                bytes: raw.clone().into(),
+            })
+        }) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                last_error = Some(error.to_string());
+                std::thread::sleep(std::time::Duration::from_millis(40));
+            }
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "clipboard image write failed".to_string()))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_clipboard_image_data(width: usize, height: usize, raw: Vec<u8>) -> Result<(), String> {
     let image_data = arboard::ImageData {
         width,
         height,
         bytes: raw.into(),
     };
-    let mut cb = arboard::Clipboard::new().map_err(|e| e.to_string())?;
-    cb.set_image(image_data).map_err(|e| e.to_string())
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    clipboard.set_image(image_data).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

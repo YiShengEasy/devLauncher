@@ -6,7 +6,6 @@ import { KeyCell } from "./KeyCell";
 import { ActionIcon } from "./ActionIcon";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { saveConfig } from "@/api/config";
-import { isMacPlatform } from "@/platform/shortcuts";
 
 interface KeyboardPanelProps {
   keys: KeyMap;
@@ -181,16 +180,6 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
           ))}
         </div>
       ))}
-      {!isMacPlatform() && (
-        <div style={{
-          marginTop: 4,
-          color: "rgba(255,255,255,0.5)",
-          fontSize: 11,
-          letterSpacing: "0.02em",
-        }}>
-          双击 Ctrl 唤起键盘 · Alt + 字母/数字执行绑定
-        </div>
-      )}
       {renderDragGhost()}
     </div>
   );
