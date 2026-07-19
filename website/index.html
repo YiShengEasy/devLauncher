@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="DevLauncher 通过可绑定的虚拟键盘、桌面宠物入口、内置工具和插件生态，把开发者的高频桌面动作沉淀成本地优先的工作流。"
+      content="DevLauncher 通过可绑定的虚拟键盘、截图与 OCR、工作流编排、桌面宠物入口和插件生态，把开发者的高频桌面动作沉淀成本地优先的工作流。"
     />
     <meta name="theme-color" content="#030712" />
     <title>DevLauncher - 可绑定的桌面虚拟键盘</title>
     <link rel="icon" href="./public/devlauncher-icon.png?v=2026071601" />
-    <link rel="stylesheet" href="./src/styles.css?v=2026071603" />
+    <link rel="stylesheet" href="./src/styles.css?v=2026071901" />
   </head>
   <body>
     <div class="background" aria-hidden="true">
@@ -35,9 +35,10 @@
         </a>
         <nav class="nav-links" aria-label="主导航">
           <a href="#keyboard">虚拟键盘</a>
-          <a href="#features">特性</a>
+          <a href="#screenshot">截图</a>
+          <a href="#workflow">工作流</a>
           <a href="#ecosystem">插件</a>
-          <a href="https://github.com/YiShengEasy/devLauncher/blob/main/README.md">文档</a>
+          <a href="./docs/DevLauncher产品说明书-v0.2.0.docx" download>产品说明书</a>
           <a href="https://github.com/YiShengEasy/devLauncher">GitHub</a>
         </nav>
         <a class="download-mini" href="https://github.com/YiShengEasy/devLauncher/releases">Releases</a>
@@ -83,7 +84,12 @@
                   <button class="launcher-search-button" type="button"><span class="icon search-icon"></span>搜索</button>
                   <button class="launcher-icon-button" type="button">⚙</button>
                   <i></i>
-                  <button class="launcher-sync-button" type="button">📡</button>
+                  <button class="launcher-pin-button" type="button" aria-label="置顶" title="置顶">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M8 4h8l-1 5 4 4v2H5v-2l4-4L8 4z"></path>
+                      <path d="M12 15v6"></path>
+                    </svg>
+                  </button>
                   <div class="launcher-window-controls"><span></span><span></span></div>
                 </div>
               </div>
@@ -147,10 +153,158 @@
         </div>
       </section>
 
+      <section id="screenshot" class="product-showcase-section screenshot-showcase">
+        <div class="product-showcase-inner">
+          <div class="product-showcase-copy" data-reveal>
+            <div class="showcase-kicker"><span>CAPTURE</span> 截图</div>
+            <h2>从屏幕素材到<br /><strong>可直接发布的产品画面</strong></h2>
+            <p>
+              保留当前桌面上下文，框选重点区域，加入标注与说明；也可以直接识别文字、系统翻译、复制或保存图片。
+            </p>
+            <div class="showcase-step-list" role="tablist" aria-label="截图演示步骤">
+              <button class="showcase-step is-active" type="button" data-screenshot-step="0" role="tab" aria-selected="true">
+                <span>01</span><strong>框选画面</strong><small>保留桌面原始状态</small>
+              </button>
+              <button class="showcase-step" type="button" data-screenshot-step="1" role="tab" aria-selected="false">
+                <span>02</span><strong>标注重点</strong><small>编号、文字与局部强调</small>
+              </button>
+              <button class="showcase-step" type="button" data-screenshot-step="2" role="tab" aria-selected="false">
+                <span>03</span><strong>识别文字</strong><small>拖选、复制与系统翻译</small>
+              </button>
+            </div>
+          </div>
+
+          <div class="product-showcase-visual screenshot-demo" id="screenshotDemo" data-demo-step="0" data-reveal>
+            <div class="showcase-window">
+              <div class="showcase-window-bar">
+                <div class="showcase-window-title"><span class="window-product-icon">▧</span><strong>截图</strong><small>Capture Studio</small></div>
+                <div class="showcase-window-status"><i></i><span id="screenshotStatus">正在框选区域</span></div>
+              </div>
+              <div class="screenshot-workspace">
+                <div class="capture-surface">
+                  <div class="mock-product-header">
+                    <span></span><span></span><span></span>
+                    <div>localhost / dashboard</div>
+                  </div>
+                  <div class="mock-product-body">
+                    <aside>
+                      <i></i><i></i><i></i><i></i>
+                    </aside>
+                    <div class="mock-product-content">
+                      <div class="mock-heading-line"></div>
+                      <div class="mock-copy-line"></div>
+                      <div class="mock-metric-grid"><i></i><i></i><i></i></div>
+                      <div class="mock-chart">
+                        <span style="--height: 34%"></span><span style="--height: 58%"></span><span style="--height: 45%"></span>
+                        <span style="--height: 76%"></span><span style="--height: 68%"></span><span style="--height: 88%"></span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="capture-dim"></div>
+                  <div class="capture-selection">
+                    <span class="selection-size">1240 × 760</span>
+                    <i class="handle top-left"></i><i class="handle top-right"></i>
+                    <i class="handle bottom-left"></i><i class="handle bottom-right"></i>
+                    <div class="capture-scanline"></div>
+                  </div>
+                  <div class="annotation annotation-one"><b>1</b><span>关键指标</span></div>
+                  <div class="annotation annotation-two"><b>2</b><span>趋势变化</span></div>
+                  <div class="capture-toolbar">
+                    <button type="button" aria-label="矩形标注">□</button>
+                    <button type="button" aria-label="箭头标注">↗</button>
+                    <button type="button" aria-label="文字标注">T</button>
+                    <i></i>
+                    <button class="toolbar-confirm" type="button" aria-label="完成截图">✓</button>
+                  </div>
+                </div>
+                <aside class="capture-report">
+                  <div class="report-heading">
+                    <span>OCR</span>
+                    <div><strong>文字识别</strong><small>已识别 6 行文字</small></div>
+                  </div>
+                  <div class="report-field"><small>识别语言</small><strong>简体中文 + English</strong></div>
+                  <div class="report-lines"><i></i><i></i><i></i><i></i></div>
+                  <div class="report-output">
+                    <span>Selected text</span>
+                    <p>DevLauncher Dashboard<br />运行状态与趋势变化</p>
+                  </div>
+                  <button type="button">复制文字 <span>⌘C</span></button>
+                </aside>
+              </div>
+              <div class="showcase-progress" aria-hidden="true"><span></span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="workflow" class="product-showcase-section workflow-product-showcase">
+        <div class="product-showcase-inner is-reversed">
+          <div class="product-showcase-visual workflow-demo" id="workflowDemo" data-reveal>
+            <div class="showcase-window">
+              <div class="showcase-window-bar">
+                <div class="showcase-window-title"><span class="window-product-icon workflow-icon">⌘</span><strong>工作流编排器</strong><small>Release Pipeline</small></div>
+                <div class="showcase-window-status workflow-run-status"><i></i><span id="workflowStatus">准备执行</span></div>
+              </div>
+              <div class="workflow-workspace">
+                <div class="workflow-canvas">
+                  <div class="workflow-canvas-heading">
+                    <div><small>工作流</small><strong>发布 DevLauncher</strong></div>
+                    <button type="button"><span>▶</span> 运行</button>
+                  </div>
+                  <div class="workflow-pipeline" id="workflowPipeline">
+                    <div class="workflow-track"><span></span></div>
+                    <article class="workflow-node is-active" data-workflow-node="0">
+                      <b>01</b><span class="node-icon">▻</span><div><strong>测试与前端构建</strong><small>npm run test && npm run build</small></div><em>运行中</em>
+                    </article>
+                    <article class="workflow-node" data-workflow-node="1">
+                      <b>02</b><span class="node-icon">◇</span><div><strong>生成 macOS DMG</strong><small>签名并打包 Apple Silicon 版本</small></div><em>等待</em>
+                    </article>
+                    <article class="workflow-node" data-workflow-node="2">
+                      <b>03</b><span class="node-icon">◆</span><div><strong>人工确认发布</strong><small>确认版本说明与产物</small></div><em>等待</em>
+                    </article>
+                    <article class="workflow-node" data-workflow-node="3">
+                      <b>04</b><span class="node-icon">◎</span><div><strong>部署官网并检查</strong><small>发布静态站点并运行健康检查</small></div><em>等待</em>
+                    </article>
+                  </div>
+                </div>
+                <aside class="workflow-console">
+                  <div class="console-heading"><span></span><strong>运行日志</strong><small id="workflowCounter">1 / 4</small></div>
+                  <div class="console-summary">
+                    <small>本次运行</small>
+                    <strong id="workflowSummary">正在执行测试与前端构建</strong>
+                  </div>
+                  <div class="console-lines" id="workflowConsoleLines">
+                    <p data-console-line="0"><b>$</b> npm run test</p>
+                    <p data-console-line="1"><b>✓</b> 92 tests passed</p>
+                    <p data-console-line="2"><b>✓</b> DevLauncher_0.2.0_aarch64.dmg</p>
+                    <p data-console-line="3"><b>?</b> 等待人工确认</p>
+                  </div>
+                  <div class="console-health"><i></i><span>本地执行 · 凭据留在系统钥匙串</span></div>
+                </aside>
+              </div>
+              <div class="showcase-progress workflow-progress" aria-hidden="true"><span></span></div>
+            </div>
+          </div>
+
+          <div class="product-showcase-copy" data-reveal>
+            <div class="showcase-kicker workflow-kicker"><span>FLOW</span> 工作流编排</div>
+            <h2>把重复操作变成<br /><strong>可观察的执行流程</strong></h2>
+            <p>
+              串联脚本、应用、内置工具和人工确认。每一步都有状态、输出与失败策略，发布和巡检不再依赖临时记忆。
+            </p>
+            <div class="workflow-benefits" aria-label="工作流能力">
+              <div><span>01</span><p><strong>多类型动作</strong><small>脚本、系统、内置工具与插件</small></p></div>
+              <div><span>02</span><p><strong>失败策略</strong><small>停止、继续或等待人工处理</small></p></div>
+              <div><span>03</span><p><strong>实时状态</strong><small>逐步骤日志与桌面宠物联动</small></p></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="workflow-section">
         <div class="section-heading centered">
-          <h2>极速连贯的核心工作流</h2>
-          <p>从入口、动作到插件沉淀，都围绕 DevLauncher 现有桌面能力展开。</p>
+          <h2>从入口到沉淀，形成一条动作链</h2>
+          <p>入口、工具与自动化彼此衔接，把桌面高频操作逐步固化为自己的工作方式。</p>
         </div>
         <div class="workflow-grid">
           <div class="workflow-line"><span></span></div>
@@ -189,7 +343,8 @@
         <div class="feature-grid">
           <article><span>♟</span><h3>桌面宠物入口</h3><p>支持点击展开、固定层级、自定义菜单，以及 Codex 状态联动。</p></article>
           <article><span>▤</span><h3>剪切板历史</h3><p>打开历史记录窗口，搜索复制内容并一键粘贴。</p></article>
-          <article><span>⌗</span><h3>截图与问题报告</h3><p>全屏截图、区域选择、标注，并把截图整理成 AI Prompt 问题报告。</p></article>
+          <article><span>⌗</span><h3>截图与 OCR</h3><p>区域截图、重点标注、取色、保存与固定，并用系统 OCR 拖选、复制或翻译文字。</p></article>
+          <article><span>⌘</span><h3>工作流编排器</h3><p>串联脚本、应用与人工确认，查看逐步骤状态、输出和失败原因。</p></article>
           <article><span>{ }</span><h3>JSON 助手</h3><p>格式化、转义/去转义 JSON，并生成 OpenAI 文档片段。</p></article>
           <article><span>MEM</span><h3>快捷记忆</h3><p>沉淀开发常用命令与快捷键，作为本地速查面板使用。</p></article>
           <article><span>▰</span><h3>终端与 SSH</h3><p>内置终端窗口，支持命令执行与 SSH 会话。</p></article>
@@ -237,7 +392,7 @@
           <article><span>▱</span><h3>启动项目环境</h3><p>通过虚拟键盘绑定文件夹、URL、App 或脚本，一次打开项目相关入口。</p></article>
           <article><span>⌕</span><h3>找回复制记录</h3><p>呼出剪切板历史，搜索刚复制过的报错、命令或链接，回车直接粘贴。</p></article>
           <article><span>⚡</span><h3>快速调试 API</h3><p>打开 API Lab，管理环境和集合，复用历史请求并查看响应。</p></article>
-          <article><span>✕</span><h3>整理截图问题</h3><p>先截图和标注，再用截图问题报告窗口整理上下文，生成可复制的 AI Prompt。</p></article>
+          <article><span>✕</span><h3>提取截图文字</h3><p>截取任意区域后运行 OCR，直接拖选文字、复制内容，或调用系统能力进行中英文翻译。</p></article>
           <article><span>▰</span><h3>终端与远程连接</h3><p>打开内置终端执行本地命令，或进入 SSH、RDP、P2P 屏幕共享相关工作流。</p></article>
           <article><span>{ }</span><h3>处理临时文本</h3><p>用 JSON 助手和 Developer Toolkit 处理格式化、编码、哈希、时间戳和正则。</p></article>
         </div>
@@ -276,6 +431,6 @@
       </a>
     </footer>
 
-    <script src="./src/main.js?v=2026071603"></script>
+    <script src="./src/main.js?v=2026071901"></script>
   </body>
 </html>

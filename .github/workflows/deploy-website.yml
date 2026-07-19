@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "website/**"
+      - "docs/DevLauncher产品说明书-v0.2.0.docx"
       - ".github/workflows/deploy-website.yml"
   workflow_dispatch:
 

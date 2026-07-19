@@ -8,7 +8,7 @@ const keyRows = [
 const bindings = {
   1: { name: "飞书", type: "app", icon: "云", color: "#fbbf24", tile: true },
   3: { name: "安全检查", type: "system", icon: "♢", color: "#34d399" },
-  5: { name: "截图报告", type: "builtin", icon: "▧", color: "#f59e0b" },
+  5: { name: "截图 OCR", type: "builtin", icon: "▧", color: "#f59e0b" },
   8: { name: "DevDocs", type: "url", icon: "D", color: "#dffcf2" },
   0: { name: "系统工具", type: "system", icon: "☼", color: "#f97316" },
   Q: { name: "网站", type: "url", icon: "◎", color: "#22d3ee" },
@@ -50,6 +50,7 @@ const keyboardBoard = document.querySelector("#keyboardBoard");
 const keyboardInspector = document.querySelector("#keyboardInspector");
 const actionTypeExplorer = document.querySelector("#actionTypeExplorer");
 const year = document.querySelector("#year");
+const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 if (year) {
   year.textContent = String(new Date().getFullYear());
@@ -171,6 +172,157 @@ function tickTyping() {
 
   if (typedText) typedText.textContent = text;
   window.setTimeout(tickTyping, isDeleting ? 34 : 82);
+}
+
+function restartDemoProgress(root) {
+  const progress = root?.querySelector(".showcase-progress");
+  if (!progress || reducedMotionQuery.matches) return;
+  progress.classList.remove("is-running");
+  void progress.offsetWidth;
+  progress.classList.add("is-running");
+}
+
+function createAutoDemo({ root, count, duration, render }) {
+  if (!root) return { select: () => {} };
+
+  let index = 0;
+  let timer = null;
+  let paused = false;
+
+  const stop = () => {
+    if (timer !== null) window.clearTimeout(timer);
+    timer = null;
+  };
+
+  const schedule = () => {
+    stop();
+    restartDemoProgress(root);
+    if (paused || reducedMotionQuery.matches) return;
+    timer = window.setTimeout(() => {
+      index = (index + 1) % count;
+      render(index);
+      schedule();
+    }, duration);
+  };
+
+  const select = (nextIndex) => {
+    index = Math.max(0, Math.min(count - 1, nextIndex));
+    render(index);
+    schedule();
+  };
+
+  root.addEventListener("mouseenter", () => {
+    paused = true;
+    stop();
+  });
+  root.addEventListener("mouseleave", () => {
+    paused = false;
+    schedule();
+  });
+  root.addEventListener("focusin", () => {
+    paused = true;
+    stop();
+  });
+  root.addEventListener("focusout", () => {
+    paused = false;
+    schedule();
+  });
+
+  render(index);
+  schedule();
+  return { select, schedule, stop };
+}
+
+const screenshotDemo = document.querySelector("#screenshotDemo");
+const screenshotStatus = document.querySelector("#screenshotStatus");
+const screenshotStepButtons = [...document.querySelectorAll("[data-screenshot-step]")];
+const screenshotStageLabels = [
+  "正在框选区域",
+  "标注工具已就绪",
+  "OCR 已识别 6 行文字",
+];
+
+const screenshotController = createAutoDemo({
+  root: screenshotDemo,
+  count: screenshotStageLabels.length,
+  duration: 3800,
+  render(index) {
+    if (screenshotDemo) screenshotDemo.dataset.demoStep = String(index);
+    if (screenshotStatus) screenshotStatus.textContent = screenshotStageLabels[index];
+    screenshotStepButtons.forEach((button, buttonIndex) => {
+      const active = buttonIndex === index;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", String(active));
+    });
+  },
+});
+
+screenshotStepButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    screenshotController.select(Number(button.dataset.screenshotStep ?? 0));
+  });
+});
+
+const workflowDemo = document.querySelector("#workflowDemo");
+const workflowStatus = document.querySelector("#workflowStatus");
+const workflowSummary = document.querySelector("#workflowSummary");
+const workflowCounter = document.querySelector("#workflowCounter");
+const workflowNodes = [...document.querySelectorAll("[data-workflow-node]")];
+const workflowConsoleLines = [...document.querySelectorAll("[data-console-line]")];
+const workflowTrack = document.querySelector(".workflow-track span");
+const workflowStages = [
+  { status: "执行 1 / 4", summary: "正在执行测试与前端构建" },
+  { status: "执行 2 / 4", summary: "正在生成并签名 macOS DMG" },
+  { status: "等待确认", summary: "构建完成，等待人工确认发布" },
+  { status: "执行 4 / 4", summary: "正在部署官网并运行健康检查" },
+];
+
+createAutoDemo({
+  root: workflowDemo,
+  count: workflowStages.length,
+  duration: 3800,
+  render(index) {
+    const stage = workflowStages[index];
+    if (workflowStatus) workflowStatus.textContent = stage.status;
+    if (workflowSummary) workflowSummary.textContent = stage.summary;
+    if (workflowCounter) workflowCounter.textContent = `${index + 1} / ${workflowStages.length}`;
+    if (workflowTrack) {
+      workflowTrack.style.height = `${(index / (workflowStages.length - 1)) * 100}%`;
+    }
+
+    workflowNodes.forEach((node, nodeIndex) => {
+      const state = nodeIndex < index ? "done" : nodeIndex === index ? "active" : "waiting";
+      node.classList.toggle("is-done", state === "done");
+      node.classList.toggle("is-active", state === "active");
+      const stateLabel = node.querySelector("em");
+      if (stateLabel) {
+        stateLabel.textContent = state === "done"
+          ? "完成"
+          : state === "active"
+            ? (index === 2 ? "待确认" : "运行中")
+            : "等待";
+      }
+    });
+
+    workflowConsoleLines.forEach((line, lineIndex) => {
+      line.classList.toggle("is-visible", lineIndex <= index);
+      line.classList.toggle("is-current", lineIndex === index);
+    });
+  },
+});
+
+const revealTargets = document.querySelectorAll("[data-reveal]");
+if ("IntersectionObserver" in window && !reducedMotionQuery.matches) {
+  const revealObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-visible");
+      observer.unobserve(entry.target);
+    });
+  }, { threshold: 0.16 });
+  revealTargets.forEach((target) => revealObserver.observe(target));
+} else {
+  revealTargets.forEach((target) => target.classList.add("is-visible"));
 }
 
 renderDemo();
