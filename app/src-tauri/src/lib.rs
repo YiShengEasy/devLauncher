@@ -155,6 +155,7 @@ pub fn run() {
             builtins::remotedesk_rdp::stop_rdp_host,
             builtins::remotedesk_rdp::get_rdp_host_status,
             builtins::terminal::terminal_spawn,
+            builtins::terminal::terminal_snapshot,
             builtins::terminal::terminal_write,
             builtins::terminal::terminal_resize,
             builtins::terminal::terminal_kill,

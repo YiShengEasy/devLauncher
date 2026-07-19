@@ -98,7 +98,7 @@ const PREVIEW_CONFIG: KeyboardConfig = {
             type: "script",
             name: "发布 GitHub Release",
             shell: "terminal",
-            content: "git push origin main && gh release create/upload",
+            content: "scripts/publish-github-release.sh",
           },
           condition: { type: "previous_success" },
           completion: { type: "process_exit", successCodes: [0], timeoutMs: 600_000 },

@@ -22,6 +22,10 @@ Release boundary: Workflow Automation MVP
   policy, cancellation, and manual confirmation.
 - Completion adapters for action return, launch stabilization, managed script
   exit, TCP port readiness, timer, and manual confirmation.
+- All workflow scripts execute in a managed PTY without opening the standalone
+  terminal window.
+- Ordered terminal output supports live streaming, retained snapshots, late
+  subscription replay, complete copyable logs, and bounded final summaries.
 - A dependency-free local MCP server and Codex plugin.
 - Shared `devlauncherctl` mutation boundary with validation, atomic writes, and
   optimistic revision checks.
@@ -35,7 +39,8 @@ Release boundary: Workflow Automation MVP
   fail validation until platform adapters exist.
 - Arbitrary GUI process liveness is not observable through the current launcher;
   `process_started` is a documented stabilization heuristic.
-- Process output capture, redaction, and audit history are future additions.
+- Persistent cross-restart audit history remains a future addition; current run
+  output is retained for the desktop process lifetime.
 
 ## Repository Evidence
 

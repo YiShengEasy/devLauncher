@@ -1,7 +1,9 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 
@@ -21,13 +23,32 @@ pub struct PtySession {
 
 pub struct TerminalState {
     pub sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+    outputs: Arc<Mutex<HashMap<String, Arc<Mutex<Vec<u8>>>>>>,
     /// Command staged by `terminal_run`; consumed once by `terminal_take_pending_cmd`.
     pub pending_cmd: Arc<Mutex<Option<String>>>,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalDataChunk {
+    offset: usize,
+    data: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalSnapshot {
+    data: String,
+    offset: usize,
+    active: bool,
+}
+
+const MAX_OUTPUT_SNAPSHOTS: usize = 64;
+
 pub fn setup(app: &mut tauri::App) {
     app.manage(TerminalState {
         sessions: Arc::new(Mutex::new(HashMap::new())),
+        outputs: Arc::new(Mutex::new(HashMap::new())),
         pending_cmd: Arc::new(Mutex::new(None)),
     });
 }
@@ -58,7 +79,14 @@ pub fn spawn_pty_process(
     args: Vec<String>,
     cols: u16,
     rows: u16,
-) -> Result<(Box<dyn Child + Send + Sync>, Arc<Mutex<Vec<u8>>>), String> {
+) -> Result<
+    (
+        Box<dyn Child + Send + Sync>,
+        Arc<Mutex<Vec<u8>>>,
+        Receiver<()>,
+    ),
+    String,
+> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -78,6 +106,7 @@ pub fn spawn_pty_process(
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let output = Arc::new(Mutex::new(Vec::new()));
+    let (reader_done_tx, reader_done_rx) = mpsc::channel();
 
     {
         let mut sessions = state.sessions.lock().unwrap();
@@ -89,35 +118,82 @@ pub fn spawn_pty_process(
             },
         );
     }
+    {
+        let mut outputs = state.outputs.lock().unwrap();
+        if outputs.len() >= MAX_OUTPUT_SNAPSHOTS {
+            if let Some(oldest) = outputs.keys().next().cloned() {
+                outputs.remove(&oldest);
+            }
+        }
+        outputs.insert(session_id.clone(), output.clone());
+    }
 
     let sid = session_id.clone();
     let captured = output.clone();
+    let sessions = state.sessions.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) | Err(_) => {
+                    let _ = sessions.lock().map(|mut sessions| sessions.remove(&sid));
                     let _ = app.emit(&format!("terminal-exit-{}", sid), ());
                     break;
                 }
                 Ok(n) => {
-                    if let Ok(mut output) = captured.lock() {
+                    let offset = if let Ok(mut output) = captured.lock() {
+                        let offset = output.len();
                         output.extend_from_slice(&buf[..n]);
-                    }
+                        offset
+                    } else {
+                        0
+                    };
                     let b64 = BASE64.encode(&buf[..n]);
-                    let _ = app.emit(&format!("terminal-data-{}", sid), b64);
+                    let _ = app.emit(&format!("terminal-data-{}", sid), b64.clone());
+                    let _ = app.emit(
+                        &format!("terminal-data-v2-{}", sid),
+                        TerminalDataChunk { offset, data: b64 },
+                    );
                 }
             }
         }
+        let _ = reader_done_tx.send(());
     });
 
-    Ok((child, output))
+    Ok((child, output, reader_done_rx))
 }
 
 pub fn remove_pty_session(state: &TerminalState, session_id: &str) {
     let _ = state.sessions.lock().map(|mut sessions| {
         sessions.remove(session_id);
     });
+}
+
+#[tauri::command]
+pub fn terminal_snapshot(
+    session_id: String,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<TerminalSnapshot, String> {
+    let output = state
+        .outputs
+        .lock()
+        .map_err(|_| "terminal output lock poisoned".to_string())?
+        .get(&session_id)
+        .cloned()
+        .ok_or_else(|| "terminal session output not found".to_string())?;
+    let bytes = output
+        .lock()
+        .map_err(|_| "terminal session output lock poisoned".to_string())?;
+    let active = state
+        .sessions
+        .lock()
+        .map_err(|_| "terminal session lock poisoned".to_string())?
+        .contains_key(&session_id);
+    Ok(TerminalSnapshot {
+        data: BASE64.encode(bytes.as_slice()),
+        offset: bytes.len(),
+        active,
+    })
 }
 
 /// Send raw bytes (base64-encoded) to the PTY's stdin.

@@ -26,6 +26,7 @@ import {
 import { BindingModal } from "@/components/BindingModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ActionIcon } from "@/components/ActionIcon";
+import { planTerminalChunk } from "@/components/workflowTerminal";
 import {
   AddIcon,
   CheckIcon,
@@ -260,6 +261,21 @@ interface WorkflowRunTerminalHandle {
   getText: () => string;
 }
 
+interface TerminalDataChunk {
+  offset: number;
+  data: string;
+}
+
+interface TerminalSnapshot {
+  data: string;
+  offset: number;
+  active: boolean;
+}
+
+function decodeTerminalBytes(data: string): Uint8Array {
+  return Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
+}
+
 const WorkflowRunTerminal = forwardRef<WorkflowRunTerminalHandle, { run: WorkflowRun | null }>(
 function WorkflowRunTerminal({ run }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -267,6 +283,7 @@ function WorkflowRunTerminal({ run }, ref) {
   const fitRef = useRef<FitAddon | null>(null);
   const seenStepIdsRef = useRef(new Set<string>());
   const seenExitSessionsRef = useRef(new Set<string>());
+  const sessionOffsetsRef = useRef(new Map<string, number>());
   const sessionId = workflowTerminalSession(run);
 
   useImperativeHandle(ref, () => ({
@@ -309,6 +326,7 @@ function WorkflowRunTerminal({ run }, ref) {
     fitRef.current = fitAddon;
     seenStepIdsRef.current.clear();
     seenExitSessionsRef.current.clear();
+    sessionOffsetsRef.current.clear();
     if (run) {
       term.write(`\x1b[36m$ ${run.workflowName}\x1b[0m\r\n`);
       for (const [index, runStep] of run.steps.entries()) {
@@ -319,7 +337,11 @@ function WorkflowRunTerminal({ run }, ref) {
         if (!completed || (!runStep.output && !runStep.message)) continue;
         seenStepIdsRef.current.add(runStep.stepId);
         term.write(`\r\n\x1b[90m$ step ${String(index + 1).padStart(2, "0")} · ${runStep.name}\x1b[0m\r\n`);
-        const output = cleanTerminalText(runStep.output || runStep.message || "");
+        const output = cleanTerminalText(
+          runStep.terminalSessionId === sessionId
+            ? runStep.message || ""
+            : runStep.output || runStep.message || "",
+        );
         if (output) term.write(`${output.replace(/\n/g, "\r\n")}\r\n`);
       }
     }
@@ -351,18 +373,82 @@ function WorkflowRunTerminal({ run }, ref) {
   useEffect(() => {
     const term = termRef.current;
     if (!term || !sessionId) return undefined;
-    const unlistenData = listen<string>(`terminal-data-${sessionId}`, (event) => {
-      const bytes = Uint8Array.from(atob(event.payload), (char) => char.charCodeAt(0));
-      term.write(bytes);
-    });
-    const unlistenExit = listen(`terminal-exit-${sessionId}`, () => {
+    let disposed = false;
+    let initialized = false;
+    let syncing = false;
+    const pending: TerminalDataChunk[] = [];
+    const disposers: Array<() => void> = [];
+
+    const markExited = () => {
       if (seenExitSessionsRef.current.has(sessionId)) return;
       seenExitSessionsRef.current.add(sessionId);
       term.write("\r\n\x1b[90m[步骤进程已退出]\x1b[0m\r\n");
+    };
+    const appendChunk = (chunk: TerminalDataChunk) => {
+      const bytes = decodeTerminalBytes(chunk.data);
+      const currentOffset = sessionOffsetsRef.current.get(sessionId) ?? 0;
+      const plan = planTerminalChunk(currentOffset, chunk.offset, bytes.length);
+      if (plan.gap) {
+        pending.push(chunk);
+        void syncSnapshot();
+        return;
+      }
+      if (plan.skipBytes < bytes.length) term.write(bytes.slice(plan.skipBytes));
+      sessionOffsetsRef.current.set(sessionId, plan.nextOffset);
+    };
+    const flushPending = () => {
+      pending.sort((left, right) => left.offset - right.offset);
+      const chunks = pending.splice(0);
+      chunks.forEach(appendChunk);
+    };
+    const syncSnapshot = async (attempt = 0): Promise<void> => {
+      if (disposed || syncing) return;
+      syncing = true;
+      try {
+        const snapshot = await invoke<TerminalSnapshot>("terminal_snapshot", { sessionId });
+        if (disposed) return;
+        appendChunk({ offset: 0, data: snapshot.data });
+        sessionOffsetsRef.current.set(
+          sessionId,
+          Math.max(sessionOffsetsRef.current.get(sessionId) ?? 0, snapshot.offset),
+        );
+        if (!snapshot.active) markExited();
+      } catch {
+        if (attempt < 5 && !disposed) {
+          await new Promise((resolve) => window.setTimeout(resolve, 40));
+          syncing = false;
+          return syncSnapshot(attempt + 1);
+        }
+      } finally {
+        syncing = false;
+      }
+      if (!disposed) flushPending();
+    };
+
+    void Promise.all([
+      listen<TerminalDataChunk>(`terminal-data-v2-${sessionId}`, (event) => {
+        if (!initialized) {
+          pending.push(event.payload);
+          return;
+        }
+        appendChunk(event.payload);
+      }),
+      listen(`terminal-exit-${sessionId}`, markExited),
+    ]).then((listeners) => {
+      if (disposed) {
+        listeners.forEach((dispose) => dispose());
+        return;
+      }
+      disposers.push(...listeners);
+      void syncSnapshot().finally(() => {
+        initialized = true;
+        flushPending();
+      });
     });
+
     return () => {
-      unlistenData.then((dispose) => dispose());
-      unlistenExit.then((dispose) => dispose());
+      disposed = true;
+      disposers.forEach((dispose) => dispose());
     };
   }, [sessionId, run?.id]);
 

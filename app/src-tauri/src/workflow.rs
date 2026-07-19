@@ -8,6 +8,7 @@ use crate::types::{
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
+use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager};
@@ -16,6 +17,7 @@ use tokio::net::TcpStream;
 const MAX_STEPS: usize = 64;
 const MAX_SCRIPT_BYTES: usize = 32 * 1024;
 const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
+const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 120_000;
 const CANCELLED: &str = "__workflow_cancelled__";
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -469,14 +471,16 @@ fn script_command_spec(action: &Action) -> Result<(String, Vec<String>), String>
             } else {
                 "pwsh"
             };
-            (program.to_string(), vec!["-NoProfile".into(), "-Command".into(), source.into()])
+            (
+                program.to_string(),
+                vec!["-NoProfile".into(), "-Command".into(), source.into()],
+            )
         }
-        "cmd" | "bat" => {
-            ("cmd".into(), vec!["/C".into(), source.into()])
-        }
-        "wsl" => {
-            ("wsl".into(), vec!["-e".into(), "sh".into(), "-lc".into(), source.into()])
-        }
+        "cmd" | "bat" => ("cmd".into(), vec!["/C".into(), source.into()]),
+        "wsl" => (
+            "wsl".into(),
+            vec!["-e".into(), "sh".into(), "-lc".into(), source.into()],
+        ),
         _ => {
             let program = if cfg!(target_os = "macos") {
                 "/bin/zsh"
@@ -487,6 +491,10 @@ fn script_command_spec(action: &Action) -> Result<(String, Vec<String>), String>
         }
     };
     Ok(spec)
+}
+
+fn uses_managed_script_process(action: &Action) -> bool {
+    matches!(action, Action::Script { .. })
 }
 
 async fn run_script_to_exit(
@@ -503,7 +511,7 @@ async fn run_script_to_exit(
     let session_id = format!("workflow-{run_id}-{step_id}");
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let session_id_for_cleanup = session_id.clone();
-    let (mut child, captured_output) = crate::builtins::terminal::spawn_pty_process(
+    let (mut child, captured_output, reader_done) = crate::builtins::terminal::spawn_pty_process(
         app.clone(),
         &terminal_state,
         session_id,
@@ -522,6 +530,7 @@ async fn run_script_to_exit(
                 .map_err(|error| error.to_string())?
                 .map_err(|error| error.to_string())?;
             let code = status.exit_code() as i32;
+            wait_for_terminal_reader(reader_done).await;
             let output = captured_output
                 .lock()
                 .ok()
@@ -548,6 +557,202 @@ async fn run_script_to_exit(
             }
         }
     }
+}
+
+async fn wait_for_terminal_reader(reader_done: Receiver<()>) {
+    let _ =
+        tokio::task::spawn_blocking(move || reader_done.recv_timeout(Duration::from_secs(2))).await;
+}
+
+fn captured_script_output(output: &Arc<Mutex<Vec<u8>>>) -> Option<String> {
+    output
+        .lock()
+        .ok()
+        .and_then(|output| process_output_tail(&output))
+}
+
+fn script_exit_error(code: i32, output: Option<String>) -> String {
+    match output {
+        Some(detail) => format!("script exited with code {code}: {detail}"),
+        None => format!("script exited with code {code}"),
+    }
+}
+
+fn detach_script_process(
+    mut child: Box<dyn portable_pty::Child + Send + Sync>,
+    reader_done: Receiver<()>,
+) {
+    std::thread::spawn(move || {
+        let _ = child.wait();
+        let _ = reader_done.recv_timeout(Duration::from_secs(2));
+    });
+}
+
+async fn run_script_until_started(
+    app: &AppHandle,
+    inner: &WorkflowEngineInner,
+    run_id: &str,
+    step_id: &str,
+    action: &Action,
+    stabilization_ms: u64,
+) -> Result<Option<String>, String> {
+    let (cmd, args) = script_command_spec(action)?;
+    let terminal_state = app.state::<TerminalState>();
+    let session_id = format!("workflow-{run_id}-{step_id}");
+    attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
+    let (mut child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
+        app.clone(),
+        &terminal_state,
+        session_id,
+        cmd,
+        args,
+        96,
+        20,
+    )?;
+    let mut killer = child.clone_killer();
+    let started = Instant::now();
+    let stabilization = Duration::from_millis(stabilization_ms);
+
+    while started.elapsed() < stabilization {
+        if is_cancelled(inner, run_id) {
+            let _ = killer.kill();
+            return Err(CANCELLED.into());
+        }
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            let code = status.exit_code() as i32;
+            wait_for_terminal_reader(reader_done).await;
+            let captured = captured_script_output(&output);
+            return if code == 0 {
+                Ok(captured)
+            } else {
+                Err(script_exit_error(code, captured))
+            };
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let captured = captured_script_output(&output);
+    detach_script_process(child, reader_done);
+    Ok(captured)
+}
+
+async fn run_script_until_port_ready(
+    app: &AppHandle,
+    inner: &WorkflowEngineInner,
+    run_id: &str,
+    step_id: &str,
+    action: &Action,
+    host: &str,
+    port: u16,
+    interval_ms: u64,
+    timeout_ms: u64,
+) -> Result<Option<String>, String> {
+    let (cmd, args) = script_command_spec(action)?;
+    let terminal_state = app.state::<TerminalState>();
+    let session_id = format!("workflow-{run_id}-{step_id}");
+    attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
+    let (child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
+        app.clone(),
+        &terminal_state,
+        session_id,
+        cmd,
+        args,
+        96,
+        20,
+    )?;
+    let mut child = Some(child);
+    let mut reader_done = Some(reader_done);
+    let mut killer = child.as_mut().expect("script child").clone_killer();
+    let started = Instant::now();
+    let timeout = Duration::from_millis(timeout_ms);
+
+    while started.elapsed() < timeout {
+        if is_cancelled(inner, run_id) {
+            let _ = killer.kill();
+            return Err(CANCELLED.into());
+        }
+        if TcpStream::connect((host, port)).await.is_ok() {
+            let captured = captured_script_output(&output);
+            if let (Some(child), Some(reader_done)) = (child.take(), reader_done.take()) {
+                detach_script_process(child, reader_done);
+            }
+            return Ok(captured);
+        }
+        if let Some(active_child) = child.as_mut() {
+            if let Some(status) = active_child.try_wait().map_err(|error| error.to_string())? {
+                let code = status.exit_code() as i32;
+                child = None;
+                if let Some(done) = reader_done.take() {
+                    wait_for_terminal_reader(done).await;
+                }
+                if code != 0 {
+                    return Err(script_exit_error(code, captured_script_output(&output)));
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+    }
+
+    if child.is_some() {
+        let _ = killer.kill();
+    }
+    Err(format!(
+        "port {host}:{port} was not ready after {timeout_ms} ms"
+    ))
+}
+
+async fn run_script_for_duration(
+    app: &AppHandle,
+    inner: &WorkflowEngineInner,
+    run_id: &str,
+    step_id: &str,
+    action: &Action,
+    duration_ms: u64,
+) -> Result<Option<String>, String> {
+    let (cmd, args) = script_command_spec(action)?;
+    let terminal_state = app.state::<TerminalState>();
+    let session_id = format!("workflow-{run_id}-{step_id}");
+    attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
+    let (child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
+        app.clone(),
+        &terminal_state,
+        session_id,
+        cmd,
+        args,
+        96,
+        20,
+    )?;
+    let mut child = Some(child);
+    let mut reader_done = Some(reader_done);
+    let mut killer = child.as_mut().expect("script child").clone_killer();
+    let started = Instant::now();
+    let duration = Duration::from_millis(duration_ms);
+
+    while started.elapsed() < duration {
+        if is_cancelled(inner, run_id) {
+            let _ = killer.kill();
+            return Err(CANCELLED.into());
+        }
+        if let Some(active_child) = child.as_mut() {
+            if let Some(status) = active_child.try_wait().map_err(|error| error.to_string())? {
+                let code = status.exit_code() as i32;
+                child = None;
+                if let Some(done) = reader_done.take() {
+                    wait_for_terminal_reader(done).await;
+                }
+                if code != 0 {
+                    return Err(script_exit_error(code, captured_script_output(&output)));
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    let captured = captured_script_output(&output);
+    if let (Some(child), Some(reader_done)) = (child.take(), reader_done.take()) {
+        detach_script_process(child, reader_done);
+    }
+    Ok(captured)
 }
 
 const MAX_PROCESS_OUTPUT_CHARS: usize = 16 * 1024;
@@ -698,6 +903,95 @@ async fn execute_step(
     run_id: &str,
     step: &WorkflowStep,
 ) -> Result<Option<String>, String> {
+    if uses_managed_script_process(&step.action) {
+        return match &step.completion {
+            CompletionRule::ActionResolved => {
+                run_script_to_exit(
+                    app,
+                    inner,
+                    run_id,
+                    &step.id,
+                    &step.action,
+                    &[0],
+                    DEFAULT_SCRIPT_TIMEOUT_MS,
+                )
+                .await
+            }
+            CompletionRule::ProcessStarted {
+                stabilization_ms, ..
+            } => {
+                run_script_until_started(
+                    app,
+                    inner,
+                    run_id,
+                    &step.id,
+                    &step.action,
+                    *stabilization_ms,
+                )
+                .await
+            }
+            CompletionRule::ProcessExit {
+                success_codes,
+                timeout_ms,
+            } => {
+                run_script_to_exit(
+                    app,
+                    inner,
+                    run_id,
+                    &step.id,
+                    &step.action,
+                    success_codes,
+                    *timeout_ms,
+                )
+                .await
+            }
+            CompletionRule::PortReady {
+                host,
+                port,
+                interval_ms,
+                timeout_ms,
+            } => {
+                run_script_until_port_ready(
+                    app,
+                    inner,
+                    run_id,
+                    &step.id,
+                    &step.action,
+                    host,
+                    *port,
+                    *interval_ms,
+                    *timeout_ms,
+                )
+                .await
+            }
+            CompletionRule::Timer { duration_ms } => {
+                run_script_for_duration(app, inner, run_id, &step.id, &step.action, *duration_ms)
+                    .await
+            }
+            CompletionRule::Manual { timeout_ms } => {
+                let output = run_script_to_exit(
+                    app,
+                    inner,
+                    run_id,
+                    &step.id,
+                    &step.action,
+                    &[0],
+                    timeout_ms.unwrap_or(DEFAULT_SCRIPT_TIMEOUT_MS),
+                )
+                .await?;
+                wait_for_manual(app, inner, run_id, step, *timeout_ms).await?;
+                Ok(output)
+            }
+            CompletionRule::WindowReady { .. } => {
+                Err("window_ready adapter is not available".into())
+            }
+            CompletionRule::UrlReady { .. } => Err("url_ready adapter is not available".into()),
+            CompletionRule::ConnectionReady { .. } => {
+                Err("connection_ready adapter is not available".into())
+            }
+        };
+    }
+
     match &step.completion {
         CompletionRule::ActionResolved => execute_action(app, &step.action).map(|_| None),
         CompletionRule::ProcessStarted {
@@ -711,16 +1005,18 @@ async fn execute_step(
         CompletionRule::ProcessExit {
             success_codes,
             timeout_ms,
-        } => run_script_to_exit(
-            app,
-            inner,
-            run_id,
-            &step.id,
-            &step.action,
-            success_codes,
-            *timeout_ms,
-        )
-        .await,
+        } => {
+            run_script_to_exit(
+                app,
+                inner,
+                run_id,
+                &step.id,
+                &step.action,
+                success_codes,
+                *timeout_ms,
+            )
+            .await
+        }
         CompletionRule::PortReady {
             host,
             port,
@@ -739,20 +1035,7 @@ async fn execute_step(
                 .map(|_| None)
         }
         CompletionRule::Manual { timeout_ms } => {
-            if matches!(step.action, Action::Script { .. }) {
-                run_script_to_exit(
-                    app,
-                    inner,
-                    run_id,
-                    &step.id,
-                    &step.action,
-                    &[0],
-                    timeout_ms.unwrap_or(120_000).min(120_000),
-                )
-                .await?;
-            } else {
-                execute_action(app, &step.action)?;
-            }
+            execute_action(app, &step.action)?;
             wait_for_manual(app, inner, run_id, step, *timeout_ms)
                 .await
                 .map(|_| None)
@@ -1092,9 +1375,9 @@ pub fn confirm_workflow_step(
 #[cfg(test)]
 mod tests {
     use super::{
-        binding_workspace_size, evaluate_condition, process_output_tail,
-        validate_workflow_definition, workflow_workspace_size, WorkflowStepRunStatus,
-        MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
+        binding_workspace_size, evaluate_condition, process_output_tail, script_command_spec,
+        uses_managed_script_process, validate_workflow_definition, workflow_workspace_size,
+        WorkflowStepRunStatus, MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
     };
     use crate::types::{Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowStep};
 
@@ -1133,6 +1416,17 @@ mod tests {
             timeout_ms: 5_000,
         });
         assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn routes_terminal_scripts_to_the_managed_process_runner() {
+        let workflow = script_workflow(CompletionRule::ActionResolved);
+        let action = &workflow.steps[0].action;
+        assert!(uses_managed_script_process(action));
+
+        let (program, args) = script_command_spec(action).expect("script command");
+        assert!(program.ends_with("zsh") || program.ends_with("sh"));
+        assert_eq!(args, vec!["-lc", "echo hello"]);
     }
 
     #[test]

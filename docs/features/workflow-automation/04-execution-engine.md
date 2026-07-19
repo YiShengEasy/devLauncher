@@ -41,7 +41,8 @@ can be observed.
 ### process_exit
 
 Own the child handle, await exit, and validate the exit code. Used for build,
-test, and one-shot scripts. The MVP does not capture stdout or stderr.
+test, and one-shot scripts. Output is streamed to the workflow terminal and
+retained as a bounded snapshot for late subscribers and log copying.
 
 ### port_ready
 
@@ -65,10 +66,15 @@ support. Unsupported adapters fail clearly rather than degrading to a timer.
 ## Script Execution
 
 - Use platform shell selection from existing platform helpers.
-- `process_exit` runs as a managed child process.
-- `process_exit` keeps a managed child handle and kills it when the wait future
-  is dropped after cancellation or timeout.
-- `process_started` cannot close an already-launched external application.
+- Every workflow script runs in a managed PTY owned by the workflow engine;
+  scripts never fall back to the standalone terminal action/window.
+- `process_exit` keeps a managed child handle and kills it on cancellation or
+  timeout.
+- `process_started`, `port_ready`, and `timer` may detach a healthy managed
+  child after their completion condition is satisfied.
+- PTY chunks include byte offsets. The UI subscribes before reading a retained
+  snapshot, so output emitted before listener registration is replayed without
+  duplication.
 - Never log inherited secret environment values or script content.
 
 ## Conditions
@@ -107,6 +113,7 @@ applications are not closed automatically.
 ```text
 workflow-run-status
 workflow-manual-confirmation-required
+terminal-data-v2-{sessionId}
 ```
 
 The status event carries the complete bounded run snapshot. The manual event
