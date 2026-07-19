@@ -1,5 +1,6 @@
 use crate::types::KeyboardConfig;
 use std::fs;
+use std::io::Write;
 use std::path::PathBuf;
 use tauri::Manager;
 
@@ -13,7 +14,10 @@ pub fn config_path(app: &tauri::AppHandle) -> PathBuf {
 
 pub fn default_config() -> KeyboardConfig {
     KeyboardConfig {
+        schema_version: 2,
+        revision: 0,
         pages: vec![],
+        workflows: vec![],
         theme: Default::default(),
         pet: Default::default(),
     }
@@ -28,11 +32,22 @@ pub fn read_config_from_path(path: &PathBuf) -> Result<KeyboardConfig, String> {
 }
 
 pub fn write_config_to_path(path: &PathBuf, config: &KeyboardConfig) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     let content = serde_yaml::to_string(config).map_err(|e| e.to_string())?;
-    fs::write(path, content).map_err(|e| e.to_string())
+    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    temp.write_all(content.as_bytes())
+        .map_err(|e| e.to_string())?;
+    temp.as_file().sync_all().map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    if path.exists() {
+        fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+
+    temp.persist(path)
+        .map(|_| ())
+        .map_err(|e| e.error.to_string())
 }
 
 #[tauri::command]

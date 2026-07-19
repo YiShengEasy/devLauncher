@@ -28,6 +28,11 @@ export async function executeAction(
     return;
   }
 
+  if (action.type === "workflow") {
+    await deps.invoke("run_workflow", { workflowId: action.workflowId });
+    return;
+  }
+
   await deps.invoke("execute_action", { action });
 }
 

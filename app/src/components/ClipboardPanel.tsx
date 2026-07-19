@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ClipboardEntry } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { WindowPinButton } from "@/components/WindowPinButton";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
@@ -103,6 +104,7 @@ export function ClipboardPanel({
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
 
   const textCount = items.filter((entry) => entry.kind === "text").length;
   const imageCount = items.filter((entry) => entry.kind === "image").length;
@@ -274,12 +276,24 @@ export function ClipboardPanel({
           <button
             type="button"
             title={filter === "favorites" ? "清空收藏" : "清空历史"}
-            onClick={() => {
+            onClick={async () => {
               if (filter === "favorites") {
-                if (favorites.length > 0 && window.confirm("清空全部收藏？")) onClearFavorites();
+                if (favorites.length === 0) return;
+                const confirmed = await confirmAction({
+                  title: "清空全部收藏",
+                  message: "将移除全部收藏项目。剪贴板历史中的原始内容不会被删除。",
+                  confirmLabel: "清空收藏",
+                });
+                if (confirmed) onClearFavorites();
                 return;
               }
-              if (items.length > 0 && window.confirm("清空剪贴板历史？")) onClear();
+              if (items.length === 0) return;
+              const confirmed = await confirmAction({
+                title: "清空剪贴板历史",
+                message: "将删除全部剪贴板历史记录，已收藏的项目仍会保留。",
+                confirmLabel: "清空历史",
+              });
+              if (confirmed) onClear();
             }}
             style={iconButtonStyle}
           >
@@ -356,6 +370,7 @@ export function ClipboardPanel({
           ›
         </button>
       </div>
+      {confirmDialog}
     </div>
   );
 }

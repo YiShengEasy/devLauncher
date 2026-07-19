@@ -108,7 +108,7 @@ fn open_url_action(action: &serde_json::Value, target: &str) -> Result<(), Strin
 
 fn stage_terminal_command(
     app: &tauri::AppHandle,
-    term_state: &tauri::State<'_, TerminalState>,
+    term_state: &TerminalState,
     command: String,
 ) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("terminal") {
@@ -192,6 +192,14 @@ pub fn execute_action(
     action: serde_json::Value,
     term_state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
+    execute_action_value(&app, action, term_state.inner())
+}
+
+pub(crate) fn execute_action_value(
+    app: &tauri::AppHandle,
+    action: serde_json::Value,
+    term_state: &TerminalState,
+) -> Result<(), String> {
     let action_type = action["type"].as_str().unwrap_or("");
     match action_type {
         "app" => {
@@ -239,7 +247,7 @@ pub fn execute_action(
                     format!("-p {} ", port)
                 };
                 let ssh_cmd = format!("ssh {}{}", port_flag, ssh_target);
-                return stage_terminal_command(&app, &term_state, ssh_cmd);
+                return stage_terminal_command(app, term_state, ssh_cmd);
             }
 
             let launch_gitbash_expect = |pwd: &str| -> bool {
@@ -411,7 +419,7 @@ pub fn execute_action(
                     format!("-p {} ", port)
                 };
                 let ssh_cmd = format!("ssh {}{}", port_flag, ssh_target);
-                return stage_terminal_command(&app, &term_state, ssh_cmd);
+                return stage_terminal_command(app, term_state, ssh_cmd);
             }
 
             if let Some(ref pwd) = password {
@@ -436,7 +444,7 @@ pub fn execute_action(
             let shell = action["shell"].as_str().unwrap_or("powershell");
             let content = action["content"].as_str().unwrap_or("");
             if shell == "terminal" {
-                return stage_terminal_command(&app, &term_state, content.to_string());
+                return stage_terminal_command(app, term_state, content.to_string());
             }
             match shell {
                 "powershell" => {

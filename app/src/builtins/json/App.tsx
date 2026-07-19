@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { MacWindowControls } from "@/components/MacWindowControls";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -356,6 +357,7 @@ export function JsonHelperApp() {
     { name: "", type: "string", desc: "", required: true },
   ]);
   const reducedMotion = useReducedMotion();
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
 
   useEffect(() => { applyThemeFromConfig(); }, []);
   useEffect(() => {
@@ -563,8 +565,13 @@ export function JsonHelperApp() {
                 <div key={`${item.slice(0, 24)}-${index}`} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 6, alignItems: "center" }}>
                   <button style={{ ...BTN_STYLE, textAlign: "left", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }} onClick={() => setInput(item)}>{previewValue(item)}</button>
                   <button style={BTN_STYLE} onClick={() => { setInput(item); setActiveTab("format"); }}>载入</button>
-                  <button style={BTN_STYLE} onClick={() => {
-                    if (!window.confirm("删除这条 JSON 历史？")) return;
+                  <button style={BTN_STYLE} onClick={async () => {
+                    const confirmed = await confirmAction({
+                      title: "删除 JSON 历史",
+                      message: "将删除这条已保存的 JSON 历史记录。此操作无法撤销。",
+                      confirmLabel: "删除记录",
+                    });
+                    if (!confirmed) return;
                     const next = history.filter((_, i) => i !== index);
                     setHistory(next);
                     saveHistory(next);
@@ -611,6 +618,7 @@ export function JsonHelperApp() {
           )}
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

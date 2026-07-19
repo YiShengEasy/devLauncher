@@ -152,6 +152,23 @@ docs/devlauncher-pet-mcp.md
 
 详细安装和使用方式见 [docs/devlauncher-pet-mcp.md](docs/devlauncher-pet-mcp.md)。
 
+## 工作流与 Automation MCP
+
+工作流编排器支持条件、完成判定、失败策略、运行状态和虚拟键盘绑定。
+Codex 可通过本地 Automation MCP 预览、创建、更新和绑定工作流：
+
+```text
+app/src/components/WorkflowPanel.tsx
+app/src-tauri/src/workflow.rs
+app/src-tauri/src/bin/devlauncherctl.rs
+mcp/devlauncher-automation-mcp.mjs
+plugins/devlauncher-automation/
+docs/features/workflow-automation/
+```
+
+完整需求、设计、实施计划、测试计划和实施报告见
+[docs/features/workflow-automation/README.md](docs/features/workflow-automation/README.md)。
+
 ## 说明
 
 仓库曾包含多个阶段性计划文档。当前文档入口集中在：
@@ -160,5 +177,8 @@ docs/devlauncher-pet-mcp.md
 - [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
 - [docs/devlauncher-pet-mcp.md](docs/devlauncher-pet-mcp.md)
 - [docs/devlauncher-ui-final-spec.md](docs/devlauncher-ui-final-spec.md)
+- [docs/features/README.md](docs/features/README.md)
+- [docs/features/workflow-automation/README.md](docs/features/workflow-automation/README.md)
 - [website/README.md](website/README.md)
 - [plugins/devlauncher-pet/README.md](plugins/devlauncher-pet/README.md)
+- [plugins/devlauncher-automation/README.md](plugins/devlauncher-automation/README.md)

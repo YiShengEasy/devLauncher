@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { applyThemeFromConfig } from "@/api/theme";
 import { MacWindowControls } from "@/components/MacWindowControls";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -113,6 +114,7 @@ function RdpTab() {
   const [msg, setMsg] = useState("");
   const [rdpCaps, setRdpCaps] = useState<RdpCapabilities | null>(null);
   const reducedMotion = useReducedMotion();
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
 
   useEffect(() => {
     invoke<RemoteDeskProfile[]>("load_remotedesk_profiles")
@@ -163,7 +165,12 @@ function RdpTab() {
 
   async function handleDelete(id: string) {
     const p = profiles.find(x => x.id === id);
-    if (!window.confirm(`删除远程桌面连接「${p?.name || p?.host || "未命名"}」？`)) return;
+    const confirmed = await confirmAction({
+      title: "删除远程桌面连接",
+      message: `将删除“${p?.name || p?.host || "未命名"}”及其保存的连接密码。`,
+      confirmLabel: "删除连接",
+    });
+    if (!confirmed) return;
     if (p?.has_password) {
       await invoke("delete_remotedesk_password", { id }).catch(() => {});
     }
@@ -305,6 +312,7 @@ function RdpTab() {
       {msg && (
         <div style={{ fontSize: 11, color: "rgba(255,255,255,0.5)", textAlign: "center" }}>{msg}</div>
       )}
+      {confirmDialog}
     </div>
   );
 }

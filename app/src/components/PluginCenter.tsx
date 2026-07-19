@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { emit } from "@tauri-apps/api/event";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { loadConfig, saveConfig } from "@/api/config";
+import { createWorkflowsFromTemplatePackage } from "@/api/workflowTemplates";
 import {
   fetchMarketplaceIndex,
   installPluginFromMarket,
@@ -10,7 +13,7 @@ import {
   uninstallPlugin,
 } from "@/plugins/api";
 import { pluginIconSrc } from "@/plugins/registry";
-import type { InstalledPlugin, MarketplacePluginEntry } from "@/plugins/types";
+import type { InstalledPlugin, MarketplacePluginEntry, MarketplaceWorkflowTemplatePackage } from "@/plugins/types";
 
 const DEFAULT_MARKET_URL = "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/marketplace.json";
 
@@ -90,7 +93,9 @@ export function PluginCenter() {
   const [marketUrl, setMarketUrl] = useState(DEFAULT_MARKET_URL);
   const [plugins, setPlugins] = useState<InstalledPlugin[]>([]);
   const [market, setMarket] = useState<MarketplacePluginEntry[]>([]);
+  const [templatePackages, setTemplatePackages] = useState<MarketplaceWorkflowTemplatePackage[]>([]);
   const [status, setStatus] = useState("");
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
 
   async function refreshInstalled() {
     setPlugins(await listInstalledPlugins());
@@ -114,6 +119,7 @@ export function PluginCenter() {
     try {
       const index = await fetchMarketplaceIndex(url);
       setMarket(index.plugins);
+      setTemplatePackages(index.workflowTemplatePackages ?? []);
       await refreshInstalled();
       await notifyPluginsChanged();
       setStatus("市场已刷新。");
@@ -151,6 +157,22 @@ export function PluginCenter() {
     }
   }
 
+  async function installTemplatePackage(pkg: MarketplaceWorkflowTemplatePackage) {
+    try {
+      const config = await loadConfig();
+      const workflows = createWorkflowsFromTemplatePackage(pkg);
+      await saveConfig({
+        ...config,
+        schemaVersion: 2,
+        revision: (config.revision ?? 0) + 1,
+        workflows: [...(config.workflows ?? []), ...workflows],
+      });
+      setStatus(`已导入 ${workflows.length} 个工作流模板。`);
+    } catch (error) {
+      setStatus(String(error));
+    }
+  }
+
   async function toggle(plugin: InstalledPlugin) {
     try {
       setPlugins(await setPluginEnabled(plugin.id, !plugin.enabled));
@@ -162,6 +184,12 @@ export function PluginCenter() {
   }
 
   async function remove(plugin: InstalledPlugin) {
+    const confirmed = await confirmAction({
+      title: "卸载插件",
+      message: `将卸载“${plugin.manifest.name}”。插件产生的外部数据可能不会一并删除。`,
+      confirmLabel: "卸载插件",
+    });
+    if (!confirmed) return;
     try {
       setPlugins(await uninstallPlugin(plugin.id));
       await notifyPluginsChanged();
@@ -216,6 +244,32 @@ export function PluginCenter() {
       </section>
 
       <section style={panelStyle}>
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>工作流模板包</div>
+        {templatePackages.length === 0 ? (
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>刷新市场后显示可导入的模板包。</div>
+        ) : templatePackages.map((pkg) => (
+          <div
+            key={`${pkg.id}:${pkg.version}`}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              padding: "10px 0",
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{pkg.name}</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 4 }}>
+                {pkg.description ?? pkg.id} / {pkg.version} / {pkg.templates.length} 个模板
+              </div>
+            </div>
+            <button type="button" onClick={() => installTemplatePackage(pkg)} style={buttonStyle}>导入</button>
+          </div>
+        ))}
+      </section>
+
+      <section style={panelStyle}>
         <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>已安装</div>
         {plugins.length === 0 ? (
           <div style={{ fontSize: 12, color: "rgba(255,255,255,0.45)" }}>暂无插件。</div>
@@ -257,6 +311,7 @@ export function PluginCenter() {
           {status}
         </div>
       )}
+      {confirmDialog}
     </div>
   );
 }

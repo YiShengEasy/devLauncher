@@ -23,7 +23,7 @@ export const BUILTIN_FEATURES = Object.fromEntries(
   _BUILTIN_MANIFESTS.map(m => [m.id, m])
 ) as Record<BuiltinFeature, typeof _BUILTIN_MANIFESTS[number]>;
 
-export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin" | "plugin";
+export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin" | "plugin" | "workflow";
 
 interface ActionBase {
   type: ActionType;
@@ -109,6 +109,11 @@ export interface PluginAction extends ActionBase {
   actionId: string;
 }
 
+export interface WorkflowAction extends ActionBase {
+  type: "workflow";
+  workflowId: string;
+}
+
 // -----------------------------------------------
 // Clipboard Entry (text + image)
 // -----------------------------------------------
@@ -137,7 +142,90 @@ export type Action =
   | ScriptAction
   | SystemAction
   | BuiltinAction
-  | PluginAction;
+  | PluginAction
+  | WorkflowAction;
+
+export type WorkflowFailurePolicy = "stop" | "continue";
+
+export type WorkflowPlatform = "macos" | "windows" | "linux";
+
+export type StepCondition =
+  | { type: "always" }
+  | { type: "previous_success" }
+  | { type: "previous_failed" }
+  | { type: "platform"; platform: WorkflowPlatform }
+  | { type: "path_exists"; path: string }
+  | { type: "env_equals"; name: string; value: string };
+
+export type CompletionRule =
+  | { type: "action_resolved" }
+  | { type: "process_started"; stabilizationMs: number; timeoutMs: number }
+  | { type: "process_exit"; successCodes: number[]; timeoutMs: number }
+  | { type: "port_ready"; host: string; port: number; intervalMs: number; timeoutMs: number }
+  | { type: "timer"; durationMs: number }
+  | { type: "manual"; timeoutMs?: number }
+  | { type: "window_ready"; titleContains: string; timeoutMs: number }
+  | { type: "url_ready"; urlPattern: string; timeoutMs: number }
+  | { type: "connection_ready"; timeoutMs: number };
+
+export interface WorkflowStep {
+  id: string;
+  name: string;
+  enabled: boolean;
+  action: Action;
+  condition: StepCondition;
+  completion: CompletionRule;
+  delayMs: number;
+  onFailure?: WorkflowFailurePolicy;
+}
+
+export interface WorkflowDefinition {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  failurePolicy: WorkflowFailurePolicy;
+  steps: WorkflowStep[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type WorkflowRunStatus =
+  | "pending"
+  | "running"
+  | "waiting"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
+
+export type WorkflowStepRunStatus =
+  | "pending"
+  | "running"
+  | "waiting"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+  | "cancelled";
+
+export interface WorkflowStepRun {
+  stepId: string;
+  name: string;
+  status: WorkflowStepRunStatus;
+  message?: string;
+  output?: string;
+  terminalSessionId?: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowId: string;
+  workflowName: string;
+  startedAt: number;
+  status: WorkflowRunStatus;
+  currentStepId?: string;
+  steps: WorkflowStepRun[];
+  message?: string;
+}
 
 // -----------------------------------------------
 // Page / Key layout
@@ -173,6 +261,7 @@ export interface ThemeConfig {
   blurRadius: number;    // backdrop blur px
   borderColor: string;   // hex color for border
   keyBgOpacity: number;  // unbound key background opacity 0-1
+  showKeyLabels: boolean;
 }
 
 export const PET_CUSTOM_ACTION_SLOT_COUNT = 3;
@@ -194,6 +283,7 @@ export const DEFAULT_THEME: ThemeConfig = {
   blurRadius: 24,
   borderColor: "#77778c78",
   keyBgOpacity: 0.055,
+  showKeyLabels: true,
 };
 
 export const DEFAULT_PET_CONFIG: PetConfig = {
@@ -209,6 +299,9 @@ export interface KeyboardConfig {
   pages: Page[];
   theme?: ThemeConfig;
   pet?: PetConfig;
+  schemaVersion?: number;
+  revision?: number;
+  workflows?: WorkflowDefinition[];
 }
 
 // -----------------------------------------------
@@ -225,4 +318,5 @@ export const ACTION_TYPE_META: Record<ActionType, { label: string; color: string
   system: { label: "系统",     color: "#94a3b8", bg: "rgba(60,80,120,0.75)" },
   builtin: { label: "内置",    color: "#7dd3fc", bg: "rgba(18,22,45,0.90)" },
   plugin: { label: "插件",     color: "#a7f3d0", bg: "rgba(20,120,90,0.78)" },
+  workflow: { label: "工作流", color: "#fb7185", bg: "rgba(159,18,57,0.75)" },
 };

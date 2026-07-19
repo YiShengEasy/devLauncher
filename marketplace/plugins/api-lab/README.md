@@ -8,6 +8,7 @@ Features:
 - Send requests with browser `fetch`.
 - View status, time, response headers, and formatted response body.
 - Save environments, collections, and recent history locally.
+- Run saved collection requests as a smoke-test automation and view pass/fail summaries.
 - Import and export API Lab JSON backups.
 
 First version limitation:

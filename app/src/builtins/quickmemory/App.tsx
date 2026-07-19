@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEve
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
 import { WindowPinButton } from "@/components/WindowPinButton";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -151,6 +152,7 @@ export function QuickMemoryApp() {
   const pointerDragRef = useRef<PointerDragState | null>(null);
   const cardRefs = useRef<Map<string, HTMLElement>>(new Map());
   const reducedMotion = useReducedMotion();
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
   const mergedData = useMemo(() => mergeQuickMemoryData(quickMemoryData), [quickMemoryData]);
   const categories = mergedData.categories;
   const memoryItems = mergedData.items;
@@ -349,7 +351,11 @@ export function QuickMemoryApp() {
   const removeCustomCategory = async (categoryId: string) => {
     const category = categories.find((entry) => entry.id === categoryId);
     if (!category || category.source !== "custom") return;
-    const confirmed = window.confirm(`删除分类“${category.name}”及其自定义记忆？`);
+    const confirmed = await confirmAction({
+      title: "删除分类",
+      message: `将删除“${category.name}”以及其中的全部自定义记忆。此操作无法撤销。`,
+      confirmLabel: "删除分类",
+    });
     if (!confirmed) return;
     const next = deleteCustomCategory(quickMemoryData, categoryId);
     await persistQuickMemoryData(next);
@@ -359,7 +365,11 @@ export function QuickMemoryApp() {
   const removeCustomItem = async (itemId: string) => {
     const item = memoryItems.find((entry) => entry.id === itemId);
     if (!item || item.source !== "custom") return;
-    const confirmed = window.confirm(`删除记忆“${item.title}”？`);
+    const confirmed = await confirmAction({
+      title: "删除记忆",
+      message: `将删除“${item.title}”。此操作无法撤销。`,
+      confirmLabel: "删除记忆",
+    });
     if (!confirmed) return;
     await persistQuickMemoryData(deleteCustomItem(quickMemoryData, itemId));
   };
@@ -1055,6 +1065,7 @@ export function QuickMemoryApp() {
           </main>
         </div>
       </div>
+      {confirmDialog}
     </div>
   );
 }

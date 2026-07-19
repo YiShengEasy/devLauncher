@@ -49,6 +49,23 @@ describe("actionExecutor", () => {
     });
   });
 
+  it("starts workflow actions through the workflow engine", async () => {
+    const invoke = vi.fn().mockResolvedValue(undefined);
+
+    await executeAction(
+      {
+        type: "workflow",
+        name: "Start project",
+        workflowId: "workflow-start-project",
+      },
+      { invoke },
+    );
+
+    expect(invoke).toHaveBeenCalledWith("run_workflow", {
+      workflowId: "workflow-start-project",
+    });
+  });
+
   it("executes normal actions through execute_action", async () => {
     const invoke = vi.fn().mockResolvedValue(undefined);
     const record: LauncherActionRecord = {

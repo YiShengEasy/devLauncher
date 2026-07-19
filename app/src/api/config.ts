@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { KeyboardConfig, Action, PetConfig, ThemeConfig } from "@/types/actions";
+import type { KeyboardConfig, Action, PetConfig, ThemeConfig, WorkflowDefinition } from "@/types/actions";
 import { DEFAULT_PET_CONFIG, DEFAULT_THEME, PET_CUSTOM_ACTION_SLOT_COUNT } from "@/types/actions";
 
 // 从 Rust 序列化的 Page 结构，keys 是 Record<string, Action>
@@ -21,8 +21,11 @@ interface RawPetConfig {
 
 interface RawConfig {
   pages: RawPage[];
-  theme?: ThemeConfig;
+  theme?: Partial<ThemeConfig>;
   pet?: RawPetConfig;
+  schemaVersion?: number;
+  revision?: number;
+  workflows?: WorkflowDefinition[];
 }
 
 export function normalizePetCustomActions(actions?: Array<Action | null>): Array<Action | null> {
@@ -46,19 +49,24 @@ function normalizePetConfig(pet?: RawPetConfig): PetConfig {
 // 将 Rust 返回的原始 config 转换为前端 KeyboardConfig 格式
 export function normalizeConfig(raw: RawConfig): KeyboardConfig {
   return {
+    schemaVersion: raw.schemaVersion ?? 1,
+    revision: raw.revision ?? 0,
     pages: raw.pages.map((p) => ({
       name: p.name,
       keys: Object.fromEntries(
         Object.entries(p.keys).map(([k, action]) => [k, { action }])
       ),
     })),
-    theme: raw.theme ?? { ...DEFAULT_THEME },
+    theme: { ...DEFAULT_THEME, ...raw.theme },
     pet: normalizePetConfig(raw.pet),
+    workflows: raw.workflows ?? [],
   };
 }
 
 export function toRawConfig(config: KeyboardConfig): RawConfig {
   return {
+    schemaVersion: Math.max(2, config.schemaVersion ?? 1),
+    revision: config.revision ?? 0,
     pages: config.pages.map((p) => ({
       name: p.name,
       keys: Object.fromEntries(
@@ -68,6 +76,7 @@ export function toRawConfig(config: KeyboardConfig): RawConfig {
       ),
     })),
     theme: config.theme,
+    workflows: config.workflows ?? [],
     pet: config.pet ? {
       ...config.pet,
       menu: {

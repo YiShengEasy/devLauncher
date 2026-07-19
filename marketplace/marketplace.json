@@ -44,12 +44,122 @@
     {
       "id": "devlauncher.tools.api-lab",
       "name": "API Lab",
-      "version": "1.0.0",
+      "version": "1.1.0",
       "kind": "webview",
-      "description": "Lightweight API requests, environments, collections, and history for DevLauncher.",
-      "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/api-lab-1.0.0.zip",
-      "sha256": "713a1f9429fd5318b92f5eea170be53b93958eec6eef06833844a9b3873de610",
+      "description": "Lightweight API requests, environments, collections, history, and collection automation for DevLauncher.",
+      "downloadUrl": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/releases/api-lab-1.1.0.zip",
+      "sha256": "1af93cb3072669840c7cfb30322d8bc4a9fc8e25687f768e4a17e077992948e4",
       "icon": "https://raw.githubusercontent.com/YiShengEasy/devLauncher/main/marketplace/icons/api-lab.svg"
+    }
+  ],
+  "workflowTemplatePackages": [
+    {
+      "id": "devlauncher.workflow-pack.devops-core",
+      "name": "DevOps Core Workflows",
+      "version": "1.0.0",
+      "description": "开发、测试、发布前检查和本地服务监控工作流模板。",
+      "templates": [
+        {
+          "id": "start-local-project",
+          "name": "启动本地项目",
+          "category": "dev",
+          "description": "进入项目目录，安装依赖并启动开发服务；生成后先把路径和端口改成你的项目。",
+          "failurePolicy": "stop",
+          "steps": [
+            {
+              "name": "启动开发服务",
+              "action": { "type": "script", "name": "启动开发服务", "shell": "terminal", "content": "cd /path/to/project && npm install && npm run dev" },
+              "completion": { "type": "process_started", "stabilizationMs": 1200, "timeoutMs": 20000 }
+            },
+            {
+              "name": "检查本地端口",
+              "action": { "type": "script", "name": "检查本地端口", "shell": "terminal", "content": "curl -fsS http://127.0.0.1:3000/ >/dev/null" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 30000 }
+            }
+          ]
+        },
+        {
+          "id": "test-and-build",
+          "name": "测试并构建",
+          "category": "test",
+          "description": "执行前端测试和构建，适合提交前绑定到虚拟键盘。",
+          "failurePolicy": "stop",
+          "steps": [
+            {
+              "name": "运行测试",
+              "action": { "type": "script", "name": "运行测试", "shell": "terminal", "content": "cd /path/to/project && npm test" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 180000 }
+            },
+            {
+              "name": "运行构建",
+              "action": { "type": "script", "name": "运行构建", "shell": "terminal", "content": "cd /path/to/project && npm run build" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 180000 }
+            }
+          ]
+        },
+        {
+          "id": "release-preflight",
+          "name": "发布前检查",
+          "category": "release",
+          "description": "检查工作区、测试、构建和基础安全扫描入口，适合发布前跑一遍。",
+          "failurePolicy": "stop",
+          "steps": [
+            {
+              "name": "查看 Git 状态",
+              "action": { "type": "script", "name": "查看 Git 状态", "shell": "terminal", "content": "cd /path/to/project && git status --short" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 20000 }
+            },
+            {
+              "name": "运行测试",
+              "action": { "type": "script", "name": "运行测试", "shell": "terminal", "content": "cd /path/to/project && npm test" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 180000 }
+            },
+            {
+              "name": "运行构建",
+              "action": { "type": "script", "name": "运行构建", "shell": "terminal", "content": "cd /path/to/project && npm run build" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 180000 }
+            },
+            {
+              "name": "可选 Trivy 扫描",
+              "action": { "type": "script", "name": "可选 Trivy 扫描", "shell": "terminal", "content": "cd /path/to/project && command -v trivy >/dev/null && trivy fs --scanners vuln,secret . || echo \"trivy 未安装，跳过扫描\"" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 300000 }
+            }
+          ]
+        },
+        {
+          "id": "api-smoke-test",
+          "name": "API Smoke 测试",
+          "category": "test",
+          "description": "用 curl 检查健康接口，后续可替换成 Newman、Bruno CLI 或 Hurl。",
+          "failurePolicy": "stop",
+          "steps": [
+            {
+              "name": "检查健康接口",
+              "action": { "type": "script", "name": "检查健康接口", "shell": "terminal", "content": "curl -fsS http://127.0.0.1:3000/health" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 30000 }
+            }
+          ]
+        },
+        {
+          "id": "local-service-monitor",
+          "name": "本地服务监控",
+          "category": "monitor",
+          "description": "检查本地服务 URL，失败时停止；适合作为监控/巡检工作流的起点。",
+          "failurePolicy": "stop",
+          "steps": [
+            {
+              "name": "检查服务首页",
+              "action": { "type": "script", "name": "检查服务首页", "shell": "terminal", "content": "curl -fsS http://127.0.0.1:3000/ >/dev/null" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 20000 }
+            },
+            {
+              "name": "检查健康接口",
+              "action": { "type": "script", "name": "检查健康接口", "shell": "terminal", "content": "curl -fsS http://127.0.0.1:3000/health >/dev/null" },
+              "completion": { "type": "process_exit", "successCodes": [0], "timeoutMs": 20000 }
+            }
+          ]
+        }
+      ]
     }
   ]
 }

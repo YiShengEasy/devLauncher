@@ -10,6 +10,7 @@ export const iconColors = {
   system: "#f97316",
   builtin: "#f472b6",
   plugin: "#a7f3d0",
+  workflow: "#fb7185",
 
   clipboard: "#22d3ee",
   json: "#a78bfa",

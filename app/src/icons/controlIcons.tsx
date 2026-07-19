@@ -109,3 +109,19 @@ export function RetryIcon(props: IconProps) {
     </IconBase>
   );
 }
+
+export function MoveUpIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.rename)}>
+      <path d="m7 14 5-5 5 5" />
+    </IconBase>
+  );
+}
+
+export function MoveDownIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.rename)}>
+      <path d="m7 10 5 5 5-5" />
+    </IconBase>
+  );
+}

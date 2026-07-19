@@ -13,8 +13,8 @@ function hexToRgba(hex: string, alpha: number): string {
 export async function applyThemeFromConfig(): Promise<void> {
   let theme: ThemeConfig = { ...DEFAULT_THEME };
   try {
-    const raw = await invoke<{ theme?: ThemeConfig }>("load_config");
-    if (raw.theme) theme = raw.theme;
+    const raw = await invoke<{ theme?: Partial<ThemeConfig> }>("load_config");
+    if (raw.theme) theme = { ...DEFAULT_THEME, ...raw.theme };
   } catch {
     // Use defaults if load fails
   }

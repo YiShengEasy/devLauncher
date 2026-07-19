@@ -1054,6 +1054,23 @@ export function ScreenshotApp() {
     if (ctx) ctx.scale(dpr, dpr);
   }, []);
 
+  const syncCaptureViewport = useCallback(() => {
+    resizeCanvas();
+    if (
+      bgImgRef.current &&
+      !editingScreenshotIdRef.current &&
+      phaseRef.current === "selecting"
+    ) {
+      bgRectRef.current = {
+        x: 0,
+        y: 0,
+        w: window.innerWidth,
+        h: window.innerHeight,
+      };
+    }
+    doRender();
+  }, [doRender, resizeCanvas]);
+
   const toEditorAnnotations = (annotations: StoredScreenshotAnnotation[] | undefined, width: number, height: number, origin: Pt = { x: 0, y: 0 }, scale = 1): Ann[] => {
     if (!annotations?.length) return [];
     return annotations.map((annotation) => {
@@ -1222,6 +1239,7 @@ export function ScreenshotApp() {
   useEffect(() => {
     resizeCanvas();
     loadPendingEdit();
+    window.addEventListener("resize", syncCaptureViewport);
 
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -1268,9 +1286,15 @@ export function ScreenshotApp() {
     window.addEventListener("keydown", onKey, true);
 
     // Rust emits this event every time a new screenshot is ready.
-    // Payload IS the base64 JPEG string 鈥?no second IPC call needed.
+    // Wait for the hidden overlay's first full-screen resize to reach WebKit
+    // before reading innerWidth/innerHeight and sizing the canvas.
     const unlistenPromise = listen<string>("screenshot-ready", (event) => {
-      if (event.payload) loadScreenshotData(event.payload);
+      if (!event.payload) return;
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          loadScreenshotData(event.payload);
+        });
+      });
     });
     const unlistenErrorPromise = listen<string>("screenshot-error", (event) => {
       setCaptureError(event.payload || "截图失败");
@@ -1283,12 +1307,13 @@ export function ScreenshotApp() {
 
     return () => {
       window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("resize", syncCaptureViewport);
       window.removeEventListener("storage", loadPendingEdit);
       window.removeEventListener("devlauncher-pending-screenshot-edit", loadPendingEdit);
       unlistenPromise.then(fn => fn());
       unlistenErrorPromise.then(fn => fn());
     };
-  }, [resizeCanvas, loadScreenshotData, loadPendingEdit, selectFullScreenshot, copyPickedColor, doRender]);
+  }, [resizeCanvas, syncCaptureViewport, loadScreenshotData, loadPendingEdit, selectFullScreenshot, copyPickedColor, doRender]);
 
   // 鈹€鈹€ Mouse position helper 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const getPos = (e: RMouseEvent<HTMLCanvasElement>): Pt => {

@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
@@ -47,6 +47,18 @@ pub fn terminal_spawn(
     rows: u16,
     state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
+    spawn_pty_process(app, &state, session_id, cmd, args, cols, rows).map(|_| ())
+}
+
+pub fn spawn_pty_process(
+    app: tauri::AppHandle,
+    state: &TerminalState,
+    session_id: String,
+    cmd: String,
+    args: Vec<String>,
+    cols: u16,
+    rows: u16,
+) -> Result<(Box<dyn Child + Send + Sync>, Arc<Mutex<Vec<u8>>>), String> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -62,9 +74,10 @@ pub fn terminal_spawn(
         cb.arg(arg);
     }
 
-    let _child = pair.slave.spawn_command(cb).map_err(|e| e.to_string())?;
+    let child = pair.slave.spawn_command(cb).map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let output = Arc::new(Mutex::new(Vec::new()));
 
     {
         let mut sessions = state.sessions.lock().unwrap();
@@ -78,6 +91,7 @@ pub fn terminal_spawn(
     }
 
     let sid = session_id.clone();
+    let captured = output.clone();
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
         loop {
@@ -87,6 +101,9 @@ pub fn terminal_spawn(
                     break;
                 }
                 Ok(n) => {
+                    if let Ok(mut output) = captured.lock() {
+                        output.extend_from_slice(&buf[..n]);
+                    }
                     let b64 = BASE64.encode(&buf[..n]);
                     let _ = app.emit(&format!("terminal-data-{}", sid), b64);
                 }
@@ -94,7 +111,13 @@ pub fn terminal_spawn(
         }
     });
 
-    Ok(())
+    Ok((child, output))
+}
+
+pub fn remove_pty_session(state: &TerminalState, session_id: &str) {
+    let _ = state.sessions.lock().map(|mut sessions| {
+        sessions.remove(session_id);
+    });
 }
 
 /// Send raw bytes (base64-encoded) to the PTY's stdin.

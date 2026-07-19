@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "devlauncher_automation": {
+      "command": "node",
+      "args": [
+        "./mcp/devlauncher-automation-mcp.mjs"
+      ],
+      "cwd": ".",
+      "startup_timeout_sec": 30
+    }
+  }
+}

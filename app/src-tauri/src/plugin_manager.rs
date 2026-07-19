@@ -39,9 +39,22 @@ pub struct MarketplacePluginEntry {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MarketplaceWorkflowTemplatePackage {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub templates: Vec<serde_json::Value>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MarketplaceIndex {
     pub version: u32,
     pub plugins: Vec<MarketplacePluginEntry>,
+    #[serde(default, rename = "workflowTemplatePackages")]
+    pub workflow_template_packages: Vec<MarketplaceWorkflowTemplatePackage>,
 }
 
 #[derive(Clone, Debug, Serialize)]

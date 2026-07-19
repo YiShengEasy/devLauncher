@@ -7,11 +7,13 @@ import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { loadConfig, saveConfig } from "@/api/config";
 import { KeyboardPanel } from "@/components/KeyboardPanel";
 import { BindingModal } from "@/components/BindingModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { SettingsPanel } from "@/components/SettingsPanel";
+import { WorkflowPanel } from "@/components/WorkflowPanel";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { hideMainWindowToTray, minimizeMainWindow } from "@/mainWindowControl";
 import type { Action, KeyId, KeyboardConfig, ThemeConfig } from "@/types/actions";
-import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon } from "@/icons";
+import { AddIcon, DeleteIcon, RenameIcon, SettingsIcon, WorkflowIcon } from "@/icons";
 import { SearchIcon } from "@/icons/entryIcons";
 import { executeAction } from "@/launcher/actionExecutor";
 import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
@@ -116,17 +118,40 @@ export default function App() {
   } = useKeyboardStore();
 
   const [bindingKey, setBindingKey] = useState<KeyId | null>(null);
+  const [showWorkflows, setShowWorkflows] = useState(false);
   const [permissionIssue, setPermissionIssue] = useState<PermissionHealthIssue | null>(null);
   // Tab editing state
   const [editingTabIndex, setEditingTabIndex] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
   const [tabMenu, setTabMenu] = useState<{ index: number; x: number; y: number } | null>(null);
+  const [confirmRequest, setConfirmRequest] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
+  const [notice, setNotice] = useState<{ message: string; tone: "error" | "success" } | null>(null);
   const tabMenuRef = useRef<HTMLDivElement>(null);
   const rootPanelRef = useRef<HTMLDivElement>(null);
   const settingsDialogRef = useRef<HTMLDivElement>(null);
+  const workflowDialogRef = useRef<HTMLDivElement>(null);
   const petModeButtonRef = useRef<HTMLButtonElement>(null);
   const reducedMotion = useReducedMotion();
   const registeredFrontendShortcutsRef = useRef<string[]>([]);
+  const noticeTimerRef = useRef<number | null>(null);
+
+  const showNotice = useCallback((message: string, tone: "error" | "success" = "error") => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+    setNotice({ message, tone });
+    noticeTimerRef.current = window.setTimeout(() => {
+      setNotice(null);
+      noticeTimerRef.current = null;
+    }, 4200);
+  }, []);
+
+  useEffect(() => () => {
+    if (noticeTimerRef.current !== null) window.clearTimeout(noticeTimerRef.current);
+  }, []);
 
   const resetKeyboardPanelVisualState = useCallback(() => {
     const panel = rootPanelRef.current;
@@ -214,6 +239,30 @@ export default function App() {
     if (!showSettings || !settingsDialogRef.current) return;
     animateDialogEnter(settingsDialogRef.current, reducedMotion);
   }, [showSettings, reducedMotion]);
+
+  useGsapContext(workflowDialogRef, () => {
+    if (!showWorkflows || !workflowDialogRef.current) return;
+    animateDialogEnter(workflowDialogRef.current, reducedMotion);
+  }, [showWorkflows, reducedMotion]);
+
+  useEffect(() => {
+    if (!showWorkflows) return;
+    invoke("set_workflow_workspace_mode", { enabled: true }).catch(console.error);
+    loadConfig()
+      .then((nextConfig) => useKeyboardStore.getState().setConfig(nextConfig))
+      .catch(console.error);
+    return () => {
+      invoke("set_workflow_workspace_mode", { enabled: false }).catch(console.error);
+    };
+  }, [showWorkflows]);
+
+  useEffect(() => {
+    if (!bindingKey) return;
+    invoke("set_binding_workspace_mode", { enabled: true }).catch(console.error);
+    return () => {
+      invoke("set_binding_workspace_mode", { enabled: false }).catch(console.error);
+    };
+  }, [bindingKey]);
 
   // Extract app icons from .exe files.
   const extractAllAppIcons = useCallback(async (cfg: KeyboardConfig) => {
@@ -386,10 +435,10 @@ export default function App() {
       console.error("action execution failed:", e);
       if (action.type === "builtin" && action.feature === "screenshot") {
         void refreshPermissionIssue();
-        window.alert(`截图失败：${String(e)}`);
+        showNotice(`截图失败：${String(e)}`);
       }
     }
-  }, [config, activePageIndex, refreshPermissionIssue]);
+  }, [config, activePageIndex, refreshPermissionIssue, showNotice]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -438,7 +487,7 @@ export default function App() {
             console.error("shortcut action failed:", e);
             if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
               void refreshPermissionIssue();
-              window.alert(`截图失败：${String(e)}`);
+              showNotice(`截图失败：${String(e)}`);
             }
           });
           if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
@@ -490,7 +539,7 @@ export default function App() {
       registeredFrontendShortcutsRef.current = [];
       if (shortcuts.length > 0) unregisterShortcut(shortcuts).catch(() => {});
     };
-  }, [config, activePageIndex, refreshPermissionIssue]);
+  }, [config, activePageIndex, refreshPermissionIssue, showNotice]);
 
   // Persist config helper
   const persistConfig = useCallback(() => {
@@ -498,6 +547,17 @@ export default function App() {
       const cfg = useKeyboardStore.getState().config;
       if (cfg) await saveConfig(cfg);
     }, 0);
+  }, []);
+
+  const handleWorkflowConfigSave = useCallback(async (nextConfig: KeyboardConfig) => {
+    const latestConfig = await loadConfig();
+    const expectedRevision = Math.max(0, (nextConfig.revision ?? 0) - 1);
+    if ((latestConfig.revision ?? 0) !== expectedRevision) {
+      useKeyboardStore.setState({ config: latestConfig });
+      throw new Error("工作流已被 MCP 或其他窗口更新，已载入最新配置，请确认后重试。");
+    }
+    useKeyboardStore.setState({ config: nextConfig });
+    await saveConfig(nextConfig);
   }, []);
 
   // Close tab context menu on outside click
@@ -644,7 +704,40 @@ export default function App() {
               <span>{"\u641c\u7d22"}</span>
             </button>
             <button
-              onClick={() => setShowSettings(!showSettings)}
+              onClick={() => {
+                setShowSettings(false);
+                setShowWorkflows((show) => !show);
+              }}
+              style={{
+                width: 32,
+                height: 30,
+                borderRadius: 8,
+                background: showWorkflows
+                  ? "rgba(96,165,250,0.18)"
+                  : "linear-gradient(145deg, rgba(255,255,255,0.105), rgba(255,255,255,0.035))",
+                border: showWorkflows
+                  ? "1px solid rgba(96,165,250,0.36)"
+                  : "1px solid rgba(255,255,255,0.09)",
+                boxShadow: "inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 13px rgba(0,0,0,0.22)",
+                cursor: "pointer",
+                padding: 0,
+                outline: "none",
+                display: "grid",
+                placeItems: "center",
+                color: "rgba(239,243,255,0.75)",
+              }}
+              title="工作流编排器"
+              aria-label="打开工作流编排器"
+              type="button"
+              data-tauri-drag-region="false"
+            >
+              <WorkflowIcon size={17} decorative />
+            </button>
+            <button
+              onClick={() => {
+                setShowWorkflows(false);
+                setShowSettings(!showSettings);
+              }}
               style={{
                 width: 32,
                 height: 30,
@@ -802,10 +895,19 @@ export default function App() {
                 label: "Delete page", icon: <DeleteIcon size={14} decorative />,
                 action: () => {
                   const pageName = config.pages[tabMenu.index]?.name ?? "this page";
-                  if (!window.confirm(`Delete page "${pageName}"? This will remove all bindings on this page.`)) return;
-                  removePage(tabMenu.index);
-                  persistConfig();
+                  const pageIndex = tabMenu.index;
                   setTabMenu(null);
+                  setConfirmRequest({
+                    title: "删除页面",
+                    message: `将删除“${pageName}”及其中的全部按键绑定。此操作无法撤销。`,
+                    confirmLabel: "删除页面",
+                    onConfirm: () => {
+                      removePage(pageIndex);
+                      persistConfig();
+                      setConfirmRequest(null);
+                      showNotice("页面已删除。", "success");
+                    },
+                  });
                 }, danger: true,
               }] : []),
             ].map(item => (
@@ -953,6 +1055,9 @@ export default function App() {
             zIndex: 1000,
             display: "flex", alignItems: "center", justifyContent: "center",
             pointerEvents: "auto",
+            background: "rgba(3,7,18,0.48)",
+            backdropFilter: "blur(4px)",
+            WebkitBackdropFilter: "blur(4px)",
           }}
           onClick={() => setShowSettings(false)}
         >
@@ -976,15 +1081,100 @@ export default function App() {
         </div>
       )}
 
+      {showWorkflows && config && (
+        <div
+          className="motion-dialog"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            pointerEvents: "auto",
+            background: "rgba(3,7,18,0.54)",
+            backdropFilter: "blur(5px)",
+            WebkitBackdropFilter: "blur(5px)",
+          }}
+          onClick={() => setShowWorkflows(false)}
+        >
+          <div
+            ref={workflowDialogRef}
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              width: "calc(100vw - 24px)",
+              maxWidth: "calc(100vw - 24px)",
+              height: "calc(100vh - 24px)",
+              maxHeight: "calc(100vh - 24px)",
+              borderRadius: 12,
+              background: hexToRgba(theme.bgColor, Math.min(theme.bgOpacity + 0.1, 1)),
+              backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
+              WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
+              border: `1px solid ${theme.borderColor}`,
+              boxShadow: "0 24px 70px rgba(0,0,0,0.5)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              pointerEvents: "auto",
+            }}
+          >
+            <WorkflowPanel
+              config={config}
+              onSaveConfig={handleWorkflowConfigSave}
+              onClose={() => setShowWorkflows(false)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Binding modal */}
       {bindingKey && (
         <BindingModal
           keyId={bindingKey}
           initialAction={activePage?.keys[bindingKey]?.action}
+          workflows={config?.workflows ?? []}
           onClose={() => setBindingKey(null)}
           onSave={handleBindingSave}
           onClear={handleBindingClear}
         />
+      )}
+      {confirmRequest && (
+        <ConfirmDialog
+          title={confirmRequest.title}
+          message={confirmRequest.message}
+          confirmLabel={confirmRequest.confirmLabel}
+          onConfirm={confirmRequest.onConfirm}
+          onCancel={() => setConfirmRequest(null)}
+        />
+      )}
+      {notice && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            left: "50%",
+            bottom: 22,
+            zIndex: 2500,
+            maxWidth: "min(520px, calc(100vw - 32px))",
+            transform: "translateX(-50%)",
+            padding: "9px 13px",
+            borderRadius: 8,
+            border: notice.tone === "error"
+              ? "1px solid rgba(248,113,113,0.36)"
+              : "1px solid rgba(74,222,128,0.34)",
+            background: notice.tone === "error"
+              ? "rgba(69,10,10,0.94)"
+              : "rgba(6,78,59,0.94)",
+            boxShadow: "0 12px 36px rgba(0,0,0,0.38)",
+            color: "rgba(255,255,255,0.9)",
+            fontSize: 12,
+            lineHeight: 1.5,
+            textAlign: "center",
+          }}
+        >
+          {notice.message}
+        </div>
       )}
     </div>
   );

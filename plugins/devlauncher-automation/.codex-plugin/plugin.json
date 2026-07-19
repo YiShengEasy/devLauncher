@@ -1,0 +1,28 @@
+{
+  "name": "devlauncher-automation",
+  "version": "0.1.0+codex.20260718000100",
+  "description": "Create, validate, update, and bind DevLauncher workflows from Codex through local MCP tools.",
+  "author": {
+    "name": "Yisheng"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "DevLauncher Automation",
+    "shortDescription": "Build DevLauncher workflows from natural-language requests.",
+    "longDescription": "DevLauncher Automation lets Codex inspect workflow capabilities, preview deterministic workflow definitions, save them with revision protection, and bind them to virtual keyboard keys without directly editing YAML.",
+    "developerName": "Yisheng",
+    "category": "Productivity",
+    "capabilities": [
+      "MCP",
+      "Automation",
+      "Local"
+    ],
+    "defaultPrompt": [
+      "Create a DevLauncher workflow for my development environment.",
+      "Bind an existing DevLauncher workflow to a virtual keyboard key.",
+      "Review my DevLauncher workflows and find invalid completion rules."
+    ],
+    "brandColor": "#38BDF8"
+  }
+}

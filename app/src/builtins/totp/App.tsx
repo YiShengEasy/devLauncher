@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { applyThemeFromConfig } from "@/api/theme";
 import { MacWindowControls } from "@/components/MacWindowControls";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -98,6 +99,7 @@ export function TotpApp() {
   const [error, setError] = useState("");
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const reducedMotion = useReducedMotion();
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
 
   // Esc to hide window
   useEffect(() => {
@@ -193,12 +195,17 @@ export function TotpApp() {
   }, [formName, formSecret, editingToken, tokens, persistTokens]);
 
   // Delete token
-  const handleDelete = useCallback((id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     const token = tokens.find(t => t.id === id);
-    if (!window.confirm(`删除令牌「${token?.name ?? "未命名"}」？`)) return;
+    const confirmed = await confirmAction({
+      title: "删除令牌",
+      message: `将删除“${token?.name ?? "未命名"}”及其保存的 TOTP 密钥。此操作无法撤销。`,
+      confirmLabel: "删除令牌",
+    });
+    if (!confirmed) return;
     const updated = tokens.filter(t => t.id !== id);
     persistTokens(updated);
-  }, [tokens, persistTokens]);
+  }, [confirmAction, tokens, persistTokens]);
 
   // Edit token
   const handleEdit = useCallback((token: TotpToken) => {
@@ -402,6 +409,7 @@ export function TotpApp() {
           </div>
         )}
       </div>
+      {confirmDialog}
     </div>
   );
 }

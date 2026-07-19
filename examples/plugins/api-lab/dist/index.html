@@ -334,6 +334,34 @@
         padding: 12px;
       }
 
+      .runner-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 7px;
+        margin-bottom: 8px;
+      }
+
+      .runner-stat {
+        min-width: 0;
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.04);
+        padding: 8px;
+      }
+
+      .runner-stat strong {
+        display: block;
+        font-size: 15px;
+        line-height: 1.1;
+      }
+
+      .runner-stat span {
+        display: block;
+        margin-top: 4px;
+        color: var(--soft);
+        font-size: 10px;
+      }
+
       .mode-line {
         display: grid;
         grid-template-columns: 140px auto auto minmax(0, 1fr);
@@ -397,6 +425,7 @@
           <div class="tabs">
             <button class="tab active" data-side-tab="collections" type="button">集合</button>
             <button class="tab" data-side-tab="history" type="button">历史</button>
+            <button class="tab" data-side-tab="automation" type="button">自动化</button>
             <button class="tab" data-side-tab="env" type="button">环境</button>
           </div>
           <div id="sidePanel"></div>
@@ -469,6 +498,7 @@
         ],
         collections: [{ id: "col-default", name: "Default", requests: [] }],
         history: [],
+        runnerResults: [],
         draft: {
           id: "draft",
           name: "Untitled request",
@@ -552,6 +582,7 @@
           merged.activeRequestTab = merged.activeRequestTab === "query" ? "params" : merged.activeRequestTab;
           merged.collections = Array.isArray(merged.collections) && merged.collections.length ? merged.collections : base.collections;
           merged.history = Array.isArray(merged.history) ? merged.history : [];
+          merged.runnerResults = [];
           merged.sideSearch = String(merged.sideSearch ?? "");
           merged.draft = normalizeRequest({ ...base.draft, ...merged.draft, id: "draft" });
           merged.collections = merged.collections.map((col) => ({
@@ -571,7 +602,7 @@
 
       function saveState() {
         try {
-          const { response, ...persisted } = state;
+          const { response, runnerResults, ...persisted } = state;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
         } catch (error) {
           setStatus("保存失败：请导出备份或清理本地数据", "error");
@@ -614,8 +645,8 @@
         state.draft.url = els.url.value.trim();
       }
 
-      function authHeader() {
-        const auth = normalizeAuth(state.draft.auth);
+      function authHeader(draft = state.draft) {
+        const auth = normalizeAuth(draft.auth);
         if (auth.type === "bearer") {
           const token = resolveVariables(auth.bearerToken);
           if (token.missing.length) return { missing: token.missing, headers: {} };
@@ -632,10 +663,9 @@
         return { missing: [], headers: {} };
       }
 
-      function buildRequest() {
-        syncDraftFromInputs();
+      function buildRequestFor(draft) {
         const missing = new Set();
-        const resolvedUrl = resolveVariables(state.draft.url);
+        const resolvedUrl = resolveVariables(draft.url);
         for (const key of resolvedUrl.missing) missing.add(key);
         if (!resolvedUrl.value.trim()) throw new Error("URL 不能为空");
 
@@ -646,17 +676,17 @@
           throw new Error("URL 无效，请使用完整 URL");
         }
 
-        for (const pair of enabledPairs(state.draft.query)) {
+        for (const pair of enabledPairs(draft.query)) {
           const key = resolveVariables(pair.key);
           const value = resolveVariables(pair.value);
           for (const item of [...key.missing, ...value.missing]) missing.add(item);
           if (key.value.trim()) url.searchParams.set(key.value, value.value);
         }
 
-        const auth = authHeader();
+        const auth = authHeader(draft);
         for (const item of auth.missing) missing.add(item);
         const headers = { ...auth.headers };
-        for (const pair of enabledPairs(state.draft.headers)) {
+        for (const pair of enabledPairs(draft.headers)) {
           const key = resolveVariables(pair.key);
           const value = resolveVariables(pair.value);
           for (const item of [...key.missing, ...value.missing]) missing.add(item);
@@ -664,11 +694,11 @@
         }
 
         let body;
-        if (!["GET", "HEAD"].includes(state.draft.method) && state.draft.bodyMode !== "none") {
-          const resolvedBody = resolveVariables(state.draft.body);
+        if (!["GET", "HEAD"].includes(draft.method) && draft.bodyMode !== "none") {
+          const resolvedBody = resolveVariables(draft.body);
           for (const item of resolvedBody.missing) missing.add(item);
           body = resolvedBody.value;
-          if (state.draft.bodyMode === "json" && !Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+          if (draft.bodyMode === "json" && !Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
             headers["Content-Type"] = "application/json";
           }
         }
@@ -678,11 +708,16 @@
         }
 
         return {
-          method: state.draft.method,
+          method: draft.method,
           url: url.toString(),
-          init: { method: state.draft.method, headers, body },
-          snapshot: clone(state.draft)
+          init: { method: draft.method, headers, body },
+          snapshot: clone(draft)
         };
+      }
+
+      function buildRequest() {
+        syncDraftFromInputs();
+        return buildRequestFor(state.draft);
       }
 
       function resolvedPreview() {
@@ -705,6 +740,96 @@
           request: request.snapshot
         });
         state.history = state.history.slice(0, 100);
+      }
+
+      async function runPreparedRequest(request) {
+        const controller = new AbortController();
+        activeAbort = controller;
+        const startedAt = performance.now();
+        try {
+          const response = await fetch(request.url, { ...request.init, signal: controller.signal });
+          const text = await response.text();
+          return {
+            ok: response.ok,
+            status: response.status,
+            statusText: response.statusText,
+            elapsedMs: Math.round(performance.now() - startedAt),
+            size: new Blob([text]).size,
+            finalUrl: response.url,
+            headers: [...response.headers.entries()].map(([key, value]) => ({ key, value }))
+          };
+        } catch (error) {
+          const aborted = error.name === "AbortError";
+          return {
+            ok: false,
+            status: aborted ? "cancelled" : "failed",
+            elapsedMs: Math.round(performance.now() - startedAt),
+            error: aborted ? "请求已取消" : (error.message || "请求失败"),
+            finalUrl: request.url,
+            headers: []
+          };
+        }
+      }
+
+      async function runCollectionRequests() {
+        const requests = collection().requests;
+        if (!requests.length) {
+          setStatus("集合为空，请先保存请求", "error");
+          state.activeSideTab = "collections";
+          render();
+          return;
+        }
+
+        state.activeSideTab = "automation";
+        state.runnerResults = [];
+        els.send.disabled = true;
+        els.cancel.disabled = false;
+        render();
+
+        for (const requestDraft of requests) {
+          let prepared;
+          try {
+            prepared = buildRequestFor(requestDraft);
+          } catch (error) {
+            state.runnerResults.push({
+              id: uid("run"),
+              name: requestDraft.name,
+              method: requestDraft.method,
+              url: requestDraft.url,
+              status: "invalid",
+              ok: false,
+              elapsedMs: 0,
+              error: error.message
+            });
+            renderSidePanel();
+            continue;
+          }
+
+          setStatus(`自动化运行中：${requestDraft.name}`);
+          const result = await runPreparedRequest(prepared);
+          state.runnerResults.push({
+            id: uid("run"),
+            name: requestDraft.name,
+            method: requestDraft.method,
+            url: prepared.url,
+            status: result.status,
+            ok: result.ok,
+            elapsedMs: result.elapsedMs,
+            error: result.error
+          });
+          recordHistory(prepared, result);
+          renderSidePanel();
+          if (result.status === "cancelled") break;
+        }
+
+        activeAbort = null;
+        els.send.disabled = false;
+        els.cancel.disabled = true;
+        const passed = state.runnerResults.filter((item) => item.ok).length;
+        const tone = passed === state.runnerResults.length ? "ok" : "error";
+        setStatus(`自动化完成：${passed}/${state.runnerResults.length} 通过`, tone);
+        saveState();
+        render();
       }
 
       function formatBytes(size) {
@@ -939,6 +1064,36 @@
                   </div>
                 </div>
               `).join("") : `<div class="empty">发送请求后会记录历史</div>`}
+            </div>
+          `;
+          return;
+        }
+
+        if (state.activeSideTab === "automation") {
+          const total = state.runnerResults.length;
+          const passed = state.runnerResults.filter((item) => item.ok).length;
+          const failed = total - passed;
+          const elapsed = state.runnerResults.reduce((sum, item) => sum + (Number(item.elapsedMs) || 0), 0);
+          els.sidePanel.innerHTML = `
+            <h2 class="section-title">集合自动化</h2>
+            <div class="runner-summary">
+              <div class="runner-stat"><strong>${passed}/${total}</strong><span>通过</span></div>
+              <div class="runner-stat"><strong>${failed}</strong><span>失败</span></div>
+              <div class="runner-stat"><strong>${elapsed}</strong><span>总耗时 ms</span></div>
+            </div>
+            <div class="actions">
+              <button data-action="run-collection" type="button">运行集合</button>
+              <button data-action="export" type="button">导出集合</button>
+            </div>
+            <p class="hint">按当前环境变量运行第一个集合中的请求，适合做 smoke test。CORS 限制仍适用于 WebView 阶段。</p>
+            <div class="list">
+              ${total ? state.runnerResults.map((item) => `
+                <div class="list-item">
+                  <p class="item-title">${methodBadge(item.method)}${statusBadge(item.status)}<span>${escapeHtml(item.elapsedMs)} ms</span></p>
+                  <p class="item-subtitle">${escapeHtml(item.name)} · ${escapeHtml(item.url)}</p>
+                  ${item.error ? `<p class="hint danger">${escapeHtml(item.error)}</p>` : ""}
+                </div>
+              `).join("") : `<div class="empty">点击“运行集合”批量执行已保存请求</div>`}
             </div>
           `;
           return;
@@ -1251,6 +1406,8 @@
           importData();
         } else if (target.dataset.action === "example") {
           loadExampleRequest();
+        } else if (target.dataset.action === "run-collection") {
+          void runCollectionRequests();
         } else if (target.dataset.action === "add-env") {
           addEnvironment();
         } else if (target.dataset.action === "add-query") {

@@ -39,9 +39,18 @@ export interface MarketplacePluginEntry {
   icon?: string;
 }
 
+export interface MarketplaceWorkflowTemplatePackage {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  templates: import("@/api/workflowTemplates").WorkflowTemplateDefinition[];
+}
+
 export interface MarketplaceIndex {
   version: 1;
   plugins: MarketplacePluginEntry[];
+  workflowTemplatePackages?: MarketplaceWorkflowTemplatePackage[];
 }
 
 export interface PluginEntryContent {

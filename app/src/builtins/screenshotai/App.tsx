@@ -5,6 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { applyThemeFromConfig } from "@/api/theme";
 import { MacWindowControls } from "@/components/MacWindowControls";
+import { useConfirmDialog } from "@/components/ConfirmDialog";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
@@ -229,6 +230,7 @@ export function ScreenshotAiApp() {
   const [status, setStatus] = useState("");
   const [recognizingText, setRecognizingText] = useState(false);
   const reducedMotion = useReducedMotion();
+  const { confirm: confirmAction, dialog: confirmDialog } = useConfirmDialog();
 
   const selected = items.find((item) => item.id === selectedId) ?? items[0] ?? null;
 
@@ -337,8 +339,13 @@ export function ScreenshotAiApp() {
     setAnnotationsAndPersist(annotations.filter((annotation) => annotation.id !== id));
   }
 
-  function deleteItem(id: string) {
-    if (!window.confirm("删除这张截图？")) return;
+  async function deleteItem(id: string) {
+    const confirmed = await confirmAction({
+      title: "删除截图",
+      message: "将删除这张截图及其全部编号备注。此操作无法撤销。",
+      confirmLabel: "删除截图",
+    });
+    if (!confirmed) return;
     const next = deleteScreenshot(id);
     setItems(next);
     setSelectedId((current) => {
@@ -347,9 +354,14 @@ export function ScreenshotAiApp() {
     });
   }
 
-  function clearItems() {
+  async function clearItems() {
     if (items.length === 0) return;
-    if (!window.confirm("清空所有截图？")) return;
+    const confirmed = await confirmAction({
+      title: "清空所有截图",
+      message: `将删除当前保存的 ${items.length} 张截图及其编号备注。此操作无法撤销。`,
+      confirmLabel: "全部清空",
+    });
+    if (!confirmed) return;
     clearScreenshots();
     setItems([]);
     setSelectedId(null);
@@ -587,6 +599,7 @@ export function ScreenshotAiApp() {
           {status && <div style={{ ...mutedStyle, color: "rgba(255,255,255,0.58)" }}>{status}</div>}
         </section>
       </div>
+      {confirmDialog}
     </div>
   );
 }

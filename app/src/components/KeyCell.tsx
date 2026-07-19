@@ -21,7 +21,8 @@ interface KeyCellProps {
 
 const KEY_WIDTH = 72;
 const KEY_HEIGHT = 68;
-const KEY_ICON_SIZE = 32;
+const KEY_ICON_SIZE_WITH_LABEL = 27;
+const KEY_ICON_SIZE_WITHOUT_LABEL = 36;
 
 const KEYCAP_BORDER = "rgba(255,255,255,0.09)";
 const KEYCAP_BORDER_HOVER = "rgba(255,255,255,0.13)";
@@ -101,8 +102,9 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
   const action = binding?.action ?? null;
   const meta = action ? ACTION_TYPE_META[action.type] : null;
   const keyBgOpacity = useKeyboardStore((s) => s.theme.keyBgOpacity);
-  const showActionName = action?.type === "script";
-  const actionIconSize = showActionName ? 24 : KEY_ICON_SIZE;
+  const showKeyLabels = useKeyboardStore((s) => s.theme.showKeyLabels);
+  const showActionName = Boolean(action) && showKeyLabels;
+  const actionIconSize = showActionName ? KEY_ICON_SIZE_WITH_LABEL : KEY_ICON_SIZE_WITHOUT_LABEL;
 
   useEffect(() => {
     setHovered(false);
@@ -230,7 +232,6 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
               justifyContent: "center",
               flexShrink: 0,
               color: accent,
-              filter: `drop-shadow(0 0 5px ${accent}66) drop-shadow(0 1px 2px rgba(0,0,0,0.42))`,
             }}
           >
             <ActionIcon action={action} size={actionIconSize} />
@@ -239,11 +240,11 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
         {action && showActionName && (
           <span
             style={{
-              maxWidth: "58px",
-              marginTop: 4,
+              maxWidth: "62px",
+              marginTop: 3,
               padding: "0 3px",
-              fontSize: 10,
-              fontWeight: 640,
+              fontSize: 9,
+              fontWeight: 650,
               lineHeight: 1.15,
               letterSpacing: 0,
               color: "rgba(252,253,255,0.9)",

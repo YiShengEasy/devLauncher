@@ -106,8 +106,8 @@ fn prepare_capture_window_for_current_space(win: &tauri::WebviewWindow) -> Resul
 }
 
 #[cfg(target_os = "macos")]
-fn focus_capture_window(_win: &tauri::WebviewWindow) -> Result<(), String> {
-    Ok(())
+fn focus_capture_window(win: &tauri::WebviewWindow) -> Result<(), String> {
+    win.set_focus().map_err(|e| e.to_string())
 }
 
 #[cfg(not(target_os = "macos"))]

@@ -1,28 +1,151 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type { Action, ActionType, AppAction, BuiltinAction, BuiltinFeature, PluginAction, ScriptAction, UrlAction } from "@/types/actions";
-import { ACTION_TYPE_META } from "@/types/actions";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { ACTION_ICON_COMPONENTS } from "@/icons";
 import type { IconComponent } from "@/icons";
+import { iconColors } from "@/icons/palette";
+import { actionIconAccent, actionIconMonogram } from "./actionIconIdentity";
 
 const TYPE_ICONS: Record<ActionType, IconComponent> = ACTION_ICON_COMPONENTS;
 
-function LineIconShell({ children, size, color }: { children: ReactNode; size: number; color: string }) {
+function IconTile({
+  children,
+  size,
+  accent,
+  label,
+}: {
+  children: ReactNode;
+  size: number;
+  accent: string;
+  label: string;
+}) {
   return (
     <div
+      aria-hidden="true"
+      title={label}
       style={{
         width: size,
         height: size,
         display: "grid",
         placeItems: "center",
-        color,
-        filter: `drop-shadow(0 0 5px ${color}66) drop-shadow(0 1px 2px rgba(0,0,0,0.42))`,
+        position: "relative",
+        flexShrink: 0,
+        overflow: "hidden",
+        borderRadius: Math.max(5, size * 0.25),
+        color: accent,
+        border: `1px solid ${accent}48`,
+        background: [
+          `radial-gradient(circle at 28% 18%, ${accent}35, transparent 52%)`,
+          "linear-gradient(145deg, rgba(255,255,255,0.13), rgba(255,255,255,0.035))",
+        ].join(", "),
+        boxShadow: [
+          "inset 0 1px 0 rgba(255,255,255,0.16)",
+          "inset 0 -1px 0 rgba(0,0,0,0.18)",
+          `0 3px 8px ${accent}20`,
+        ].join(", "),
       }}
     >
       {children}
     </div>
+  );
+}
+
+function ImageTile({ src, action, size, onError }: {
+  src: string;
+  action: Action;
+  size: number;
+  onError: () => void;
+}) {
+  return (
+    <IconTile size={size} accent={actionIconAccent(action)} label={action.name}>
+      <img
+        src={src}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          objectFit: "cover",
+          padding: Math.max(1, Math.round(size * 0.06)),
+          borderRadius: Math.max(4, size * 0.21),
+        }}
+        referrerPolicy="no-referrer"
+        onError={onError}
+        alt=""
+      />
+    </IconTile>
+  );
+}
+
+function IdentityIcon({
+  action,
+  Icon,
+  size,
+}: {
+  action: Action;
+  Icon: IconComponent;
+  size: number;
+}) {
+  const accent = actionIconAccent(action);
+  const monogram = actionIconMonogram(action);
+  const showTypeMark = size >= 24;
+
+  return (
+    <IconTile size={size} accent={accent} label={action.name}>
+      <span
+        style={{
+          color: "rgba(255,255,255,0.95)",
+          fontSize: Math.max(8, size * 0.38),
+          fontWeight: 760,
+          lineHeight: 1,
+          letterSpacing: 0,
+          textShadow: "0 1px 3px rgba(0,0,0,0.52)",
+        }}
+      >
+        {monogram}
+      </span>
+      {showTypeMark && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            right: 2,
+            bottom: 2,
+            width: Math.max(9, size * 0.34),
+            height: Math.max(9, size * 0.34),
+            borderRadius: Math.max(3, size * 0.1),
+            display: "grid",
+            placeItems: "center",
+            color: accent,
+            background: "rgba(8,12,20,0.82)",
+            border: "1px solid rgba(255,255,255,0.13)",
+          }}
+        >
+          <Icon size={Math.max(7, size * 0.24)} color={accent} decorative />
+        </span>
+      )}
+    </IconTile>
+  );
+}
+
+function SemanticIcon({
+  action,
+  size,
+  accent,
+  children,
+}: {
+  action: Action;
+  size: number;
+  accent: string;
+  children: ReactNode;
+}) {
+  return (
+    <IconTile size={size} accent={accent} label={action.name}>
+      <span aria-hidden="true" style={{ display: "grid", placeItems: "center", color: accent }}>
+        {children}
+      </span>
+    </IconTile>
   );
 }
 
@@ -46,18 +169,11 @@ function UrlFavicon({ action, size, fallback }: { action: UrlAction; size: numbe
 
   if (cachedSrc && failedCachedSrc !== cachedSrc) {
     return (
-      <img
+      <ImageTile
         src={cachedSrc}
-        width={size}
-        height={size}
-        style={{
-          borderRadius: size * 0.22,
-          objectFit: "cover",
-          background: "rgba(255,255,255,0.92)",
-        }}
-        referrerPolicy="no-referrer"
+        action={action}
+        size={size}
         onError={() => setFailedCachedSrc(cachedSrc)}
-        alt={action.name}
       />
     );
   }
@@ -67,18 +183,11 @@ function UrlFavicon({ action, size, fallback }: { action: UrlAction; size: numbe
   }
 
   return (
-    <img
+    <ImageTile
       src={faviconUrl}
-      width={size}
-      height={size}
-      style={{
-        borderRadius: size * 0.22,
-        objectFit: "cover",
-        background: "rgba(255,255,255,0.92)",
-      }}
-      referrerPolicy="no-referrer"
+      action={action}
+      size={size}
       onError={() => setFailedUrl(faviconUrl)}
-      alt={action.name}
     />
   );
 }
@@ -89,7 +198,6 @@ interface ActionIconProps {
 }
 
 export function ActionIcon({ action, size = 36 }: ActionIconProps) {
-  const meta = ACTION_TYPE_META[action.type];
   const Icon = TYPE_ICONS[action.type];
   const appIcons = useKeyboardStore(state => state.appIcons);
   const pluginIcons = useKeyboardStore(state => state.pluginIcons);
@@ -99,13 +207,11 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
 
   if (actionImageSrc && failedImageSrc !== actionImageSrc) {
     return (
-      <img
+      <ImageTile
         src={actionImageSrc}
-        width={size}
-        height={size}
-        style={{ borderRadius: size * 0.22, objectFit: "cover" }}
+        action={action}
+        size={size}
         onError={() => setFailedImageSrc(actionImageSrc)}
-        alt={action.name}
       />
     );
   }
@@ -117,13 +223,11 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
       const cachedIconSrc = `data:image/png;base64,${cachedIcon}`;
       if (failedImageSrc !== cachedIconSrc) {
         return (
-          <img
+          <ImageTile
             src={cachedIconSrc}
-            width={size}
-            height={size}
-            style={{ borderRadius: size * 0.15, objectFit: "cover" }}
+            action={action}
+            size={size}
             onError={() => setFailedImageSrc(cachedIconSrc)}
-            alt={action.name}
           />
         );
       }
@@ -132,77 +236,32 @@ export function ActionIcon({ action, size = 36 }: ActionIconProps) {
 
   if (action.type === "system") {
     return (
-      <LineIconShell size={size} color={meta.color}>
-        <Icon size={size} />
-      </LineIconShell>
+      <IdentityIcon action={action} Icon={Icon} size={size} />
     );
   }
 
   if (action.type === "builtin") {
     const feature = (action as BuiltinAction).feature as BuiltinFeature;
+    const accent = iconColors[feature as keyof typeof iconColors] ?? actionIconAccent(action);
     return (
-      <LineIconShell size={size} color={meta.color}>
-        <BuiltinIcon feature={feature} size={size} />
-      </LineIconShell>
+      <SemanticIcon action={action} size={size} accent={accent}>
+        <BuiltinIcon feature={feature} size={size * 0.68} />
+      </SemanticIcon>
     );
   }
 
   if (action.type === "script" && (action as ScriptAction).shell === "terminal") {
     return (
-      <LineIconShell size={size} color={meta.color}>
-        <BuiltinIcon feature="terminal" size={size} />
-      </LineIconShell>
+      <SemanticIcon action={action} size={size} accent={iconColors.terminal}>
+        <BuiltinIcon feature="terminal" size={size * 0.68} />
+      </SemanticIcon>
     );
   }
 
   if (action.type === "url") {
-    const fallback = (
-      <LineIconShell size={size} color={meta.color}>
-        <Icon size={size} />
-      </LineIconShell>
-    );
+    const fallback = <IdentityIcon action={action} Icon={Icon} size={size} />;
     return <UrlFavicon action={action as UrlAction} size={size} fallback={fallback} />;
   }
 
-  if (action.type === "folder") {
-    return (
-      <LineIconShell size={size} color={meta.color}>
-        <Icon size={size} />
-      </LineIconShell>
-    );
-  }
-
-  if (action.type === "ssh") {
-    return (
-      <LineIconShell size={size} color={meta.color}>
-        <Icon size={size} />
-      </LineIconShell>
-    );
-  }
-
-  const letter = action.name.charAt(0).toUpperCase();
-
-  return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        display: "grid",
-        placeItems: "center",
-        overflow: "hidden",
-        color: meta.color,
-        filter: `drop-shadow(0 0 5px ${meta.color}66) drop-shadow(0 1px 2px rgba(0,0,0,0.42))`,
-      }}
-    >
-      <span style={{
-        fontSize: size * 0.46,
-        fontWeight: 700,
-        lineHeight: 1,
-        letterSpacing: "-0.5px",
-        color: "rgba(255,255,255,0.92)",
-      }}>
-        {letter}
-      </span>
-    </div>
-  );
+  return <IdentityIcon action={action} Icon={Icon} size={size} />;
 }

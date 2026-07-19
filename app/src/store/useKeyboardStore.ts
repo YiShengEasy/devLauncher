@@ -50,7 +50,14 @@ export const useKeyboardStore = create<KeyboardState>((set, get) => ({
   },
   // theme is a direct property — do NOT use a getter here (Zustand Object.assign loses getters)
 
-  setConfig: (config) => set({ config, activePageIndex: 0, theme: config.theme ?? DEFAULT_THEME }),
+  setConfig: (config) => {
+    const theme = { ...DEFAULT_THEME, ...config.theme };
+    set({
+      config: { ...config, theme },
+      activePageIndex: 0,
+      theme,
+    });
+  },
   setActivePageIndex: (index) => set({ activePageIndex: index }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),

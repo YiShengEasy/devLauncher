@@ -1,0 +1,2494 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DevLauncher 工作流编排器</title>
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0e14;
+      --panel: #111620;
+      --surface: #171d29;
+      --surface-2: #1c2330;
+      --surface-hover: #222b3a;
+      --line: rgba(218, 226, 242, 0.11);
+      --line-strong: rgba(218, 226, 242, 0.19);
+      --text: #edf1f7;
+      --muted: #929caf;
+      --subtle: #667186;
+      --blue: #60a5fa;
+      --green: #34d399;
+      --amber: #fbbf24;
+      --violet: #c084fc;
+      --red: #f87171;
+      --cyan: #7dd3fc;
+      --radius: 8px;
+      --shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      min-width: 720px;
+      letter-spacing: 0;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+      letter-spacing: 0;
+    }
+
+    button {
+      color: inherit;
+    }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid rgba(96, 165, 250, 0.85);
+      outline-offset: 2px;
+    }
+
+    button:disabled {
+      cursor: default;
+      opacity: 0.45;
+    }
+
+    .app-shell {
+      display: grid;
+      grid-template-rows: 58px minmax(0, 1fr);
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(circle at 44% -20%, rgba(96, 165, 250, 0.09), transparent 34%),
+        var(--bg);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(13, 17, 24, 0.96);
+      min-width: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 204px;
+      font-size: 13px;
+      font-weight: 720;
+      white-space: nowrap;
+    }
+
+    .brand img {
+      width: 29px;
+      height: 29px;
+      border-radius: 7px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.32);
+    }
+
+    .crumb {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .crumb strong {
+      color: var(--text);
+      font-weight: 650;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 224px minmax(470px, 1fr) 320px;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .sidebar,
+    .inspector {
+      min-width: 0;
+      background: rgba(17, 22, 32, 0.92);
+    }
+
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--line);
+    }
+
+    .inspector {
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid var(--line);
+      transition: transform 160ms ease;
+    }
+
+    .panel-heading {
+      display: flex;
+      align-items: center;
+      min-height: 52px;
+      gap: 8px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-heading h2 {
+      margin: 0;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .panel-heading .count {
+      color: var(--subtle);
+      font-size: 11px;
+    }
+
+    .search {
+      position: relative;
+      padding: 12px 12px 8px;
+    }
+
+    .search svg {
+      position: absolute;
+      left: 22px;
+      top: 21px;
+      width: 14px;
+      height: 14px;
+      color: var(--subtle);
+      pointer-events: none;
+    }
+
+    .search input {
+      width: 100%;
+      height: 34px;
+      padding: 0 10px 0 31px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.035);
+    }
+
+    .search input::placeholder {
+      color: var(--subtle);
+    }
+
+    .workflow-list {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      padding: 5px 8px 12px;
+    }
+
+    .workflow-item {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr) auto;
+      align-items: center;
+      width: 100%;
+      min-height: 52px;
+      margin-bottom: 4px;
+      padding: 7px 8px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .workflow-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .workflow-item.active {
+      border-color: rgba(96, 165, 250, 0.22);
+      background: rgba(96, 165, 250, 0.1);
+    }
+
+    .workflow-mark {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--cyan);
+      background: rgba(125, 211, 252, 0.08);
+    }
+
+    .workflow-mark svg {
+      width: 15px;
+      height: 15px;
+    }
+
+    .workflow-copy {
+      min-width: 0;
+    }
+
+    .workflow-copy strong,
+    .workflow-copy span {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .workflow-copy strong {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .workflow-copy span {
+      margin-top: 3px;
+      color: var(--subtle);
+      font-size: 10px;
+    }
+
+    .sidebar-footer {
+      display: grid;
+      grid-template-columns: 1fr 34px;
+      gap: 7px;
+      padding: 10px;
+      border-top: 1px solid var(--line);
+    }
+
+    .main {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background: rgba(11, 14, 20, 0.66);
+    }
+
+    .workflow-header {
+      padding: 18px 22px 16px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .workflow-title-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .title-copy {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .title-copy input {
+      width: 100%;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: var(--text);
+      font-size: 20px;
+      font-weight: 720;
+    }
+
+    .title-copy textarea {
+      display: block;
+      width: 100%;
+      height: 24px;
+      margin-top: 5px;
+      padding: 0;
+      resize: none;
+      overflow: hidden;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 20px;
+    }
+
+    .header-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .meta-field {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      font-size: 11px;
+    }
+
+    .meta-field input {
+      width: 70px;
+      padding: 0;
+      border: 0;
+      color: var(--text);
+      background: transparent;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .meta-field svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .step-area {
+      min-height: 0;
+      overflow: auto;
+      padding: 18px 22px 28px;
+    }
+
+    .section-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0 0 11px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .section-label span {
+      color: var(--subtle);
+      font-weight: 500;
+    }
+
+    .steps {
+      position: relative;
+    }
+
+    .steps::before {
+      content: "";
+      position: absolute;
+      top: 28px;
+      bottom: 28px;
+      left: 20px;
+      width: 1px;
+      background: var(--line-strong);
+    }
+
+    .step {
+      position: relative;
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      align-items: center;
+      min-height: 66px;
+      margin-bottom: 8px;
+      padding: 8px 9px 8px 7px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(23, 29, 41, 0.9);
+      cursor: pointer;
+      transition: border-color 130ms ease, background 130ms ease, transform 130ms ease;
+    }
+
+    .step:hover {
+      border-color: var(--line-strong);
+      background: var(--surface-2);
+    }
+
+    .step.selected {
+      border-color: rgba(96, 165, 250, 0.55);
+      box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.09);
+    }
+
+    .step.dragging {
+      opacity: 0.48;
+    }
+
+    .step.drag-over {
+      transform: translateY(3px);
+      border-color: var(--blue);
+    }
+
+    .step.disabled {
+      opacity: 0.52;
+    }
+
+    .step-index {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      margin-left: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 50%;
+      background: #151b26;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .step.running .step-index {
+      border-color: rgba(96, 165, 250, 0.72);
+      color: var(--blue);
+      animation: pulse 1s ease infinite;
+    }
+
+    .step.success .step-index {
+      border-color: rgba(52, 211, 153, 0.68);
+      color: var(--green);
+    }
+
+    .step.failed .step-index {
+      border-color: rgba(248, 113, 113, 0.68);
+      color: var(--red);
+    }
+
+    @keyframes pulse {
+      50% {
+        box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.12);
+      }
+    }
+
+    .step-main {
+      display: grid;
+      grid-template-columns: 34px minmax(0, 1fr);
+      align-items: center;
+      min-width: 0;
+      gap: 9px;
+    }
+
+    .type-icon {
+      display: grid;
+      place-items: center;
+      width: 32px;
+      height: 32px;
+      border: 1px solid color-mix(in srgb, var(--type-color) 38%, transparent);
+      border-radius: 7px;
+      color: var(--type-color);
+      background: color-mix(in srgb, var(--type-color) 10%, transparent);
+    }
+
+    .type-icon svg {
+      width: 17px;
+      height: 17px;
+    }
+
+    .step-copy {
+      min-width: 0;
+    }
+
+    .step-name-line {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+      gap: 7px;
+    }
+
+    .step-name-line strong {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .type-label {
+      flex: 0 0 auto;
+      padding: 2px 5px;
+      border-radius: 4px;
+      color: var(--type-color);
+      background: color-mix(in srgb, var(--type-color) 9%, transparent);
+      font-size: 9px;
+      font-weight: 650;
+    }
+
+    .step-summary {
+      overflow: hidden;
+      margin-top: 5px;
+      color: var(--subtle);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+    }
+
+    .completion-rule {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-left: 7px;
+      color: #86a8d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-weight: 600;
+    }
+
+    .completion-rule::before {
+      content: "";
+      width: 4px;
+      height: 4px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .step-actions {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      padding-left: 8px;
+      opacity: 0.72;
+    }
+
+    .step:hover .step-actions,
+    .step.selected .step-actions {
+      opacity: 1;
+    }
+
+    .add-step-row {
+      display: grid;
+      grid-template-columns: minmax(140px, 220px) auto;
+      justify-content: start;
+      gap: 8px;
+      margin: 12px 0 0 49px;
+    }
+
+    .run-panel {
+      border-top: 1px solid var(--line);
+      background: rgba(17, 22, 32, 0.92);
+    }
+
+    .run-summary {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
+      gap: 10px;
+      padding: 0 16px;
+      cursor: pointer;
+    }
+
+    .run-summary .chevron {
+      transition: transform 140ms ease;
+    }
+
+    .run-panel.open .run-summary .chevron {
+      transform: rotate(180deg);
+    }
+
+    .run-status {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-width: 118px;
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--subtle);
+    }
+
+    .status-dot.running {
+      background: var(--blue);
+      box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.1);
+    }
+
+    .status-dot.success {
+      background: var(--green);
+    }
+
+    .status-dot.stopped {
+      background: var(--amber);
+    }
+
+    .progress-track {
+      flex: 1;
+      height: 4px;
+      overflow: hidden;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.065);
+    }
+
+    .progress-bar {
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--blue);
+      transition: width 180ms ease;
+    }
+
+    .run-log {
+      display: none;
+      height: 110px;
+      overflow: auto;
+      padding: 9px 16px 14px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      line-height: 1.65;
+    }
+
+    .run-panel.open .run-log {
+      display: block;
+    }
+
+    .log-line {
+      display: grid;
+      grid-template-columns: 52px 58px minmax(0, 1fr);
+      gap: 7px;
+    }
+
+    .log-line .ok {
+      color: var(--green);
+    }
+
+    .log-line .run {
+      color: var(--blue);
+    }
+
+    .log-line .warn {
+      color: var(--amber);
+    }
+
+    .inspector-content {
+      min-height: 0;
+      overflow: auto;
+      padding: 14px;
+    }
+
+    .inspector-empty {
+      display: grid;
+      place-items: center;
+      min-height: 280px;
+      color: var(--subtle);
+      text-align: center;
+      font-size: 11px;
+      line-height: 1.7;
+    }
+
+    .inspector-empty svg {
+      width: 28px;
+      height: 28px;
+      margin-bottom: 9px;
+      opacity: 0.55;
+    }
+
+    .inspector-type {
+      display: grid;
+      grid-template-columns: 38px minmax(0, 1fr);
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .inspector-type strong,
+    .inspector-type span {
+      display: block;
+    }
+
+    .inspector-type strong {
+      font-size: 13px;
+    }
+
+    .inspector-type span {
+      margin-top: 3px;
+      color: var(--subtle);
+      font-size: 10px;
+    }
+
+    .field {
+      margin-bottom: 13px;
+    }
+
+    .field > label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 600;
+    }
+
+    .input,
+    .select,
+    .textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.045);
+      transition: border-color 120ms ease, background 120ms ease;
+    }
+
+    .input,
+    .select {
+      height: 34px;
+      padding: 0 9px;
+    }
+
+    .textarea {
+      min-height: 76px;
+      padding: 8px 9px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+
+    .input:focus,
+    .select:focus,
+    .textarea:focus {
+      border-color: rgba(96, 165, 250, 0.55);
+      background: rgba(255, 255, 255, 0.06);
+      outline: none;
+    }
+
+    .custom-select {
+      position: relative;
+      min-width: 0;
+      width: 100%;
+    }
+
+    .select-native {
+      display: none !important;
+    }
+
+    .custom-select-trigger {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 14px;
+      align-items: center;
+      width: 100%;
+      height: 34px;
+      gap: 8px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.045);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .custom-select-trigger:hover,
+    .custom-select.open .custom-select-trigger {
+      border-color: rgba(96, 165, 250, 0.55);
+      background: rgba(255, 255, 255, 0.065);
+    }
+
+    .custom-select-trigger span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .custom-select-trigger svg {
+      width: 14px;
+      height: 14px;
+      color: var(--subtle);
+      transition: transform 130ms ease;
+    }
+
+    .custom-select.open .custom-select-trigger svg {
+      transform: rotate(180deg);
+    }
+
+    .custom-select-menu {
+      position: fixed;
+      z-index: 120;
+      display: none;
+      max-height: 310px;
+      overflow: auto;
+      padding: 5px;
+      border: 1px solid rgba(218, 226, 242, 0.19);
+      border-radius: 7px;
+      background: #1a202c;
+      box-shadow: 0 18px 42px rgba(0, 0, 0, 0.5);
+    }
+
+    .custom-select-menu.open {
+      display: block;
+    }
+
+    .custom-select-option {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      min-height: 30px;
+      padding: 0 9px;
+      border: 0;
+      border-radius: 5px;
+      color: #c9d1dd;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .custom-select-option:hover,
+    .custom-select-option:focus-visible {
+      color: #f4f7fb;
+      background: rgba(96, 165, 250, 0.12);
+      outline: none;
+    }
+
+    .custom-select-option.selected {
+      color: #ffffff;
+      background: #3478d4;
+    }
+
+    .inspector-section-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin: 19px 0 12px;
+      padding-top: 15px;
+      border-top: 1px solid var(--line);
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .inspector-section-title svg {
+      width: 14px;
+      height: 14px;
+      color: var(--blue);
+    }
+
+    .completion-note {
+      margin: -5px 0 13px;
+      padding: 8px 9px;
+      border-left: 2px solid rgba(96, 165, 250, 0.5);
+      color: var(--muted);
+      background: rgba(96, 165, 250, 0.055);
+      font-size: 9px;
+      line-height: 1.55;
+    }
+
+    .field-hint {
+      margin-top: 5px;
+      color: var(--subtle);
+      font-size: 9px;
+      line-height: 1.5;
+    }
+
+    .inline-fields {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 82px;
+      gap: 8px;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 38px;
+      gap: 12px;
+      padding: 0 9px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.025);
+      font-size: 10px;
+    }
+
+    .switch {
+      position: relative;
+      width: 30px;
+      height: 17px;
+      padding: 0;
+      border: 0;
+      border-radius: 9px;
+      background: #394152;
+      cursor: pointer;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #e8edf5;
+      transition: transform 130ms ease;
+    }
+
+    .switch.on {
+      background: #3478d4;
+    }
+
+    .switch.on::after {
+      transform: translateX(13px);
+    }
+
+    .inspector-footer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid var(--line);
+    }
+
+    .btn,
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.045);
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease,
+        transform 120ms ease;
+    }
+
+    .btn:hover,
+    .icon-btn:hover {
+      border-color: var(--line-strong);
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.075);
+    }
+
+    .btn:active,
+    .icon-btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn {
+      min-height: 34px;
+      gap: 7px;
+      padding: 0 12px;
+      font-size: 11px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+
+    .btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .btn.primary {
+      border-color: rgba(96, 165, 250, 0.55);
+      color: #f8fbff;
+      background: #3478d4;
+    }
+
+    .btn.success {
+      border-color: rgba(52, 211, 153, 0.45);
+      color: #071a14;
+      background: #46c99a;
+    }
+
+    .btn.danger {
+      border-color: rgba(248, 113, 113, 0.26);
+      color: #fda4a4;
+      background: rgba(248, 113, 113, 0.07);
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      padding: 0;
+    }
+
+    .icon-btn svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    .icon-btn.compact {
+      width: 25px;
+      height: 25px;
+      border-color: transparent;
+      background: transparent;
+    }
+
+    .mobile-inspector-button {
+      display: none;
+    }
+
+    dialog {
+      width: min(420px, calc(100vw - 32px));
+      padding: 0;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      color: var(--text);
+      background: #171d29;
+      box-shadow: var(--shadow);
+    }
+
+    dialog::backdrop {
+      background: rgba(3, 6, 11, 0.66);
+      backdrop-filter: blur(5px);
+    }
+
+    .dialog-header,
+    .dialog-footer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 13px 15px;
+    }
+
+    .dialog-header {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .dialog-header h3 {
+      margin: 0;
+      font-size: 13px;
+    }
+
+    .dialog-body {
+      padding: 16px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.65;
+    }
+
+    .dialog-footer {
+      justify-content: flex-end;
+      border-top: 1px solid var(--line);
+    }
+
+    .toast {
+      position: fixed;
+      z-index: 100;
+      left: 50%;
+      bottom: 22px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 36px;
+      max-width: min(460px, calc(100vw - 30px));
+      padding: 0 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(27, 34, 48, 0.97);
+      box-shadow: var(--shadow);
+      font-size: 11px;
+      opacity: 0;
+      pointer-events: none;
+      transform: translate(-50%, 12px);
+      transition: opacity 150ms ease, transform 150ms ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+
+    .toast svg {
+      width: 14px;
+      height: 14px;
+      color: var(--green);
+    }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    @media (max-width: 1120px) {
+      .workspace {
+        grid-template-columns: 190px minmax(430px, 1fr) 276px;
+      }
+
+      .brand {
+        min-width: 168px;
+      }
+
+      .workflow-header,
+      .step-area {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+
+    @media (max-width: 900px) {
+      .workspace {
+        grid-template-columns: 184px minmax(0, 1fr);
+      }
+
+      .inspector {
+        position: fixed;
+        z-index: 30;
+        top: 58px;
+        right: 0;
+        bottom: 0;
+        width: min(330px, 92vw);
+        box-shadow: -18px 0 46px rgba(0, 0, 0, 0.38);
+        transform: translateX(105%);
+      }
+
+      body.inspector-open .inspector {
+        transform: translateX(0);
+      }
+
+      .mobile-inspector-button {
+        display: inline-flex;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <img src="../../app/public/devlauncher-icon.png" alt="" />
+        <span>DevLauncher</span>
+      </div>
+      <div class="crumb">
+        <span>自动化</span>
+        <i data-lucide="chevron-right"></i>
+        <strong id="crumbName">工作流编排器</strong>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn mobile-inspector-button" id="toggleInspector" type="button" title="步骤属性" aria-label="步骤属性">
+          <i data-lucide="panel-right"></i>
+        </button>
+        <button class="icon-btn" id="importButton" type="button" title="导入工作流" aria-label="导入工作流">
+          <i data-lucide="upload"></i>
+        </button>
+        <button class="icon-btn" id="exportButton" type="button" title="导出工作流" aria-label="导出工作流">
+          <i data-lucide="download"></i>
+        </button>
+        <button class="btn" id="saveButton" type="button">
+          <i data-lucide="save"></i>
+          保存
+        </button>
+        <button class="btn success" id="runButton" type="button">
+          <i data-lucide="play"></i>
+          运行工作流
+        </button>
+        <button class="btn danger" id="stopButton" type="button" hidden>
+          <i data-lucide="square"></i>
+          停止
+        </button>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar">
+        <div class="panel-heading">
+          <h2>工作流</h2>
+          <span class="count" id="workflowCount"></span>
+        </div>
+        <div class="search">
+          <i data-lucide="search"></i>
+          <input id="workflowSearch" type="search" placeholder="搜索工作流" />
+        </div>
+        <div class="workflow-list" id="workflowList"></div>
+        <div class="sidebar-footer">
+          <button class="btn" id="newWorkflowButton" type="button">
+            <i data-lucide="plus"></i>
+            新建工作流
+          </button>
+          <button class="icon-btn" id="duplicateWorkflowButton" type="button" title="复制当前工作流" aria-label="复制当前工作流">
+            <i data-lucide="copy"></i>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="workflow-header">
+          <div class="workflow-title-row">
+            <div class="title-copy">
+              <input id="workflowName" type="text" aria-label="工作流名称" />
+              <textarea id="workflowDescription" aria-label="工作流说明"></textarea>
+            </div>
+            <button class="icon-btn danger" id="deleteWorkflowButton" type="button" title="删除当前工作流" aria-label="删除当前工作流">
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+          <div class="header-meta">
+            <label class="meta-field">
+              <i data-lucide="keyboard"></i>
+              快捷键
+              <input id="workflowTrigger" type="text" maxlength="12" aria-label="触发快捷键" />
+            </label>
+            <label class="meta-field">
+              <i data-lucide="rotate-ccw"></i>
+              失败后
+              <select id="failurePolicy" class="select" aria-label="失败后处理" style="width: 96px; height: 28px; border: 0; background: transparent; padding: 0 4px;">
+                <option value="stop">停止执行</option>
+                <option value="continue">继续执行</option>
+              </select>
+            </label>
+            <span class="meta-field" id="lastSaved">
+              <i data-lucide="cloud"></i>
+              尚未保存
+            </span>
+          </div>
+        </section>
+
+        <section class="step-area">
+          <div class="section-label">
+            执行步骤
+            <span id="stepCount"></span>
+          </div>
+          <div class="steps" id="stepList"></div>
+          <div class="add-step-row">
+            <select id="newStepType" class="select" aria-label="新步骤类型">
+              <option value="app">应用程序</option>
+              <option value="folder">文件夹</option>
+              <option value="url">网址</option>
+              <option value="ssh">SSH</option>
+              <option value="script">脚本</option>
+              <option value="builtin">内置功能</option>
+              <option value="plugin">插件</option>
+              <option value="system">系统命令</option>
+              <option value="wait">等待</option>
+              <option value="window">窗口布局</option>
+            </select>
+            <button class="btn" id="addStepButton" type="button">
+              <i data-lucide="plus"></i>
+              添加步骤
+            </button>
+          </div>
+        </section>
+
+        <section class="run-panel" id="runPanel">
+          <div class="run-summary" id="runSummary" role="button" tabindex="0" aria-expanded="false">
+            <i class="chevron" data-lucide="chevron-up"></i>
+            <div class="run-status">
+              <span class="status-dot" id="runStatusDot"></span>
+              <span id="runStatusText">等待运行</span>
+            </div>
+            <div class="progress-track" aria-label="执行进度">
+              <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <span id="progressText" style="width: 42px; text-align: right; color: var(--subtle); font-size: 10px;">0 / 0</span>
+          </div>
+          <div class="run-log" id="runLog" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <aside class="inspector" id="inspector">
+        <div class="panel-heading">
+          <h2>步骤属性</h2>
+          <button class="icon-btn compact mobile-inspector-button" id="closeInspector" type="button" title="关闭属性面板" aria-label="关闭属性面板" style="margin-left: auto;">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
+        <div class="inspector-content" id="inspectorContent"></div>
+      </aside>
+    </div>
+  </div>
+
+  <dialog id="workflowDialog">
+    <form method="dialog" id="workflowForm">
+      <div class="dialog-header">
+        <h3>新建工作流</h3>
+      </div>
+      <div class="dialog-body">
+        <div class="field" style="margin-bottom: 0;">
+          <label for="newWorkflowName">工作流名称</label>
+          <input class="input" id="newWorkflowName" type="text" placeholder="例如：开始开发" autocomplete="off" />
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn" value="cancel" type="button" data-close-dialog>取消</button>
+        <button class="btn primary" id="confirmNewWorkflow" value="default" type="submit">创建</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="confirmDialog">
+    <div class="dialog-header">
+      <h3 id="confirmTitle">确认操作</h3>
+    </div>
+    <div class="dialog-body" id="confirmMessage"></div>
+    <div class="dialog-footer">
+      <button class="btn" type="button" data-close-confirm>取消</button>
+      <button class="btn danger" id="confirmAction" type="button">确认</button>
+    </div>
+  </dialog>
+
+  <dialog id="manualDialog">
+    <div class="dialog-header">
+      <h3>等待人工确认</h3>
+    </div>
+    <div class="dialog-body">
+      <strong id="manualStepName" style="display: block; margin-bottom: 5px; color: var(--text);"></strong>
+      请确认上一步已经达到预期状态，再继续执行后续步骤。
+    </div>
+    <div class="dialog-footer">
+      <button class="btn danger" id="manualStopButton" type="button">停止工作流</button>
+      <button class="btn primary" id="manualContinueButton" type="button">
+        <i data-lucide="check"></i>
+        上一步已完成
+      </button>
+    </div>
+  </dialog>
+
+  <input class="sr-only" id="importInput" type="file" accept="application/json,.json" />
+  <div class="toast" id="toast">
+    <i data-lucide="check-circle-2"></i>
+    <span id="toastText"></span>
+  </div>
+
+  <script>
+    (() => {
+      const STORAGE_KEY = "devlauncher-workflow-prototype-v1";
+      const typeMeta = {
+        app: { label: "应用程序", icon: "app-window", color: "#60a5fa" },
+        folder: { label: "文件夹", icon: "folder-open", color: "#fbbf24" },
+        url: { label: "网址", icon: "globe-2", color: "#34d399" },
+        ssh: { label: "SSH", icon: "terminal-square", color: "#c084fc" },
+        script: { label: "脚本", icon: "file-code-2", color: "#f87171" },
+        builtin: { label: "内置功能", icon: "blocks", color: "#7dd3fc" },
+        plugin: { label: "插件", icon: "puzzle", color: "#a7f3d0" },
+        system: { label: "系统命令", icon: "settings-2", color: "#94a3b8" },
+        wait: { label: "等待", icon: "timer", color: "#e7b45d" },
+        window: { label: "窗口布局", icon: "panels-top-left", color: "#fb7185" },
+      };
+
+      const completionMeta = {
+        action_resolved: {
+          label: "动作返回",
+          note: "调用返回成功结果后进入下一步，适合内置功能、插件和系统命令。",
+        },
+        process_started: {
+          label: "进程已启动",
+          note: "检测到目标进程存活并稳定一小段时间后进入下一步。",
+        },
+        process_exit: {
+          label: "进程退出且成功",
+          note: "等待命令进程退出，并校验退出码；最适合构建、测试和一次性脚本。",
+        },
+        window_ready: {
+          label: "目标窗口出现",
+          note: "持续检查窗口标题或所属进程，确认应用界面已经可用。",
+        },
+        url_ready: {
+          label: "页面加载完成",
+          note: "由浏览器扩展或页面探针报告目标地址完成加载。",
+        },
+        connection_ready: {
+          label: "连接建立",
+          note: "SSH 握手成功后进入下一步；交互式会话无需等到终端关闭。",
+        },
+        port_ready: {
+          label: "端口可用",
+          note: "轮询指定主机和端口，适合等待本地服务或数据库启动。",
+        },
+        timer: {
+          label: "计时结束",
+          note: "等待指定时长。只建议用于没有可靠就绪信号的旧工具。",
+        },
+        manual: {
+          label: "人工确认",
+          note: "暂停工作流，直到用户明确点击“上一步已完成”。",
+        },
+      };
+
+      function defaultCompletionForType(type) {
+        return {
+          app: "process_started",
+          folder: "window_ready",
+          url: "url_ready",
+          ssh: "connection_ready",
+          script: "process_exit",
+          builtin: "action_resolved",
+          plugin: "action_resolved",
+          system: "action_resolved",
+          wait: "timer",
+          window: "action_resolved",
+        }[type] || "action_resolved";
+      }
+
+      function completionModeFor(step) {
+        return step.completionMode || defaultCompletionForType(step.type);
+      }
+
+      function ensureStepCompletion(step) {
+        if (!step.completionMode) step.completionMode = defaultCompletionForType(step.type);
+        if (step.timeout === undefined) step.timeout = 30000;
+        if (step.pollInterval === undefined) step.pollInterval = 500;
+        return step;
+      }
+
+      const defaultWorkflows = [
+        {
+          id: "wf-dev",
+          name: "开始 DevLauncher 开发",
+          description: "打开项目、启动前端与 Tauri，并把常用窗口排到固定位置。",
+          trigger: "⌘⇧D",
+          failurePolicy: "stop",
+          steps: [
+            { id: "s-1", type: "app", name: "打开 Visual Studio Code", target: "/Applications/Visual Studio Code.app", args: "", enabled: true, delay: 0 },
+            { id: "s-2", type: "folder", name: "打开 DevLauncher 项目", target: "/Users/you/Projects/devLauncher", openWith: "vscode", enabled: true, delay: 0 },
+            { id: "s-3", type: "script", name: "启动 Tauri 开发环境", shell: "terminal", content: "npm run tauri:dev:mac", enabled: true, delay: 300 },
+            { id: "s-4", type: "url", name: "打开 GitHub 仓库", target: "https://github.com/YiShengEasy/devLauncher", username: "", autofill: false, enabled: true, delay: 0 },
+            { id: "s-5", type: "window", name: "排列开发窗口", layout: "code-left-terminal-right", enabled: true, delay: 200 },
+          ],
+        },
+        {
+          id: "wf-release",
+          name: "发布 macOS 版本",
+          description: "构建安装包、检查产物，并打开 GitHub Releases。",
+          trigger: "⌘⇧R",
+          failurePolicy: "stop",
+          steps: [
+            { id: "s-r1", type: "script", name: "运行构建检查", shell: "terminal", content: "npm run build", enabled: true, delay: 0 },
+            { id: "s-r2", type: "script", name: "打包 DMG", shell: "terminal", content: "npm run tauri:build:mac", enabled: true, delay: 400 },
+            { id: "s-r3", type: "folder", name: "打开构建产物", target: "app/src-tauri/target/release/bundle/dmg", openWith: "explorer", enabled: true, delay: 0 },
+            { id: "s-r4", type: "url", name: "前往 GitHub Releases", target: "https://github.com/YiShengEasy/devLauncher/releases", username: "", autofill: false, enabled: true, delay: 0 },
+          ],
+        },
+        {
+          id: "wf-daily",
+          name: "每日启动",
+          description: "一键打开今天需要的工具与页面。",
+          trigger: "⌘⇧1",
+          failurePolicy: "continue",
+          steps: [
+            { id: "s-d1", type: "builtin", name: "打开快速记忆", feature: "quickmemory", enabled: true, delay: 0 },
+            { id: "s-d2", type: "app", name: "打开日历", target: "/System/Applications/Calendar.app", args: "", enabled: true, delay: 0 },
+            { id: "s-d3", type: "url", name: "打开项目看板", target: "https://github.com/YiShengEasy/devLauncher/issues", username: "", autofill: false, enabled: true, delay: 100 },
+          ],
+        },
+      ];
+
+      let workflows = structuredClone(defaultWorkflows);
+      let selectedWorkflowId = workflows[0].id;
+      let selectedStepId = workflows[0].steps[0].id;
+      let draggedStepId = null;
+      let isRunning = false;
+      let stopRequested = false;
+      let runFromStepId = null;
+      let pendingConfirm = null;
+      let manualResolve = null;
+      let toastTimer = null;
+
+      const $ = (selector) => document.querySelector(selector);
+      const workflowList = $("#workflowList");
+      const stepList = $("#stepList");
+      const inspectorContent = $("#inspectorContent");
+      const runLog = $("#runLog");
+
+      function uid(prefix) {
+        return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+      }
+
+      function currentWorkflow() {
+        return workflows.find((item) => item.id === selectedWorkflowId) || workflows[0];
+      }
+
+      function currentStep() {
+        return currentWorkflow()?.steps.find((item) => item.id === selectedStepId) || null;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function icons() {
+        if (window.lucide) {
+          window.lucide.createIcons({ attrs: { "stroke-width": 1.8 } });
+        }
+      }
+
+      function closeCustomSelects(exceptSelect = null) {
+        document.querySelectorAll("select[data-customized='true']").forEach((select) => {
+          if (select === exceptSelect) return;
+          select._customWrapper?.classList.remove("open");
+          select._customMenu?.classList.remove("open");
+          select._customTrigger?.setAttribute("aria-expanded", "false");
+        });
+      }
+
+      function positionCustomSelect(select) {
+        const trigger = select._customTrigger;
+        const menu = select._customMenu;
+        if (!trigger || !menu) return;
+        const rect = trigger.getBoundingClientRect();
+        const availableBelow = window.innerHeight - rect.bottom - 10;
+        const estimatedHeight = Math.min(310, select.options.length * 30 + 10);
+        const openAbove = availableBelow < Math.min(180, estimatedHeight) && rect.top > availableBelow;
+        menu.style.left = `${Math.max(6, rect.left)}px`;
+        menu.style.width = `${rect.width}px`;
+        menu.style.top = openAbove
+          ? `${Math.max(6, rect.top - estimatedHeight - 5)}px`
+          : `${rect.bottom + 5}px`;
+      }
+
+      function syncCustomSelect(select) {
+        if (!select?._customTrigger) return;
+        const selectedOption = select.options[select.selectedIndex] || select.options[0];
+        select._customTrigger.querySelector("span").textContent = selectedOption?.textContent || "";
+        select._customMenu?.querySelectorAll(".custom-select-option").forEach((button) => {
+          const selected = button.dataset.value === select.value;
+          button.classList.toggle("selected", selected);
+          button.setAttribute("aria-selected", String(selected));
+        });
+      }
+
+      function destroyCustomSelects(root) {
+        root.querySelectorAll("select[data-customized='true']").forEach((select) => {
+          select._customMenu?.remove();
+        });
+      }
+
+      function enhanceSelect(select) {
+        if (select.dataset.customized === "true") {
+          syncCustomSelect(select);
+          return;
+        }
+
+        const wrapper = document.createElement("div");
+        wrapper.className = "custom-select";
+        if (select.style.width) wrapper.style.width = select.style.width;
+        if (select.style.minWidth) wrapper.style.minWidth = select.style.minWidth;
+
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className = "custom-select-trigger";
+        trigger.setAttribute("aria-haspopup", "listbox");
+        trigger.setAttribute("aria-expanded", "false");
+        trigger.setAttribute("aria-label", select.getAttribute("aria-label") || select.previousElementSibling?.textContent || "选择");
+        trigger.innerHTML = `<span></span><i data-lucide="chevron-down"></i>`;
+
+        const menu = document.createElement("div");
+        menu.className = "custom-select-menu";
+        menu.setAttribute("role", "listbox");
+        menu.setAttribute("aria-label", trigger.getAttribute("aria-label"));
+
+        Array.from(select.options).forEach((option) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "custom-select-option";
+          button.dataset.value = option.value;
+          button.setAttribute("role", "option");
+          button.textContent = option.textContent;
+          button.addEventListener("click", () => {
+            select.value = option.value;
+            syncCustomSelect(select);
+            closeCustomSelects();
+            select.dispatchEvent(new Event("input", { bubbles: true }));
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            trigger.focus();
+          });
+          menu.appendChild(button);
+        });
+
+        select.parentNode.insertBefore(wrapper, select);
+        wrapper.appendChild(select);
+        wrapper.appendChild(trigger);
+        document.body.appendChild(menu);
+        select.classList.add("select-native");
+        select.dataset.customized = "true";
+        select.tabIndex = -1;
+        select.setAttribute("aria-hidden", "true");
+        select._customWrapper = wrapper;
+        select._customTrigger = trigger;
+        select._customMenu = menu;
+
+        trigger.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const willOpen = !menu.classList.contains("open");
+          closeCustomSelects(willOpen ? select : null);
+          wrapper.classList.toggle("open", willOpen);
+          menu.classList.toggle("open", willOpen);
+          trigger.setAttribute("aria-expanded", String(willOpen));
+          if (willOpen) {
+            positionCustomSelect(select);
+            menu.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
+          }
+        });
+        trigger.addEventListener("keydown", (event) => {
+          if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            if (!menu.classList.contains("open")) trigger.click();
+            setTimeout(() => (menu.querySelector(".selected") || menu.firstElementChild)?.focus(), 0);
+          }
+        });
+        syncCustomSelect(select);
+      }
+
+      function enhanceSelects(root = document) {
+        root.querySelectorAll("select.select").forEach(enhanceSelect);
+        icons();
+      }
+
+      function toast(message) {
+        $("#toastText").textContent = message;
+        $("#toast").classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $("#toast").classList.remove("show"), 1800);
+      }
+
+      function summaryFor(step) {
+        switch (step.type) {
+          case "app": return step.target || "尚未选择应用";
+          case "folder": return `${step.openWith || "默认"} · ${step.target || "尚未选择目录"}`;
+          case "url": return step.target || "尚未填写网址";
+          case "ssh": return `${step.user || "user"}@${step.host || "host"}:${step.port || 22}`;
+          case "script": return `${step.shell || "terminal"} · ${(step.content || "尚未填写命令").split("\n")[0]}`;
+          case "builtin": return step.feature || "clipboard";
+          case "plugin": return `${step.pluginId || "plugin"} / ${step.actionId || "action"}`;
+          case "system": return step.command || "lock";
+          case "wait": return `等待 ${step.duration || 1000} 毫秒`;
+          case "window": return step.layout || "左右分栏";
+          default: return "";
+        }
+      }
+
+      function renderWorkflowList() {
+        const query = $("#workflowSearch").value.trim().toLowerCase();
+        const visible = workflows.filter((workflow) =>
+          `${workflow.name} ${workflow.description}`.toLowerCase().includes(query)
+        );
+        $("#workflowCount").textContent = `${workflows.length} 个`;
+        workflowList.innerHTML = visible.length
+          ? visible.map((workflow) => `
+              <button class="workflow-item ${workflow.id === selectedWorkflowId ? "active" : ""}" data-workflow-id="${workflow.id}" type="button">
+                <span class="workflow-mark"><i data-lucide="workflow"></i></span>
+                <span class="workflow-copy">
+                  <strong>${escapeHtml(workflow.name)}</strong>
+                  <span>${workflow.steps.filter((step) => step.enabled).length} 个启用步骤 · ${escapeHtml(workflow.trigger || "无快捷键")}</span>
+                </span>
+                <i data-lucide="chevron-right" style="width: 13px; color: var(--subtle);"></i>
+              </button>
+            `).join("")
+          : `<div class="inspector-empty" style="min-height: 180px;">没有匹配的工作流</div>`;
+        workflowList.querySelectorAll("[data-workflow-id]").forEach((button) => {
+          button.addEventListener("click", () => {
+            if (isRunning) return toast("请先停止当前运行");
+            selectedWorkflowId = button.dataset.workflowId;
+            selectedStepId = currentWorkflow().steps[0]?.id || null;
+            resetRunView();
+            renderAll();
+          });
+        });
+      }
+
+      function statusIcon(step, index) {
+        if (step.status === "success") return `<i data-lucide="check"></i>`;
+        if (step.status === "failed") return `<i data-lucide="x"></i>`;
+        if (step.status === "running") return `<i data-lucide="loader-circle"></i>`;
+        return String(index + 1).padStart(2, "0");
+      }
+
+      function renderSteps() {
+        const workflow = currentWorkflow();
+        $("#stepCount").textContent = `${workflow.steps.length} 个步骤`;
+        stepList.innerHTML = workflow.steps.length
+          ? workflow.steps.map((step, index) => {
+              const meta = typeMeta[step.type];
+              return `
+                <article
+                  class="step ${step.id === selectedStepId ? "selected" : ""} ${step.enabled ? "" : "disabled"} ${step.status || ""}"
+                  style="--type-color: ${meta.color};"
+                  data-step-id="${step.id}"
+                  draggable="${!isRunning}"
+                >
+                  <div class="step-index">${statusIcon(step, index)}</div>
+                  <div class="step-main">
+                    <span class="type-icon"><i data-lucide="${meta.icon}"></i></span>
+                    <div class="step-copy">
+                      <div class="step-name-line">
+                        <strong>${escapeHtml(step.name)}</strong>
+                        <span class="type-label">${meta.label}</span>
+                      </div>
+                      <div class="step-summary">
+                        ${escapeHtml(summaryFor(step))}
+                        <span class="completion-rule">完成：${completionMeta[completionModeFor(step)].label}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="step-actions">
+                    <button class="icon-btn compact" data-action="run-step" type="button" title="从此步骤运行" aria-label="从此步骤运行" ${isRunning || !step.enabled ? "disabled" : ""}>
+                      <i data-lucide="play"></i>
+                    </button>
+                    <button class="icon-btn compact" data-action="move-up" type="button" title="上移" aria-label="上移" ${isRunning || index === 0 ? "disabled" : ""}>
+                      <i data-lucide="arrow-up"></i>
+                    </button>
+                    <button class="icon-btn compact" data-action="move-down" type="button" title="下移" aria-label="下移" ${isRunning || index === workflow.steps.length - 1 ? "disabled" : ""}>
+                      <i data-lucide="arrow-down"></i>
+                    </button>
+                    <button class="icon-btn compact" data-action="toggle" type="button" title="${step.enabled ? "停用" : "启用"}" aria-label="${step.enabled ? "停用" : "启用"}" ${isRunning ? "disabled" : ""}>
+                      <i data-lucide="${step.enabled ? "circle-pause" : "circle-play"}"></i>
+                    </button>
+                  </div>
+                </article>
+              `;
+            }).join("")
+          : `<div class="inspector-empty" style="min-height: 220px;"><div><i data-lucide="workflow"></i><br />添加第一个步骤开始编排</div></div>`;
+
+        stepList.querySelectorAll(".step").forEach((element) => {
+          element.addEventListener("click", (event) => {
+            const actionButton = event.target.closest("[data-action]");
+            const stepId = element.dataset.stepId;
+            if (actionButton) {
+              event.stopPropagation();
+              handleStepAction(stepId, actionButton.dataset.action);
+              return;
+            }
+            selectedStepId = stepId;
+            document.body.classList.add("inspector-open");
+            renderAll();
+          });
+          element.addEventListener("dragstart", () => {
+            draggedStepId = element.dataset.stepId;
+            element.classList.add("dragging");
+          });
+          element.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            if (draggedStepId && draggedStepId !== element.dataset.stepId) {
+              element.classList.add("drag-over");
+            }
+          });
+          element.addEventListener("dragleave", () => element.classList.remove("drag-over"));
+          element.addEventListener("drop", (event) => {
+            event.preventDefault();
+            element.classList.remove("drag-over");
+            reorderStep(draggedStepId, element.dataset.stepId);
+          });
+          element.addEventListener("dragend", () => {
+            draggedStepId = null;
+            element.classList.remove("dragging");
+            stepList.querySelectorAll(".drag-over").forEach((item) => item.classList.remove("drag-over"));
+          });
+        });
+      }
+
+      function defaultStep(type) {
+        const defaults = {
+          app: { name: "打开应用程序", target: "/Applications/", args: "" },
+          folder: { name: "打开项目目录", target: "/Users/you/Projects", openWith: "vscode" },
+          url: { name: "打开网页", target: "https://", username: "", autofill: false },
+          ssh: { name: "连接服务器", host: "server.example.com", user: "deploy", port: 22, identity: "~/.ssh/id_ed25519" },
+          script: { name: "运行脚本", shell: "terminal", content: "npm run dev" },
+          builtin: { name: "打开内置功能", feature: "clipboard" },
+          plugin: { name: "运行插件动作", pluginId: "plugin.example", actionId: "default" },
+          system: { name: "执行系统命令", command: "lock" },
+          wait: { name: "等待服务启动", duration: 1000 },
+          window: { name: "排列窗口", layout: "code-left-terminal-right" },
+        };
+        return {
+          id: uid("step"),
+          type,
+          ...defaults[type],
+          completionMode: defaultCompletionForType(type),
+          timeout: 30000,
+          pollInterval: 500,
+          enabled: true,
+          delay: 0,
+          status: "idle",
+        };
+      }
+
+      function addStep() {
+        if (isRunning) return;
+        const step = defaultStep($("#newStepType").value);
+        currentWorkflow().steps.push(step);
+        selectedStepId = step.id;
+        renderAll();
+        setTimeout(() => stepList.lastElementChild?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 0);
+        toast(`已添加${typeMeta[step.type].label}步骤`);
+      }
+
+      function handleStepAction(stepId, action) {
+        const workflow = currentWorkflow();
+        const index = workflow.steps.findIndex((step) => step.id === stepId);
+        const step = workflow.steps[index];
+        if (!step) return;
+        if (action === "move-up" && index > 0) {
+          [workflow.steps[index - 1], workflow.steps[index]] = [workflow.steps[index], workflow.steps[index - 1]];
+        } else if (action === "move-down" && index < workflow.steps.length - 1) {
+          [workflow.steps[index + 1], workflow.steps[index]] = [workflow.steps[index], workflow.steps[index + 1]];
+        } else if (action === "toggle") {
+          step.enabled = !step.enabled;
+        } else if (action === "run-step") {
+          runFromStepId = stepId;
+          runWorkflow();
+          return;
+        }
+        renderAll();
+      }
+
+      function reorderStep(sourceId, targetId) {
+        if (!sourceId || sourceId === targetId || isRunning) return;
+        const steps = currentWorkflow().steps;
+        const sourceIndex = steps.findIndex((step) => step.id === sourceId);
+        const targetIndex = steps.findIndex((step) => step.id === targetId);
+        if (sourceIndex < 0 || targetIndex < 0) return;
+        const [moved] = steps.splice(sourceIndex, 1);
+        steps.splice(targetIndex, 0, moved);
+        renderAll();
+      }
+
+      function field(label, key, value, options = {}) {
+        const type = options.type || "text";
+        const hint = options.hint ? `<div class="field-hint">${escapeHtml(options.hint)}</div>` : "";
+        return `
+          <div class="field">
+            <label for="field-${key}">${escapeHtml(label)}</label>
+            <input class="input" id="field-${key}" data-field="${key}" type="${type}" value="${escapeHtml(value ?? "")}" ${options.min !== undefined ? `min="${options.min}"` : ""} />
+            ${hint}
+          </div>
+        `;
+      }
+
+      function selectField(label, key, value, options) {
+        return `
+          <div class="field">
+            <label for="field-${key}">${escapeHtml(label)}</label>
+            <select class="select" id="field-${key}" data-field="${key}">
+              ${options.map((option) => `<option value="${escapeHtml(option.value)}" ${String(value) === String(option.value) ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}
+            </select>
+          </div>
+        `;
+      }
+
+      function textareaField(label, key, value, hint = "") {
+        return `
+          <div class="field">
+            <label for="field-${key}">${escapeHtml(label)}</label>
+            <textarea class="textarea" id="field-${key}" data-field="${key}">${escapeHtml(value ?? "")}</textarea>
+            ${hint ? `<div class="field-hint">${escapeHtml(hint)}</div>` : ""}
+          </div>
+        `;
+      }
+
+      function typeFields(step) {
+        switch (step.type) {
+          case "app":
+            return field("应用路径", "target", step.target, { hint: "正式版可接入系统文件选择器。" }) +
+              field("启动参数", "args", step.args || "");
+          case "folder":
+            return field("目录路径", "target", step.target) +
+              selectField("打开方式", "openWith", step.openWith, [
+                { value: "explorer", label: "系统文件管理器" },
+                { value: "vscode", label: "Visual Studio Code" },
+                { value: "cursor", label: "Cursor" },
+                { value: "custom", label: "自定义工具" },
+              ]);
+          case "url":
+            return field("网址", "target", step.target, { type: "url" }) +
+              field("登录账号（可选）", "username", step.username || "") +
+              `<div class="field"><div class="toggle-row"><span>使用已保存凭据自动填充</span><button class="switch ${step.autofill ? "on" : ""}" data-toggle-field="autofill" type="button" aria-label="自动填充"></button></div></div>`;
+          case "ssh":
+            return field("主机", "host", step.host) +
+              `<div class="inline-fields">${field("用户", "user", step.user)}${field("端口", "port", step.port, { type: "number", min: 1 })}</div>` +
+              field("密钥文件", "identity", step.identity || "");
+          case "script":
+            return selectField("运行环境", "shell", step.shell, [
+              { value: "terminal", label: "macOS Terminal" },
+              { value: "powershell", label: "PowerShell" },
+              { value: "cmd", label: "CMD" },
+              { value: "wsl", label: "WSL" },
+            ]) + textareaField("命令", "content", step.content, "每个工作流步骤在独立进程中执行。");
+          case "builtin":
+            return selectField("内置功能", "feature", step.feature, [
+              { value: "clipboard", label: "剪贴板历史" },
+              { value: "screenshot", label: "截图" },
+              { value: "screenshotai", label: "截图 AI" },
+              { value: "quickmemory", label: "快速记忆" },
+              { value: "terminal", label: "终端" },
+              { value: "totp", label: "动态验证码" },
+              { value: "remotedesk", label: "远程桌面" },
+            ]);
+          case "plugin":
+            return field("插件 ID", "pluginId", step.pluginId) +
+              field("动作 ID", "actionId", step.actionId);
+          case "system":
+            return selectField("系统命令", "command", step.command, [
+              { value: "lock", label: "锁定屏幕" },
+              { value: "sleep", label: "进入睡眠" },
+              { value: "calculator", label: "打开计算器" },
+              { value: "explorer", label: "打开文件管理器" },
+            ]);
+          case "wait":
+            return field("等待时长（毫秒）", "duration", step.duration, { type: "number", min: 0 });
+          case "window":
+            return selectField("布局预设", "layout", step.layout, [
+              { value: "code-left-terminal-right", label: "代码左侧 / 终端右侧" },
+              { value: "browser-left-code-right", label: "浏览器左侧 / 代码右侧" },
+              { value: "three-column", label: "三列并排" },
+              { value: "focus-current", label: "聚焦当前窗口" },
+            ]);
+          default:
+            return "";
+        }
+      }
+
+      function completionFields(step) {
+        ensureStepCompletion(step);
+        const mode = completionModeFor(step);
+        const options = [
+          { value: "action_resolved", label: "动作返回" },
+          { value: "process_started", label: "进程已启动" },
+          { value: "process_exit", label: "进程退出且成功" },
+          { value: "window_ready", label: "目标窗口出现" },
+          { value: "url_ready", label: "页面加载完成" },
+          { value: "connection_ready", label: "连接建立" },
+          { value: "port_ready", label: "端口可用" },
+          { value: "timer", label: "计时结束" },
+          { value: "manual", label: "人工确认" },
+        ];
+        let contextualFields = "";
+
+        if (mode === "process_exit") {
+          contextualFields = field("成功退出码", "successCodes", step.successCodes || "0", {
+            hint: "多个退出码使用英文逗号分隔。",
+          });
+        } else if (mode === "process_started") {
+          contextualFields = field("稳定时长（毫秒）", "stabilizationMs", step.stabilizationMs ?? 800, {
+            type: "number",
+            min: 0,
+          });
+        } else if (mode === "window_ready") {
+          contextualFields = field("窗口标题包含", "windowTitle", step.windowTitle || step.name);
+        } else if (mode === "url_ready") {
+          contextualFields = field("目标地址匹配", "readyUrlPattern", step.readyUrlPattern || step.target || "https://");
+        } else if (mode === "port_ready") {
+          contextualFields = `
+            <div class="inline-fields">
+              ${field("主机", "readinessHost", step.readinessHost || step.host || "127.0.0.1")}
+              ${field("端口", "readinessPort", step.readinessPort || step.port || 3000, { type: "number", min: 1 })}
+            </div>
+          `;
+        }
+
+        const automatedFields = ["action_resolved", "timer", "manual"].includes(mode)
+          ? ""
+          : `
+              <div class="inline-fields">
+                ${field("超时（毫秒）", "timeout", step.timeout, { type: "number", min: 100 })}
+                ${field("轮询间隔", "pollInterval", step.pollInterval, { type: "number", min: 100 })}
+              </div>
+            `;
+
+        return `
+          ${selectField("何时进入下一步", "completionMode", mode, options)}
+          <div class="completion-note">${completionMeta[mode].note}</div>
+          ${contextualFields}
+          ${automatedFields}
+        `;
+      }
+
+      function renderInspector() {
+        destroyCustomSelects(inspectorContent);
+        const step = currentStep();
+        if (!step) {
+          inspectorContent.innerHTML = `
+            <div class="inspector-empty">
+              <div><i data-lucide="mouse-pointer-2"></i><br />选择一个步骤查看和编辑属性</div>
+            </div>
+          `;
+          return;
+        }
+        const meta = typeMeta[step.type];
+        inspectorContent.innerHTML = `
+          <div class="inspector-type" style="--type-color: ${meta.color};">
+            <span class="type-icon"><i data-lucide="${meta.icon}"></i></span>
+            <div>
+              <strong>${meta.label}</strong>
+              <span>步骤 ID · ${escapeHtml(step.id.slice(-8))}</span>
+            </div>
+          </div>
+          ${field("步骤名称", "name", step.name)}
+          ${typeFields(step)}
+          <div class="inspector-section-title">
+            <i data-lucide="circle-check-big"></i>
+            完成判定
+          </div>
+          ${completionFields(step)}
+          ${field("执行前延迟（毫秒）", "delay", step.delay || 0, { type: "number", min: 0 })}
+          <div class="field">
+            <div class="toggle-row">
+              <span>启用此步骤</span>
+              <button class="switch ${step.enabled ? "on" : ""}" data-toggle-field="enabled" type="button" aria-label="启用此步骤"></button>
+            </div>
+          </div>
+          <div class="inspector-footer">
+            <button class="btn" id="duplicateStepButton" type="button"><i data-lucide="copy"></i>复制步骤</button>
+            <button class="icon-btn danger" id="deleteStepButton" type="button" title="删除步骤" aria-label="删除步骤"><i data-lucide="trash-2"></i></button>
+          </div>
+        `;
+
+        inspectorContent.querySelectorAll("[data-field]").forEach((input) => {
+          input.addEventListener("input", () => {
+            const activeStep = currentStep();
+            if (!activeStep) return;
+            const key = input.dataset.field;
+            activeStep[key] = input.type === "number" ? Math.max(0, Number(input.value)) : input.value;
+            if (key === "completionMode") {
+              renderAll();
+              return;
+            }
+            renderSteps();
+            icons();
+          });
+        });
+        inspectorContent.querySelectorAll("[data-toggle-field]").forEach((button) => {
+          button.addEventListener("click", () => {
+            const activeStep = currentStep();
+            const key = button.dataset.toggleField;
+            activeStep[key] = !activeStep[key];
+            renderAll();
+          });
+        });
+        $("#duplicateStepButton").addEventListener("click", duplicateStep);
+        $("#deleteStepButton").addEventListener("click", () => {
+          showConfirm(
+            "删除步骤",
+            `确定删除“${currentStep().name}”吗？工作流中的其他步骤不会受影响。`,
+            deleteStep
+          );
+        });
+      }
+
+      function duplicateStep() {
+        const workflow = currentWorkflow();
+        const index = workflow.steps.findIndex((step) => step.id === selectedStepId);
+        if (index < 0) return;
+        const copy = structuredClone(workflow.steps[index]);
+        copy.id = uid("step");
+        copy.name = `${copy.name} 副本`;
+        copy.status = "idle";
+        workflow.steps.splice(index + 1, 0, copy);
+        selectedStepId = copy.id;
+        renderAll();
+        toast("步骤已复制");
+      }
+
+      function deleteStep() {
+        const workflow = currentWorkflow();
+        const index = workflow.steps.findIndex((step) => step.id === selectedStepId);
+        if (index < 0) return;
+        workflow.steps.splice(index, 1);
+        selectedStepId = workflow.steps[Math.min(index, workflow.steps.length - 1)]?.id || null;
+        renderAll();
+        toast("步骤已删除");
+      }
+
+      function renderHeader() {
+        const workflow = currentWorkflow();
+        $("#workflowName").value = workflow.name;
+        $("#workflowDescription").value = workflow.description;
+        $("#workflowTrigger").value = workflow.trigger;
+        $("#failurePolicy").value = workflow.failurePolicy;
+        $("#crumbName").textContent = workflow.name;
+      }
+
+      function renderAll() {
+        renderHeader();
+        renderWorkflowList();
+        renderSteps();
+        renderInspector();
+        enhanceSelects(document);
+      }
+
+      function resetRunView() {
+        workflows.forEach((workflow) => workflow.steps.forEach((step) => step.status = "idle"));
+        runLog.innerHTML = "";
+        $("#runStatusText").textContent = "等待运行";
+        $("#runStatusDot").className = "status-dot";
+        $("#progressBar").style.width = "0";
+        $("#progressText").textContent = "0 / 0";
+      }
+
+      function log(status, message) {
+        const now = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        const labels = { run: "执行", ok: "完成", warn: "停止" };
+        runLog.insertAdjacentHTML("beforeend", `
+          <div class="log-line">
+            <span>${now}</span>
+            <span class="${status}">${labels[status] || status}</span>
+            <span>${escapeHtml(message)}</span>
+          </div>
+        `);
+        runLog.scrollTop = runLog.scrollHeight;
+      }
+
+      const sleep = (duration) => new Promise((resolve) => setTimeout(resolve, duration));
+
+      function simulatedCompletionDuration(step) {
+        const mode = completionModeFor(step);
+        if (mode === "timer") return Math.min(1400, Math.max(180, Number(step.duration || 600)));
+        if (mode === "process_started") return Math.min(1100, Math.max(320, Number(step.stabilizationMs || 700)));
+        if (mode === "process_exit") return 820;
+        if (mode === "window_ready" || mode === "url_ready") return 720;
+        if (mode === "connection_ready" || mode === "port_ready") return 680;
+        return 480;
+      }
+
+      function waitForManualCompletion(step) {
+        $("#manualStepName").textContent = step.name;
+        $("#manualDialog").showModal();
+        icons();
+        return new Promise((resolve) => {
+          manualResolve = resolve;
+        });
+      }
+
+      async function waitForStepCompletion(step) {
+        ensureStepCompletion(step);
+        const mode = completionModeFor(step);
+        log("run", `等待完成信号：${completionMeta[mode].label}`);
+        if (mode === "manual") {
+          return waitForManualCompletion(step);
+        }
+        await sleep(simulatedCompletionDuration(step));
+        return !stopRequested;
+      }
+
+      async function runWorkflow() {
+        if (isRunning) return;
+        const workflow = currentWorkflow();
+        const startIndex = runFromStepId
+          ? Math.max(0, workflow.steps.findIndex((step) => step.id === runFromStepId))
+          : 0;
+        runFromStepId = null;
+        const runnable = workflow.steps.slice(startIndex).filter((step) => step.enabled);
+        if (!runnable.length) return toast("没有可运行的步骤");
+
+        isRunning = true;
+        stopRequested = false;
+        workflow.steps.forEach((step) => step.status = "idle");
+        $("#runButton").hidden = true;
+        $("#stopButton").hidden = false;
+        $("#runPanel").classList.add("open");
+        $("#runSummary").setAttribute("aria-expanded", "true");
+        $("#runStatusText").textContent = "正在运行";
+        $("#runStatusDot").className = "status-dot running";
+        $("#progressBar").style.width = "0";
+        $("#progressText").textContent = `0 / ${runnable.length}`;
+        runLog.innerHTML = "";
+        log("run", `开始运行“${workflow.name}”`);
+        renderSteps();
+        icons();
+
+        let completed = 0;
+        for (const step of runnable) {
+          if (stopRequested) break;
+          step.status = "running";
+          selectedStepId = step.id;
+          renderSteps();
+          renderInspector();
+          enhanceSelects(inspectorContent);
+          log("run", step.name);
+          const delay = Math.min(900, Math.max(0, Number(step.delay || 0)));
+          if (delay) await sleep(delay);
+          if (stopRequested) break;
+          const completedSignal = await waitForStepCompletion(step);
+          if (stopRequested || !completedSignal) break;
+          step.status = "success";
+          completed += 1;
+          $("#progressBar").style.width = `${(completed / runnable.length) * 100}%`;
+          $("#progressText").textContent = `${completed} / ${runnable.length}`;
+          log("ok", `${step.name} · ${completionMeta[completionModeFor(step)].label}`);
+          renderSteps();
+          icons();
+        }
+
+        isRunning = false;
+        $("#runButton").hidden = false;
+        $("#stopButton").hidden = true;
+        if (stopRequested) {
+          const runningStep = workflow.steps.find((step) => step.status === "running");
+          if (runningStep) runningStep.status = "idle";
+          $("#runStatusText").textContent = "已停止";
+          $("#runStatusDot").className = "status-dot stopped";
+          log("warn", "工作流已由用户停止");
+        } else {
+          $("#runStatusText").textContent = "运行完成";
+          $("#runStatusDot").className = "status-dot success";
+          toast("工作流运行完成");
+        }
+        renderAll();
+      }
+
+      function save() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ workflows, selectedWorkflowId }));
+        const now = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" });
+        $("#lastSaved").innerHTML = `<i data-lucide="check-circle-2"></i> 已保存 ${now}`;
+        icons();
+        toast("工作流已保存到浏览器");
+      }
+
+      function load() {
+        try {
+          const value = JSON.parse(localStorage.getItem(STORAGE_KEY));
+          if (Array.isArray(value?.workflows) && value.workflows.length) {
+            workflows = value.workflows;
+            workflows.forEach((workflow) => workflow.steps.forEach(ensureStepCompletion));
+            selectedWorkflowId = workflows.some((item) => item.id === value.selectedWorkflowId)
+              ? value.selectedWorkflowId
+              : workflows[0].id;
+            selectedStepId = currentWorkflow().steps[0]?.id || null;
+          }
+        } catch {
+          localStorage.removeItem(STORAGE_KEY);
+        }
+      }
+
+      function exportWorkflow() {
+        const workflow = currentWorkflow();
+        const blob = new Blob([JSON.stringify(workflow, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${workflow.name.replace(/[\\/:*?"<>|]/g, "-")}.workflow.json`;
+        anchor.click();
+        URL.revokeObjectURL(url);
+        toast("当前工作流已导出");
+      }
+
+      function importWorkflow(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const imported = JSON.parse(reader.result);
+            if (!imported.name || !Array.isArray(imported.steps)) throw new Error("invalid");
+            imported.id = uid("wf");
+            imported.steps = imported.steps.map((step) => ({ ...step, id: uid("step"), status: "idle" }));
+            workflows.push(imported);
+            selectedWorkflowId = imported.id;
+            selectedStepId = imported.steps[0]?.id || null;
+            renderAll();
+            toast("工作流已导入");
+          } catch {
+            toast("导入失败：文件格式不正确");
+          }
+          $("#importInput").value = "";
+        };
+        reader.readAsText(file);
+      }
+
+      function createWorkflow(name) {
+        const workflow = {
+          id: uid("wf"),
+          name,
+          description: "添加步骤，把常用操作串联成一次触发。",
+          trigger: "",
+          failurePolicy: "stop",
+          steps: [],
+        };
+        workflows.push(workflow);
+        selectedWorkflowId = workflow.id;
+        selectedStepId = null;
+        resetRunView();
+        renderAll();
+        toast("工作流已创建");
+      }
+
+      function duplicateWorkflow() {
+        if (isRunning) return;
+        const copy = structuredClone(currentWorkflow());
+        copy.id = uid("wf");
+        copy.name = `${copy.name} 副本`;
+        copy.trigger = "";
+        copy.steps = copy.steps.map((step) => ({ ...step, id: uid("step"), status: "idle" }));
+        workflows.push(copy);
+        selectedWorkflowId = copy.id;
+        selectedStepId = copy.steps[0]?.id || null;
+        renderAll();
+        toast("工作流已复制");
+      }
+
+      function deleteWorkflow() {
+        if (workflows.length === 1) {
+          toast("至少保留一个工作流");
+          return;
+        }
+        const index = workflows.findIndex((workflow) => workflow.id === selectedWorkflowId);
+        workflows.splice(index, 1);
+        selectedWorkflowId = workflows[Math.min(index, workflows.length - 1)].id;
+        selectedStepId = currentWorkflow().steps[0]?.id || null;
+        resetRunView();
+        renderAll();
+        toast("工作流已删除");
+      }
+
+      function showConfirm(title, message, action) {
+        pendingConfirm = action;
+        $("#confirmTitle").textContent = title;
+        $("#confirmMessage").textContent = message;
+        $("#confirmDialog").showModal();
+      }
+
+      $("#workflowSearch").addEventListener("input", renderWorkflowList);
+      $("#newWorkflowButton").addEventListener("click", () => {
+        $("#newWorkflowName").value = "";
+        $("#workflowDialog").showModal();
+        setTimeout(() => $("#newWorkflowName").focus(), 0);
+      });
+      $("#workflowForm").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const name = $("#newWorkflowName").value.trim();
+        if (!name) return $("#newWorkflowName").focus();
+        $("#workflowDialog").close();
+        createWorkflow(name);
+      });
+      document.querySelectorAll("[data-close-dialog]").forEach((button) => {
+        button.addEventListener("click", () => $("#workflowDialog").close());
+      });
+      document.querySelectorAll("[data-close-confirm]").forEach((button) => {
+        button.addEventListener("click", () => {
+          pendingConfirm = null;
+          $("#confirmDialog").close();
+        });
+      });
+      $("#confirmAction").addEventListener("click", () => {
+        const action = pendingConfirm;
+        pendingConfirm = null;
+        $("#confirmDialog").close();
+        action?.();
+      });
+      $("#duplicateWorkflowButton").addEventListener("click", duplicateWorkflow);
+      $("#deleteWorkflowButton").addEventListener("click", () => {
+        showConfirm(
+          "删除工作流",
+          `确定删除“${currentWorkflow().name}”吗？此操作只影响当前原型中的本地数据。`,
+          deleteWorkflow
+        );
+      });
+      $("#addStepButton").addEventListener("click", addStep);
+      $("#saveButton").addEventListener("click", save);
+      $("#runButton").addEventListener("click", runWorkflow);
+      $("#stopButton").addEventListener("click", () => {
+        stopRequested = true;
+        if ($("#manualDialog").open) $("#manualDialog").close();
+        manualResolve?.(false);
+        manualResolve = null;
+        $("#stopButton").disabled = true;
+        setTimeout(() => $("#stopButton").disabled = false, 800);
+      });
+      $("#manualContinueButton").addEventListener("click", () => {
+        $("#manualDialog").close();
+        manualResolve?.(true);
+        manualResolve = null;
+      });
+      $("#manualStopButton").addEventListener("click", () => {
+        stopRequested = true;
+        $("#manualDialog").close();
+        manualResolve?.(false);
+        manualResolve = null;
+      });
+      $("#manualDialog").addEventListener("cancel", (event) => {
+        event.preventDefault();
+        stopRequested = true;
+        $("#manualDialog").close();
+        manualResolve?.(false);
+        manualResolve = null;
+      });
+      $("#importButton").addEventListener("click", () => $("#importInput").click());
+      $("#importInput").addEventListener("change", (event) => importWorkflow(event.target.files[0]));
+      $("#exportButton").addEventListener("click", exportWorkflow);
+      $("#toggleInspector").addEventListener("click", () => document.body.classList.toggle("inspector-open"));
+      $("#closeInspector").addEventListener("click", () => document.body.classList.remove("inspector-open"));
+
+      $("#workflowName").addEventListener("input", (event) => {
+        currentWorkflow().name = event.target.value;
+        $("#crumbName").textContent = event.target.value;
+        renderWorkflowList();
+        icons();
+      });
+      $("#workflowDescription").addEventListener("input", (event) => {
+        currentWorkflow().description = event.target.value;
+      });
+      $("#workflowTrigger").addEventListener("input", (event) => {
+        currentWorkflow().trigger = event.target.value;
+        renderWorkflowList();
+        icons();
+      });
+      $("#failurePolicy").addEventListener("change", (event) => {
+        currentWorkflow().failurePolicy = event.target.value;
+      });
+      $("#runSummary").addEventListener("click", () => {
+        $("#runPanel").classList.toggle("open");
+        $("#runSummary").setAttribute("aria-expanded", $("#runPanel").classList.contains("open"));
+      });
+      $("#runSummary").addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          $("#runSummary").click();
+        }
+      });
+      document.addEventListener("click", () => closeCustomSelects());
+      window.addEventListener("resize", () => closeCustomSelects());
+      document.addEventListener("keydown", (event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+          event.preventDefault();
+          save();
+        }
+        if (event.key === "Escape") {
+          if (document.querySelector(".custom-select-menu.open")) closeCustomSelects();
+          else if ($("#manualDialog").open) {
+            stopRequested = true;
+            $("#manualDialog").close();
+            manualResolve?.(false);
+            manualResolve = null;
+          }
+          else if ($("#workflowDialog").open) $("#workflowDialog").close();
+          else if ($("#confirmDialog").open) $("#confirmDialog").close();
+          else document.body.classList.remove("inspector-open");
+        }
+      });
+
+      load();
+      resetRunView();
+      renderAll();
+    })();
+  </script>
+</body>
+</html>

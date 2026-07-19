@@ -96,6 +96,18 @@ export function PluginIcon(props: IconProps) {
   );
 }
 
+export function WorkflowIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.workflow)}>
+      <circle cx="6" cy="6" r="2" />
+      <circle cx="18" cy="12" r="2" />
+      <circle cx="6" cy="18" r="2" />
+      <path d="M8 6h3a3 3 0 0 1 3 3v0a3 3 0 0 0 3 3h-1" />
+      <path d="M8 18h3a3 3 0 0 0 3-3v0a3 3 0 0 1 3-3" />
+    </IconBase>
+  );
+}
+
 export const ACTION_ICON_COMPONENTS = {
   app: AppGridIcon,
   folder: FolderIcon,
@@ -106,4 +118,5 @@ export const ACTION_ICON_COMPONENTS = {
   system: SystemIcon,
   builtin: BuiltinToolIcon,
   plugin: PluginIcon,
+  workflow: WorkflowIcon,
 } satisfies Record<ActionType, IconComponent>;

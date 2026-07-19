@@ -52,6 +52,7 @@ describe("icon categories", () => {
       "system",
       "builtin",
       "plugin",
+      "workflow",
     ]);
   });
 

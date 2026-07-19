@@ -1,7 +1,7 @@
 mod actions;
 mod builtins;
 mod cloud_sync;
-mod config;
+pub mod config;
 mod entries;
 mod keyboard_control_tap;
 mod main_window_control;
@@ -10,10 +10,11 @@ mod platform;
 mod plugin_manager;
 mod plugin_manifest;
 mod translation;
-mod types;
+pub mod types;
 mod utils;
 mod video_tools;
 mod window_pinning;
+pub mod workflow;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -29,6 +30,7 @@ const PET_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+P";
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(workflow::WorkflowEngineState::default())
         .plugin(
             tauri_plugin_single_instance::Builder::new()
                 .callback(|app, _argv, _cwd| {
@@ -103,6 +105,14 @@ pub fn run() {
             video_tools::cancel_video_frame_sampler,
             video_tools::open_video_tool_path,
             actions::execute_action,
+            workflow::validate_workflow,
+            workflow::set_workflow_workspace_mode,
+            workflow::set_binding_workspace_mode,
+            workflow::run_workflow,
+            workflow::get_workflow_run,
+            workflow::list_workflow_runs,
+            workflow::cancel_workflow_run,
+            workflow::confirm_workflow_step,
             main_window_control::control_main_window,
             actions::save_ssh_password,
             actions::delete_ssh_password,

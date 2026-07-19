@@ -141,6 +141,127 @@ pub enum Action {
         #[serde(rename = "actionId", alias = "action_id")]
         action_id: String,
     },
+    Workflow {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+        #[serde(rename = "workflowId", alias = "workflow_id")]
+        workflow_id: String,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum StepCondition {
+    Always,
+    PreviousSuccess,
+    PreviousFailed,
+    Platform { platform: String },
+    PathExists { path: String },
+    EnvEquals { name: String, value: String },
+}
+
+impl Default for StepCondition {
+    fn default() -> Self {
+        Self::Always
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(
+    tag = "type",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
+pub enum CompletionRule {
+    ActionResolved,
+    ProcessStarted {
+        stabilization_ms: u64,
+        timeout_ms: u64,
+    },
+    ProcessExit {
+        success_codes: Vec<i32>,
+        timeout_ms: u64,
+    },
+    PortReady {
+        host: String,
+        port: u16,
+        interval_ms: u64,
+        timeout_ms: u64,
+    },
+    Timer {
+        duration_ms: u64,
+    },
+    Manual {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        timeout_ms: Option<u64>,
+    },
+    WindowReady {
+        title_contains: String,
+        timeout_ms: u64,
+    },
+    UrlReady {
+        url_pattern: String,
+        timeout_ms: u64,
+    },
+    ConnectionReady {
+        timeout_ms: u64,
+    },
+}
+
+impl Default for CompletionRule {
+    fn default() -> Self {
+        Self::ActionResolved
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_failure_policy() -> String {
+    "stop".to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowStep {
+    pub id: String,
+    pub name: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    pub action: Action,
+    #[serde(default)]
+    pub condition: StepCondition,
+    #[serde(default)]
+    pub completion: CompletionRule,
+    #[serde(default)]
+    pub delay_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_failure: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowDefinition {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_failure_policy")]
+    pub failure_policy: String,
+    #[serde(default)]
+    pub steps: Vec<WorkflowStep>,
+    #[serde(default)]
+    pub created_at: String,
+    #[serde(default)]
+    pub updated_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -162,6 +283,8 @@ pub struct ThemeConfig {
     pub border_color: String,
     #[serde(default = "default_key_bg_opacity")]
     pub key_bg_opacity: f64,
+    #[serde(default = "default_show_key_labels")]
+    pub show_key_labels: bool,
 }
 
 fn default_bg_color() -> String {
@@ -179,6 +302,9 @@ fn default_border_color() -> String {
 fn default_key_bg_opacity() -> f64 {
     0.04
 }
+fn default_show_key_labels() -> bool {
+    true
+}
 
 impl Default for ThemeConfig {
     fn default() -> Self {
@@ -188,6 +314,7 @@ impl Default for ThemeConfig {
             blur_radius: default_blur_radius(),
             border_color: default_border_color(),
             key_bg_opacity: default_key_bg_opacity(),
+            show_key_labels: default_show_key_labels(),
         }
     }
 }
@@ -220,11 +347,21 @@ impl Default for PetCodexConfig {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct KeyboardConfig {
+    #[serde(default = "default_schema_version", rename = "schemaVersion")]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub revision: u64,
     pub pages: Vec<Page>,
+    #[serde(default)]
+    pub workflows: Vec<WorkflowDefinition>,
     #[serde(default)]
     pub theme: ThemeConfig,
     #[serde(default)]
     pub pet: PetConfig,
+}
+
+fn default_schema_version() -> u32 {
+    1
 }
 
 // -----------------------------------------------

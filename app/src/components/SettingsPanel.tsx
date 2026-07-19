@@ -14,6 +14,7 @@ import {
 } from "@/api/cloudSync";
 import { ActionIcon } from "@/components/ActionIcon";
 import { BindingModal } from "@/components/BindingModal";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { PluginCenter } from "@/components/PluginCenter";
 import { writePetCodexEnabled } from "@/entry/petCodexStatus";
@@ -36,8 +37,19 @@ const PRESET_COLORS = [
   "#1e3a5f",
 ];
 
-const THEME_PRESETS: { name: string; theme: ThemeConfig }[] = [
-  { name: "经典黑", theme: { ...DEFAULT_THEME } },
+type VisualThemePreset = Omit<ThemeConfig, "showKeyLabels">;
+
+const THEME_PRESETS: { name: string; theme: VisualThemePreset }[] = [
+  {
+    name: "经典黑",
+    theme: {
+      bgColor: DEFAULT_THEME.bgColor,
+      bgOpacity: DEFAULT_THEME.bgOpacity,
+      blurRadius: DEFAULT_THEME.blurRadius,
+      borderColor: DEFAULT_THEME.borderColor,
+      keyBgOpacity: DEFAULT_THEME.keyBgOpacity,
+    },
+  },
   {
     name: "暖棕",
     theme: {
@@ -80,6 +92,14 @@ interface EditState {
   autoSubmit: boolean;
   usernameSelector: string;
   passwordSelector: string;
+}
+
+interface ConfirmRequest {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  tone?: "danger" | "primary";
+  onConfirm: () => void | Promise<void>;
 }
 
 const LABEL: CSSProperties = {
@@ -177,7 +197,13 @@ async function persistConfig(next: KeyboardConfig) {
   await saveConfig(next);
 }
 
-export function SettingsPanel({ onClose }: { onClose: () => void }) {
+export function SettingsPanel({
+  onClose,
+  showWindowPin = true,
+}: {
+  onClose: () => void;
+  showWindowPin?: boolean;
+}) {
   const config = useKeyboardStore((s) => s.config);
   const theme = useKeyboardStore((s) => s.theme);
   const setTheme = useKeyboardStore((s) => s.setTheme);
@@ -189,6 +215,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const editingEntry = webAccounts.find((entry) => entry.id === editingId) ?? webAccounts[0] ?? null;
   const [editState, setEditState] = useState<EditState | null>(null);
   const [status, setStatus] = useState("");
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
   const [cloudSyncBaseUrl, setCloudSyncBaseUrl] = useState("http://127.0.0.1:8787");
   const [cloudSyncKey, setCloudSyncKey] = useState("");
   const [cloudSyncMessage, setCloudSyncMessage] = useState("");
@@ -201,6 +228,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || confirmRequest || petMenuEditIndex !== null) return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [confirmRequest, onClose, petMenuEditIndex]);
 
   useGsapContext(rootRef, () => {
     if (!rootRef.current) return;
@@ -297,7 +334,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setStatus(action ? "宠物菜单已更新。" : "宠物菜单绑定已清空。");
   }
 
-  const applyPreset = (preset: ThemeConfig) => {
+  const applyPreset = (preset: VisualThemePreset) => {
     setTheme({ ...preset });
     setTimeout(async () => {
       const cfg = useKeyboardStore.getState().config;
@@ -412,14 +449,11 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const restoreCloudSync = async () => {
+  const performCloudSyncRestore = async () => {
     if (!cloudSyncHasKey) {
       setCloudSyncMessage("请先输入同步密钥并点击“保存密钥”。");
       return;
     }
-
-    const confirmed = window.confirm("从云端恢复会覆盖当前本机配置。DevLauncher 会先创建本地备份，继续吗？");
-    if (!confirmed) return;
 
     setCloudSyncLoading("restore");
     try {
@@ -436,7 +470,22 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
       setCloudSyncMessage(`恢复失败：${String(error)}`);
     } finally {
       setCloudSyncLoading(null);
+      setConfirmRequest(null);
     }
+  };
+
+  const restoreCloudSync = () => {
+    if (!cloudSyncHasKey) {
+      setCloudSyncMessage("请先输入同步密钥并点击“保存密钥”。");
+      return;
+    }
+    setConfirmRequest({
+      title: "从云端恢复配置",
+      message: "云端配置将覆盖当前本机配置。恢复前会自动创建本地备份，网页与 SSH 密码不会从云端写入。",
+      confirmLabel: "开始恢复",
+      tone: "primary",
+      onConfirm: performCloudSyncRestore,
+    });
   };
 
   const beginEdit = (entry: WebAccountEntry) => {
@@ -508,14 +557,19 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setStatus("已保存。");
   };
 
-  const clearPassword = async (entry: WebAccountEntry) => {
+  const performClearPassword = async (entry: WebAccountEntry) => {
     if (!config || !entry.origin || !entry.action.username) return;
-    if (!window.confirm(`清除“${entry.action.name}”保存的网页密码？`)) return;
 
-    await invoke("delete_web_password", {
-      origin: entry.origin,
-      username: entry.action.username,
-    }).catch((error) => setStatus(String(error)));
+    try {
+      await invoke("delete_web_password", {
+        origin: entry.origin,
+        username: entry.action.username,
+      });
+    } catch (error) {
+      setStatus(`清除密码失败：${String(error)}`);
+      setConfirmRequest(null);
+      return;
+    }
 
     const nextAction: UrlAction = { ...entry.action };
     delete nextAction.hasPassword;
@@ -525,17 +579,32 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     pages[entry.pageIndex] = page;
     await persistConfig({ ...config, pages });
     setStatus("密码已清除。");
+    setConfirmRequest(null);
   };
 
-  const removeBinding = async (entry: WebAccountEntry) => {
+  const clearPassword = (entry: WebAccountEntry) => {
+    setConfirmRequest({
+      title: "清除网页密码",
+      message: `将从系统凭据库中删除“${entry.action.name}”保存的密码，网址绑定仍会保留。`,
+      confirmLabel: "清除密码",
+      onConfirm: () => performClearPassword(entry),
+    });
+  };
+
+  const performRemoveBinding = async (entry: WebAccountEntry) => {
     if (!config) return;
-    if (!window.confirm(`移除网页账号绑定“${entry.action.name}”？`)) return;
 
     if (entry.action.hasPassword && entry.origin && entry.action.username) {
-      await invoke("delete_web_password", {
-        origin: entry.origin,
-        username: entry.action.username,
-      }).catch(() => {});
+      try {
+        await invoke("delete_web_password", {
+          origin: entry.origin,
+          username: entry.action.username,
+        });
+      } catch (error) {
+        setStatus(`删除网页密码失败：${String(error)}`);
+        setConfirmRequest(null);
+        return;
+      }
     }
 
     const pages = [...config.pages];
@@ -546,11 +615,24 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     setEditingId(null);
     setEditState(null);
     setStatus("绑定已移除。");
+    setConfirmRequest(null);
   };
 
-  if (editingEntry && !editState) {
-    setTimeout(() => beginEdit(editingEntry), 0);
-  }
+  const removeBinding = (entry: WebAccountEntry) => {
+    setConfirmRequest({
+      title: "移除网页账号绑定",
+      message: `将移除“${entry.action.name}”的按键绑定，并删除关联的已保存密码。`,
+      confirmLabel: "移除绑定",
+      onConfirm: () => performRemoveBinding(entry),
+    });
+  };
+
+  useEffect(() => {
+    if (!editingEntry || editState) return;
+    setEditingId(editingEntry.id);
+    setEditState(editStateFromAction(editingEntry.action));
+    setStatus("");
+  }, [editState, editingEntry]);
 
   return (
     <>
@@ -671,7 +753,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 	                    ? "插件中心"
 	                    : "URL 与账号密码本"}
           </div>
-          <MacWindowControls onClose={onClose} closeTitle="关闭设置" />
+          <MacWindowControls onClose={onClose} closeTitle="关闭设置" showPin={showWindowPin} />
         </header>
 
         <div ref={contentRef} className="motion-scroll-area" style={{ padding: 14, minHeight: 0 }}>
@@ -749,6 +831,49 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               <div style={ROW}>
                 <input type="range" min={0} max={0.3} step={0.01} value={theme.keyBgOpacity} onChange={(event) => persistTheme({ keyBgOpacity: parseFloat(event.target.value) })} style={{ flex: 1 }} />
                 <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", width: 34, textAlign: "right", fontFamily: "monospace" }}>{Math.round(theme.keyBgOpacity * 100)}%</span>
+              </div>
+
+              <div style={LABEL}>按键图标文字</div>
+              <div style={{ ...ROW, justifyContent: "space-between", marginBottom: 2 }}>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.62)" }}>
+                  显示图标下方的名称
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={theme.showKeyLabels}
+                  aria-label="显示图标下方的名称"
+                  onClick={() => persistTheme({ showKeyLabels: !theme.showKeyLabels })}
+                  style={{
+                    width: 38,
+                    height: 22,
+                    padding: 2,
+                    borderRadius: 11,
+                    border: theme.showKeyLabels
+                      ? "1px solid rgba(96,165,250,0.72)"
+                      : "1px solid rgba(255,255,255,0.16)",
+                    background: theme.showKeyLabels
+                      ? "rgba(59,130,246,0.58)"
+                      : "rgba(255,255,255,0.07)",
+                    boxShadow: "inset 0 1px 2px rgba(0,0,0,0.24)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: theme.showKeyLabels ? "flex-end" : "flex-start",
+                    flexShrink: 0,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      background: theme.showKeyLabels ? "#f8fbff" : "rgba(255,255,255,0.62)",
+                      boxShadow: "0 2px 5px rgba(0,0,0,0.3)",
+                    }}
+                  />
+                </button>
               </div>
             </>
           ) : activeSection === "entries" ? (
@@ -1106,6 +1231,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           setPetMenuEditIndex(null);
           void persistPetMenuAction(index, null).catch((error) => setStatus(String(error)));
         }}
+      />
+    )}
+    {confirmRequest && (
+      <ConfirmDialog
+        title={confirmRequest.title}
+        message={confirmRequest.message}
+        confirmLabel={confirmRequest.confirmLabel}
+        tone={confirmRequest.tone}
+        onConfirm={confirmRequest.onConfirm}
+        onCancel={() => setConfirmRequest(null)}
       />
     )}
     </>
