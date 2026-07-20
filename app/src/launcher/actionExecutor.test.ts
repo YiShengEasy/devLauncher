@@ -17,6 +17,19 @@ describe("actionExecutor", () => {
     expect(calls).toEqual([["show_clipboard_window", undefined]]);
   });
 
+  it("opens the project task builtin through its native window command", async () => {
+    const calls: Array<[string, Record<string, unknown> | undefined]> = [];
+    const action: Action = { type: "builtin", name: "项目任务", feature: "projecttasks" };
+
+    await executeAction(action, {
+      invoke: async (command, args) => {
+        calls.push([command, args]);
+      },
+    });
+
+    expect(calls).toEqual([["toggle_projecttasks_window", undefined]]);
+  });
+
   it("uses execute_action for non-builtin direct actions", async () => {
     const calls: Array<[string, Record<string, unknown> | undefined]> = [];
     const action: Action = { type: "url", name: "Docs", target: "https://example.com" };

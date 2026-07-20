@@ -1,9 +1,13 @@
-import type { CSSProperties } from "react";
 import { useState } from "react";
-import { ActionIcon } from "@/components/ActionIcon";
-import { KeyboardIcon } from "@/icons/entryIcons";
+import type { CSSProperties } from "react";
 import type { Action } from "@/types/actions";
-import { PET_BUTTON_SIZE, PET_MENU_BUTTON_SIZE, PET_OPEN_WINDOW_SIZE, buildPetMenuItems, type PetMenuItem } from "./petLayout";
+import {
+  PET_BUTTON_SIZE,
+  PET_OPEN_WINDOW_SIZE,
+  buildPetMenuItems,
+  type PetMenuItem,
+} from "./petLayout";
+import { PetRadialMenu } from "./PetRadialMenu";
 
 const pageStyle: CSSProperties = {
   width: "100vw",
@@ -22,7 +26,7 @@ const panelStyle: CSSProperties = {
   borderRadius: 16,
   border: "1px solid rgba(255,255,255,0.12)",
   background: "rgba(22, 25, 38, 0.78)",
-  boxShadow: "0 28px 80px rgba(0,0,0,0.38)",
+  boxShadow: "none",
   display: "grid",
   gridTemplateColumns: "1fr 1.1fr",
   overflow: "hidden",
@@ -36,17 +40,16 @@ const previewActions: Action[] = [
 
 const previewMenuItems = buildPetMenuItems(previewActions);
 
-function getPreviewMenuItemKey(item: PetMenuItem): string {
-  return item.kind === "keyboard" ? "keyboard" : `custom-${item.slotIndex}`;
-}
-
-function PreviewIcon({ item }: { item: PetMenuItem }) {
-  if (item.kind === "keyboard") return <KeyboardIcon size={19} decorative />;
-  return <ActionIcon action={item.action} size={19} />;
-}
-
 export function BrowserPreviewApp() {
   const [open, setOpen] = useState(true);
+  const [activeItemKey, setActiveItemKey] = useState<string | null>(null);
+  const [lastAction, setLastAction] = useState("尚未执行");
+
+  const activateItem = (item: PetMenuItem) => {
+    setActiveItemKey(null);
+    setLastAction(item.label);
+    setOpen(false);
+  };
 
   return (
     <div style={pageStyle}>
@@ -55,7 +58,7 @@ export function BrowserPreviewApp() {
           <div style={{ fontSize: 13, color: "rgba(125,211,252,0.9)", fontWeight: 700 }}>Browser Preview</div>
           <h1 style={{ margin: 0, fontSize: 24, lineHeight: 1.2, letterSpacing: 0 }}>电子宠物入口动效预览</h1>
           <p style={{ margin: 0, color: "rgba(255,255,255,0.56)", fontSize: 13, lineHeight: 1.7 }}>
-            这个页面不读取 keyboard.yaml，也不调用 Tauri API。用于在浏览器里检查宠物展开、SVG 图标和 hover 动画。
+            这个页面不读取 keyboard.yaml，也不调用 Tauri API。单击宠物开关轮盘，点击扇区执行。
           </p>
           <button
             className="quick-action-icon"
@@ -65,41 +68,49 @@ export function BrowserPreviewApp() {
           >
             {open ? "收起" : "展开"}
           </button>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.58)" }}>
+            最近执行：{lastAction}
+          </div>
         </section>
 
         <section style={{ minHeight: 440, display: "grid", placeItems: "center", position: "relative", overflow: "hidden" }}>
-          <div className={`pet-bubble-menu ${open ? "is-open" : ""}`} style={{ position: "absolute", left: "50%", top: 144, width: PET_OPEN_WINDOW_SIZE.width, height: PET_OPEN_WINDOW_SIZE.height, transform: open ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -50%) scale(0.94)", opacity: open ? 1 : 0, pointerEvents: "none", transition: "opacity 180ms ease, transform 220ms cubic-bezier(.16,1,.3,1)" }}>
-            {previewMenuItems.map((item) => (
-              <button
-                key={getPreviewMenuItemKey(item)}
-                className="pet-action-button"
-                type="button"
-                title={item.label}
-                data-pet-action={getPreviewMenuItemKey(item)}
-                style={{
-                  position: "absolute",
-                  left: item.left,
-                  top: item.top,
-                  width: PET_MENU_BUTTON_SIZE.width,
-                  height: PET_MENU_BUTTON_SIZE.height,
-                  borderRadius: 6,
-                  border: "2px solid rgba(226,232,240,0.68)",
-                  background: "rgba(30,41,59,0.98)",
-                  color: "rgba(255,255,255,0.9)",
-                  cursor: "pointer",
-                  display: "grid",
-                  placeItems: "center",
-                  boxShadow: "0 3px 0 rgba(0,0,0,0.35)",
-                  transform: open ? "translate(-50%, -50%) scale(1)" : "translate(-50%, -50%) scale(0.72)",
-                  opacity: open ? 1 : 0,
-                }}
-              >
-                <PreviewIcon item={item} />
-              </button>
-            ))}
-          </div>
+          <PetRadialMenu
+            className={`pet-bubble-menu ${open ? "is-open" : ""}`}
+            items={previewMenuItems}
+            open={open}
+            activeItemKey={activeItemKey}
+            onActiveItemChange={setActiveItemKey}
+            onActivateItem={activateItem}
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: PET_OPEN_WINDOW_SIZE.width,
+              height: PET_OPEN_WINDOW_SIZE.height,
+              transform: open
+                ? "translate(-50%, -50%) scale(1)"
+                : "translate(-50%, -50%) scale(0.94)",
+              opacity: open ? 1 : 0,
+              visibility: open ? "visible" : "hidden",
+              pointerEvents: "none",
+              transition: "opacity 180ms ease, transform 220ms cubic-bezier(.16,1,.3,1)",
+            }}
+          />
 
-          <button className="preview-cat-button" type="button" onClick={() => setOpen((value) => !value)} style={{ width: PET_BUTTON_SIZE.width, height: PET_BUTTON_SIZE.height, border: 0, background: "transparent", boxShadow: "none" }}>
+          <button
+            className="preview-cat-button"
+            type="button"
+            aria-label="预览像素猫入口"
+            title={open ? "点击收起" : "点击展开"}
+            onClick={() => setOpen((value) => !value)}
+            style={{
+              width: PET_BUTTON_SIZE.width,
+              height: PET_BUTTON_SIZE.height,
+              border: 0,
+              background: "transparent",
+              boxShadow: "none",
+            }}
+          >
             <span className="pet-siamese-frame" aria-hidden="true">
               <img src="/pet/siamese/cozy-tail-ear-wiggle/0001.png" alt="" draggable={false} />
             </span>

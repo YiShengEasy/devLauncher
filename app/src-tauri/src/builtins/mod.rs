@@ -1,5 +1,6 @@
 pub mod clipboard;
 pub mod json;
+pub mod projecttasks;
 pub mod quickmemory;
 pub mod remotedesk;
 pub mod remotedesk_rdp;

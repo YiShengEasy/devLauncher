@@ -317,8 +317,5 @@ pub fn toggle_pet_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 pub fn toggle_keyboard_window(app: tauri::AppHandle) -> Result<(), String> {
-    crate::main_window_control::dispatch(
-        &app,
-        crate::main_window_control::MainWindowAction::Toggle,
-    )
+    crate::main_window_control::dispatch(&app, crate::main_window_control::MainWindowAction::Toggle)
 }

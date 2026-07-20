@@ -4,6 +4,7 @@ import type { KeyId, KeyMap } from "@/types/actions";
 import { ACTION_TYPE_META } from "@/types/actions";
 import { KeyCell } from "./KeyCell";
 import { ActionIcon } from "./ActionIcon";
+import { nextKeyboardHoverKey } from "./keyboardHoverState";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { saveConfig } from "@/api/config";
 
@@ -24,7 +25,7 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
   const [dragKey, setDragKey] = useState<KeyId | null>(null);
   const [dropTarget, setDropTarget] = useState<KeyId | null>(null);
   const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null);
-  const [hoverResetSignal, setHoverResetSignal] = useState(0);
+  const [hoverKey, setHoverKey] = useState<KeyId | null>(null);
   const isDragging = useRef(false);
   const dragStartPos = useRef<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -39,6 +40,12 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
       if (cfg) await saveConfig(cfg);
     }, 0);
   }, [swapKeys, activePageIndex]);
+
+  const handleHoverChange = useCallback((keyId: KeyId, hovered: boolean) => {
+    setHoverKey((current) => (
+      nextKeyboardHoverKey(current, keyId, hovered, isDragging.current)
+    ));
+  }, []);
 
   // Register cell ref
   const registerCell = useCallback((keyId: KeyId, el: HTMLDivElement | null) => {
@@ -72,6 +79,7 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
       // Start drag after moving 4px (distinguish from click)
       if (!isDragging.current && Math.sqrt(dx * dx + dy * dy) > 4) {
         isDragging.current = true;
+        setHoverKey(null);
         setDragKey(keyId);
       }
       if (isDragging.current) {
@@ -92,7 +100,7 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
       setDragKey(null);
       setDropTarget(null);
       setDragPos(null);
-      setHoverResetSignal((value) => value + 1);
+      setHoverKey(null);
       dragStartPos.current = null;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
@@ -172,7 +180,8 @@ export function KeyboardPanel({ keys, onKeyClick, onKeyBind }: KeyboardPanelProp
               isDragSource={dragKey === keyId}
               isDropTarget={dropTarget === keyId}
               isDragging={dragKey !== null}
-              hoverResetSignal={hoverResetSignal}
+              isHovered={hoverKey === keyId}
+              onHoverChange={handleHoverChange}
               onMouseDown={(e) => handleMouseDown(keyId, e)}
               wasDrag={wasDrag}
               ref={(el) => registerCell(keyId, el)}

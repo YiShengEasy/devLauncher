@@ -35,6 +35,21 @@ export function PinIcon(props: IconProps) {
   );
 }
 
+export function FavoriteIcon({
+  filled = false,
+  ...props
+}: IconProps & { filled?: boolean }) {
+  return (
+    <IconBase {...props}>
+      <path
+        d="m12 3.5 2.65 5.37 5.93.86-4.29 4.18 1.01 5.91L12 17.03l-5.3 2.79 1.01-5.91-4.29-4.18 5.93-.86L12 3.5Z"
+        fill={filled ? "currentColor" : "none"}
+        strokeLinejoin="round"
+      />
+    </IconBase>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <IconBase {...withIconColor(props, iconColors.settings)}>

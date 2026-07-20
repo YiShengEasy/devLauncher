@@ -175,89 +175,115 @@ pub fn setup(app: &mut tauri::App) {
     });
 }
 
+fn capture_and_show_screenshot(
+    app: &tauri::AppHandle,
+    win: &tauri::WebviewWindow,
+) -> Result<(), String> {
+    use screenshots::Screen;
+    let screens = Screen::all().map_err(|e| e.to_string())?;
+    let screen = screens
+        .iter()
+        .find(|s| s.display_info.is_primary)
+        .or_else(|| screens.first())
+        .ok_or("no screen found")?;
+
+    let sx = screen.display_info.x;
+    let sy = screen.display_info.y;
+    let sw = screen.display_info.width;
+    let sh = screen.display_info.height;
+
+    // Step 1: prepare geometry before capture so both success and error
+    // paths can reuse the same overlay location.
+    set_capture_window_bounds(win, sx, sy, sw, sh)?;
+    prepare_capture_window_for_current_space(win)?;
+
+    // Step 2: capture FIRST, preserving the user's current screen state.
+    // On macOS, use the system screencapture tool so Screen Recording
+    // permission is handled by the OS capture path instead of the dev binary.
+    #[cfg(target_os = "macos")]
+    let png_b64 = match capture_screen_b64() {
+        Ok(b64) => b64,
+        Err(e) => {
+            eprintln!("[screenshot] macOS screencapture failed: {e}");
+            let _ = show_capture_window(win);
+            let _ = focus_capture_window(win);
+            let _ = app.emit_to("screenshot", "screenshot-error", e.clone());
+            return Err(e);
+        }
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let (w, h, raw) = {
+        let captured = match screen.capture() {
+            Ok(captured) => captured,
+            Err(e) => {
+                let message = e.to_string();
+                let _ = show_capture_window(win);
+                let _ = focus_capture_window(win);
+                let _ = app.emit_to("screenshot", "screenshot-error", message.clone());
+                return Err(message);
+            }
+        };
+        let w = captured.width();
+        let h = captured.height();
+        let raw = captured.into_raw();
+        (w, h, raw)
+    };
+
+    // Step 3: show window immediately after capture.
+    show_capture_window(win)?;
+    focus_capture_window(win)?;
+
+    // Step 4: publish screenshot data to the overlay.
+    #[cfg(target_os = "macos")]
+    {
+        app.emit_to("screenshot", "screenshot-ready", png_b64)
+            .map_err(|e| e.to_string())?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let app2 = app.clone();
+    #[cfg(not(target_os = "macos"))]
+    std::thread::spawn(move || {
+        let rgba = match RgbaImage::from_raw(w, h, raw) {
+            Some(i) => i,
+            None => return,
+        };
+        match encode_image_jpeg(&rgba, w, 92) {
+            Ok((b64, _, _)) => {
+                let _ = app2.emit_to("screenshot", "screenshot-ready", b64);
+            }
+            Err(e) => eprintln!("[screenshot] encode failed: {}", e),
+        }
+    });
+
+    Ok(())
+}
+
 #[tauri::command]
 pub fn toggle_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("screenshot") {
         if win.is_visible().unwrap_or(false) {
             win.hide().map_err(|e| e.to_string())?;
         } else {
-            use screenshots::Screen;
-            let screens = Screen::all().map_err(|e| e.to_string())?;
-            let screen = screens
-                .iter()
-                .find(|s| s.display_info.is_primary)
-                .or_else(|| screens.first())
-                .ok_or("no screen found")?;
+            capture_and_show_screenshot(&app, &win)?;
+        }
+    }
+    Ok(())
+}
 
-            let sx = screen.display_info.x;
-            let sy = screen.display_info.y;
-            let sw = screen.display_info.width;
-            let sh = screen.display_info.height;
-
-            // Step 1: prepare geometry before capture so both success and error
-            // paths can reuse the same overlay location.
-            set_capture_window_bounds(&win, sx, sy, sw, sh)?;
-            prepare_capture_window_for_current_space(&win)?;
-
-            // Step 2: capture FIRST, preserving the user's current screen state.
-            // On macOS, use the system screencapture tool so Screen Recording
-            // permission is handled by the OS capture path instead of the dev binary.
-            #[cfg(target_os = "macos")]
-            let png_b64 = match capture_screen_b64() {
-                Ok(b64) => b64,
-                Err(e) => {
-                    eprintln!("[screenshot] macOS screencapture failed: {e}");
-                    let _ = show_capture_window(&win);
-                    let _ = focus_capture_window(&win);
-                    let _ = app.emit_to("screenshot", "screenshot-error", e.clone());
-                    return Err(e);
-                }
-            };
-
-            #[cfg(not(target_os = "macos"))]
-            let (w, h, raw) = {
-                let captured = match screen.capture() {
-                    Ok(captured) => captured,
-                    Err(e) => {
-                        let message = e.to_string();
-                        let _ = show_capture_window(&win);
-                        let _ = focus_capture_window(&win);
-                        let _ = app.emit_to("screenshot", "screenshot-error", message.clone());
-                        return Err(message);
-                    }
-                };
-                let w = captured.width();
-                let h = captured.height();
-                let raw = captured.into_raw();
-                (w, h, raw)
-            };
-
-            // Step 3: show window immediately after capture.
-            show_capture_window(&win)?;
+/// Show the screenshot overlay without toggling it off.
+///
+/// Global shortcut callbacks can overlap while the capture process is still
+/// running. Keeping this path idempotent prevents a duplicate callback from
+/// hiding the overlay immediately after the first callback shows it.
+#[tauri::command]
+pub fn show_screenshot_window(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window("screenshot") {
+        if win.is_visible().unwrap_or(false) {
             focus_capture_window(&win)?;
-
-            // Step 4: publish screenshot data to the overlay.
-            #[cfg(target_os = "macos")]
-            {
-                app.emit_to("screenshot", "screenshot-ready", png_b64)
-                    .map_err(|e| e.to_string())?;
-            }
-
-            #[cfg(not(target_os = "macos"))]
-            let app2 = app.clone();
-            #[cfg(not(target_os = "macos"))]
-            std::thread::spawn(move || {
-                let rgba = match RgbaImage::from_raw(w, h, raw) {
-                    Some(i) => i,
-                    None => return,
-                };
-                match encode_image_jpeg(&rgba, w, 92) {
-                    Ok((b64, _, _)) => {
-                        let _ = app2.emit_to("screenshot", "screenshot-ready", b64);
-                    }
-                    Err(e) => eprintln!("[screenshot] encode failed: {}", e),
-                }
-            });
+        } else {
+            capture_and_show_screenshot(&app, &win)?;
         }
     }
     Ok(())

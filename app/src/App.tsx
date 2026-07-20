@@ -62,7 +62,7 @@ function launcherShellBackground(theme: ThemeConfig): string {
       "radial-gradient(circle at 98% 29%, rgba(132,63,62,0.18), transparent 18%)",
       "radial-gradient(circle at 18% 4%, rgba(98,68,40,0.22), transparent 30%)",
       "radial-gradient(circle at 8% 96%, rgba(105,61,50,0.45), transparent 24%)",
-      "linear-gradient(145deg, #1e1a14, #11100d 58%, #0a0a08)",
+      hexToRgba(theme.bgColor, theme.bgOpacity),
     ].join(", ");
   }
 
@@ -73,7 +73,7 @@ function launcherShellBackground(theme: ThemeConfig): string {
       "radial-gradient(circle at 88% 13%, rgba(205,89,84,0.24), transparent 22%)",
       "radial-gradient(circle at 66% 8%, rgba(94,73,178,0.28), transparent 30%)",
       "radial-gradient(circle at 11% 96%, rgba(116,58,128,0.42), transparent 28%)",
-      "linear-gradient(145deg, #121a2a, #07111e 58%, #08101d)",
+      hexToRgba(theme.bgColor, theme.bgOpacity),
     ].join(", ");
   }
 
@@ -83,7 +83,7 @@ function launcherShellBackground(theme: ThemeConfig): string {
     "radial-gradient(circle at 98% 29%, rgba(160,70,70,0.18), transparent 18%)",
     "radial-gradient(circle at 18% 4%, rgba(43,55,131,0.22), transparent 30%)",
     "radial-gradient(circle at 8% 96%, rgba(113,58,77,0.47), transparent 24%)",
-    "linear-gradient(145deg, #191d2b, #080e19 58%, #0b121f)",
+    hexToRgba(theme.bgColor, theme.bgOpacity),
   ].join(", ");
 }
 
@@ -113,7 +113,7 @@ export default function App() {
     config, activePageIndex,
     loading, error,
     setConfig, setLoading, setError, setActivePageIndex,
-    bindKey, addPage, renamePage, removePage,
+    addPage, renamePage, removePage,
     showSettings, setShowSettings, theme,
   } = useKeyboardStore();
 
@@ -345,6 +345,28 @@ export default function App() {
     init();
   }, []);
 
+  // Project Tasks saves workflows from a separate Tauri window. Refresh the
+  // in-memory config before the user binds a key, otherwise a later binding
+  // save could overwrite the workflow that was just discovered.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen("projecttasks-workflow-saved", async () => {
+      try {
+        const nextConfig = await loadConfig();
+        const current = useKeyboardStore.getState();
+        useKeyboardStore.setState({ config: nextConfig, theme: nextConfig.theme ?? current.theme });
+        showNotice("已同步项目任务工作流", "success");
+      } catch (error) {
+        showNotice(`同步项目任务失败：${String(error)}`);
+      }
+    }).then((dispose) => {
+      unlisten = dispose;
+    }).catch(console.error);
+    return () => {
+      unlisten?.();
+    };
+  }, [showNotice]);
+
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     refreshPluginIcons();
@@ -436,6 +458,8 @@ export default function App() {
       if (action.type === "builtin" && action.feature === "screenshot") {
         void refreshPermissionIssue();
         showNotice(`截图失败：${String(e)}`);
+      } else {
+        showNotice(`执行失败：${String(e)}`);
       }
     }
   }, [config, activePageIndex, refreshPermissionIssue, showNotice]);
@@ -483,11 +507,16 @@ export default function App() {
           if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
             markPermissionFeatureUsed("screenshot");
           }
-          executeAction(capturedAction, { invoke }).catch((e) => {
+          const execution = capturedAction.type === "builtin" && capturedAction.feature === "screenshot"
+            ? invoke("show_screenshot_window")
+            : executeAction(capturedAction, { invoke });
+          execution.catch((e) => {
             console.error("shortcut action failed:", e);
             if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
               void refreshPermissionIssue();
               showNotice(`截图失败：${String(e)}`);
+            } else {
+              showNotice(`执行失败：${String(e)}`);
             }
           });
           if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
@@ -573,27 +602,42 @@ export default function App() {
   }, [tabMenu]);
 
   // Save binding
-  const handleBindingSave = useCallback(async (action: Action) => {
+  const persistBinding = useCallback(async (action: Action | null) => {
     if (!bindingKey) return;
-    bindKey(activePageIndex, bindingKey, action);
-    setBindingKey(null);
-    // Persist after state settles
-    setTimeout(async () => {
-      const cfg = useKeyboardStore.getState().config;
-      if (cfg) await saveConfig(cfg);
-    }, 0);
-  }, [bindingKey, activePageIndex, bindKey]);
+    try {
+      const latestConfig = await loadConfig();
+      const page = latestConfig.pages[activePageIndex];
+      if (!page) throw new Error("当前键盘页面不存在");
+      const pages = latestConfig.pages.map((item, index) => index === activePageIndex
+        ? {
+            ...item,
+            keys: {
+              ...item.keys,
+              [bindingKey]: { action },
+            },
+          }
+        : item);
+      const nextConfig = {
+        ...latestConfig,
+        revision: (latestConfig.revision ?? 0) + 1,
+        pages,
+      };
+      useKeyboardStore.setState({ config: nextConfig, theme: nextConfig.theme });
+      await saveConfig(nextConfig);
+      setBindingKey(null);
+    } catch (error) {
+      showNotice(`保存绑定失败：${String(error)}`);
+    }
+  }, [bindingKey, activePageIndex, showNotice]);
+
+  const handleBindingSave = useCallback((action: Action) => {
+    void persistBinding(action);
+  }, [persistBinding]);
 
   // Clear binding
-  const handleBindingClear = useCallback(async () => {
-    if (!bindingKey) return;
-    bindKey(activePageIndex, bindingKey, null);
-    setBindingKey(null);
-    setTimeout(async () => {
-      const cfg = useKeyboardStore.getState().config;
-      if (cfg) await saveConfig(cfg);
-    }, 0);
-  }, [bindingKey, activePageIndex, bindKey]);
+  const handleBindingClear = useCallback(() => {
+    void persistBinding(null);
+  }, [persistBinding]);
 
   const activePage = config?.pages[activePageIndex];
 
@@ -612,7 +656,7 @@ export default function App() {
           backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
           border: `1px solid ${theme.borderColor}`,
-          boxShadow: "none",
+          boxShadow: "var(--theme-window-shadow, 0 2px 8px rgba(0,0,0,0.10))",
           position: "relative",
         }}
       >
@@ -875,14 +919,14 @@ export default function App() {
         {tabMenu && config && (
           <div
             ref={tabMenuRef}
+            className="theme-popover-surface"
             style={{
               position: "fixed",
               left: tabMenu.x, top: tabMenu.y,
               zIndex: 2000,
-              background: "rgba(24,26,42,0.98)",
-              border: "1px solid rgba(255,255,255,0.14)",
+              background: "var(--theme-bg, rgba(24,26,42,0.98))",
+              border: "1px solid var(--theme-border, rgba(255,255,255,0.14))",
               borderRadius: 8,
-              boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
               overflow: "hidden", minWidth: 120,
             }}
           >
@@ -949,7 +993,6 @@ export default function App() {
                 border: "1px solid rgba(251,191,36,0.26)",
                 background: "rgba(120,73,15,0.18)",
                 color: "rgba(255,244,210,0.92)",
-                boxShadow: "0 10px 26px rgba(0,0,0,0.18)",
               }}
             >
               <div style={{ minWidth: 0 }}>
@@ -1049,27 +1092,24 @@ export default function App() {
       {/* Settings modal */}
       {showSettings && (
         <div
-          className="motion-dialog"
+          className="theme-modal-backdrop"
           style={{
             position: "fixed", inset: 0,
             zIndex: 1000,
             display: "flex", alignItems: "center", justifyContent: "center",
             pointerEvents: "auto",
             background: "rgba(3,7,18,0.48)",
-            backdropFilter: "blur(4px)",
-            WebkitBackdropFilter: "blur(4px)",
           }}
           onClick={() => setShowSettings(false)}
         >
           <div
             ref={settingsDialogRef}
+            className="motion-dialog theme-dialog-surface"
             onClick={(e) => e.stopPropagation()}
             style={{
               width: 760, maxWidth: "92vw", height: "min(640px, 90vh)", maxHeight: "90vh",
               borderRadius: 14,
-              background: hexToRgba(theme.bgColor, Math.min(theme.bgOpacity + 0.1, 1)),
-              backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
-              WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
+              background: hexToRgba(theme.bgColor, theme.bgOpacity),
               border: `1px solid ${theme.borderColor}`,
               display: "flex", flexDirection: "column",
               overflow: "hidden",
@@ -1083,7 +1123,7 @@ export default function App() {
 
       {showWorkflows && config && (
         <div
-          className="motion-dialog"
+          className="theme-modal-backdrop"
           style={{
             position: "fixed",
             inset: 0,
@@ -1092,29 +1132,27 @@ export default function App() {
             alignItems: "center",
             justifyContent: "center",
             pointerEvents: "auto",
-            background: "rgba(3,7,18,0.54)",
-            backdropFilter: "blur(5px)",
-            WebkitBackdropFilter: "blur(5px)",
+            background: "transparent",
           }}
           onClick={() => setShowWorkflows(false)}
         >
           <div
             ref={workflowDialogRef}
+            className="motion-dialog theme-dialog-surface"
             onClick={(event) => event.stopPropagation()}
             style={{
               width: "calc(100vw - 24px)",
               maxWidth: "calc(100vw - 24px)",
               height: "calc(100vh - 24px)",
               maxHeight: "calc(100vh - 24px)",
-              borderRadius: 12,
-              background: hexToRgba(theme.bgColor, Math.min(theme.bgOpacity + 0.1, 1)),
-              backdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
-              WebkitBackdropFilter: `blur(${theme.blurRadius}px) saturate(180%)`,
+              borderRadius: 14,
+              background: hexToRgba(theme.bgColor, theme.bgOpacity),
               border: `1px solid ${theme.borderColor}`,
-              boxShadow: "0 24px 70px rgba(0,0,0,0.5)",
               display: "flex",
               flexDirection: "column",
               overflow: "hidden",
+              clipPath: "inset(0 round 14px)",
+              isolation: "isolate",
               pointerEvents: "auto",
             }}
           >
@@ -1166,7 +1204,7 @@ export default function App() {
             background: notice.tone === "error"
               ? "rgba(69,10,10,0.94)"
               : "rgba(6,78,59,0.94)",
-            boxShadow: "0 12px 36px rgba(0,0,0,0.38)",
+            boxShadow: "none",
             color: "rgba(255,255,255,0.9)",
             fontSize: 12,
             lineHeight: 1.5,

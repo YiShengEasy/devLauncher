@@ -49,8 +49,9 @@ export function TerminalApp() {
     const term = new Terminal({
       fontSize: 14,
       fontFamily: "'Cascadia Code', 'Consolas', 'Courier New', monospace",
+      allowTransparency: true,
       theme: {
-        background: "#0e101c",
+        background: "rgba(0,0,0,0.12)",
         foreground: "#d0d0d0",
         cursor: "#00ff9f",
         cursorAccent: "#0e101c",
@@ -73,7 +74,6 @@ export function TerminalApp() {
         brightWhite: "#ffffff",
       },
       cursorBlink: true,
-      allowTransparency: true,
       scrollback: 5000,
     });
 
@@ -96,6 +96,7 @@ export function TerminalApp() {
         args,
         cols: term.cols,
         rows: term.rows,
+        cwd: null,
       }).catch((e) => {
         term.write(`\r\n\x1b[31m[spawn error] ${e}\x1b[0m\r\n`);
       });
@@ -181,12 +182,13 @@ export function TerminalApp() {
   return (
     <div
       ref={rootRef}
+      className="theme-window-surface"
       style={{
         width: "100vw",
         height: "100vh",
         display: "flex",
         flexDirection: "column",
-        background: "#0e101c",
+        background: "var(--theme-bg, rgba(14,16,28,0.96))",
         overflow: "hidden",
       }}
       data-tauri-drag-region

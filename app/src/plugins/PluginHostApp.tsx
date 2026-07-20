@@ -43,11 +43,11 @@ export function PluginHostApp() {
 
   if (error) {
     return (
-      <div style={{
+      <div className="theme-window-surface" style={{
         minHeight: "100vh",
         display: "grid",
         placeItems: "center",
-        background: "#101622",
+        background: "var(--theme-bg, rgba(16,22,34,0.96))",
         color: "rgba(255,255,255,0.84)",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
       }}>
@@ -64,11 +64,11 @@ export function PluginHostApp() {
   };
 
   return (
-    <div style={{
+    <div className="theme-window-surface" style={{
       minHeight: "100vh",
       display: "grid",
       gridTemplateRows: "44px minmax(0, 1fr)",
-      background: "#101622",
+      background: "var(--theme-bg, rgba(16,22,34,0.96))",
       color: "rgba(255,255,255,0.86)",
       fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
     }}>
@@ -126,7 +126,7 @@ export function PluginHostApp() {
           style={{ width: "100%", height: "100%", border: 0, display: "block", background: "#fff" }}
         />
       ) : (
-        <div style={{ minHeight: 0, background: "#101622" }} />
+        <div style={{ minHeight: 0, background: "rgba(0,0,0,0.12)" }} />
       )}
     </div>
   );

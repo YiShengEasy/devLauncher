@@ -95,6 +95,15 @@ export function QuickMemoryIcon(props: IconProps) {
   );
 }
 
+export function ProjectTasksIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.projecttasks)}>
+      <rect x="4" y="4" width="16" height="16" rx="2.4" />
+      <path d="m7.5 9.2 1.4 1.4 2.4-2.6M13.5 9.8h3M7.5 14.2l1.4 1.4 2.4-2.6M13.5 14.8h3" />
+    </IconBase>
+  );
+}
+
 export const BUILTIN_ICON_COMPONENTS = {
   clipboard: ClipboardIcon,
   json: JsonIcon,
@@ -105,4 +114,5 @@ export const BUILTIN_ICON_COMPONENTS = {
   screenshotai: ScreenshotAiIcon,
   webaccounts: WebAccountsIcon,
   quickmemory: QuickMemoryIcon,
+  projecttasks: ProjectTasksIcon,
 } satisfies Record<BuiltinFeature, IconComponent>;

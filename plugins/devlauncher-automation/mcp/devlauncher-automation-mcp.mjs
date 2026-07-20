@@ -54,6 +54,20 @@ function normalizeWorkflow(input) {
     description: typeof source.description === "string" ? source.description : "",
     enabled: source.enabled !== false,
     failurePolicy: source.failurePolicy === "continue" ? "continue" : "stop",
+    ...(source.schedule && typeof source.schedule === "object"
+      ? {
+          schedule: {
+            enabled: source.schedule.enabled === true,
+            mode: source.schedule.mode === "daily" ? "daily" : "interval",
+            intervalMinutes: Number.isFinite(source.schedule.intervalMinutes)
+              ? Math.trunc(source.schedule.intervalMinutes)
+              : 60,
+            dailyTime: typeof source.schedule.dailyTime === "string"
+              ? source.schedule.dailyTime
+              : "09:00",
+          },
+        }
+      : {}),
     steps: Array.isArray(source.steps)
       ? source.steps.map((entry) => {
           const step = entry && typeof entry === "object" ? entry : {};
@@ -187,6 +201,21 @@ const workflowSchema = {
     description: { type: "string" },
     enabled: { type: "boolean" },
     failurePolicy: { type: "string", enum: ["stop", "continue"] },
+    schedule: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        mode: { type: "string", enum: ["interval", "daily"] },
+        intervalMinutes: { type: "integer", minimum: 1, maximum: 10080 },
+        dailyTime: {
+          type: "string",
+          description: "Local daily start time in 24-hour HH:MM format.",
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+        },
+      },
+      required: ["enabled"],
+      additionalProperties: false,
+    },
     steps: {
       type: "array",
       items: {

@@ -87,7 +87,6 @@ export function PinnedScreenshotApp() {
               borderRadius: 10,
               padding: "10px 12px",
               fontSize: 13,
-              boxShadow: "0 14px 38px rgba(0,0,0,0.32)",
             }}
           >
             {error}
@@ -109,9 +108,6 @@ export function PinnedScreenshotApp() {
             borderRadius: 10,
             background: "rgba(20,20,24,0.78)",
             border: "1px solid rgba(255,255,255,0.14)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            boxShadow: "0 10px 26px rgba(0,0,0,0.28)",
           }}
         >
           <span style={{ color: "rgba(255,255,255,0.78)", fontSize: 11, fontWeight: 700 }}>

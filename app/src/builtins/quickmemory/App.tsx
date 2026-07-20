@@ -86,9 +86,8 @@ const dialogStyle: CSSProperties = {
   width: 420,
   maxWidth: "calc(100vw - 36px)",
   borderRadius: 10,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(15,23,42,0.98)",
-  boxShadow: "0 24px 60px rgba(0,0,0,0.42)",
+  border: "1px solid var(--theme-border, rgba(255,255,255,0.12))",
+  background: "var(--theme-bg, rgba(15,23,42,0.98))",
   padding: 14,
   display: "grid",
   gap: 10,
@@ -498,7 +497,6 @@ export function QuickMemoryApp() {
           borderRadius: 8,
           border: `1px solid ${activeMeta.accent}`,
           background: "rgba(15,23,42,0.96)",
-          boxShadow: "0 18px 36px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.08)",
           padding: 9,
           display: "grid",
           gridTemplateRows: "auto auto 1fr auto",
@@ -577,8 +575,8 @@ export function QuickMemoryApp() {
           display: "grid",
           gridTemplateRows: "54px 1fr",
           overflow: "hidden",
-          background: "rgba(13, 17, 30, 0.92)",
-          border: "1px solid rgba(255,255,255,0.12)",
+          background: "var(--theme-bg, rgba(13,17,30,0.92))",
+          border: "1px solid var(--theme-border, rgba(255,255,255,0.12))",
         }}
       >
         <div
@@ -971,8 +969,8 @@ export function QuickMemoryApp() {
               )}
               {renderDragGhost()}
               {categoryDialog && (
-                <div style={dialogBackdropStyle}>
-                  <div style={dialogStyle}>
+                <div className="theme-modal-backdrop" style={dialogBackdropStyle}>
+                  <div className="theme-dialog-surface" style={dialogStyle}>
                     <h2 style={dialogTitleStyle}>{categoryDialog.mode === "create" ? "新增类别" : "编辑类别"}</h2>
                     <input
                       value={categoryDraft.name}
@@ -1001,8 +999,8 @@ export function QuickMemoryApp() {
                 </div>
               )}
               {itemDialog && (
-                <div style={dialogBackdropStyle}>
-                  <div style={dialogStyle}>
+                <div className="theme-modal-backdrop" style={dialogBackdropStyle}>
+                  <div className="theme-dialog-surface" style={dialogStyle}>
                     <h2 style={dialogTitleStyle}>{itemDialog.mode === "create" ? "新增记忆" : "编辑记忆"}</h2>
                     <select
                       value={itemDraft.category}

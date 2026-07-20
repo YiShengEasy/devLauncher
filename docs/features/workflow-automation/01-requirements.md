@@ -56,6 +56,18 @@ cancelled states. A running workflow can be cancelled.
 Workflows and keyboard bindings are included in the existing configuration
 snapshot. Credentials remain in the local OS credential store.
 
+### UC-6 Run One Step
+
+The user can start one enabled step from its step card. A standalone run ignores
+previous-step conditions and sequencing delay, but keeps the action, completion
+rule, output, cancellation, and failure reporting.
+
+### UC-7 Scheduled Auto-start
+
+The user can enable an interval or daily-local-time schedule for a workflow.
+Scheduled starts use the normal run status panel and can be cancelled like
+manual runs. Scheduled workflows are visibly marked in the workflow list.
+
 ## Functional Requirements
 
 ### Workflow Management
@@ -76,6 +88,8 @@ snapshot. Credentials remain in the local OS credential store.
 - FR-013: Each step has a completion rule.
 - FR-014: Each step has an on-failure policy: stop or continue.
 - FR-015: Disabled or condition-false steps are marked skipped.
+- FR-016: An enabled step can be executed independently without requiring a
+  previous-step result.
 
 ### Conditions
 
@@ -110,6 +124,13 @@ snapshot. Credentials remain in the local OS credential store.
 - FR-043: Execution emits status updates to the UI.
 - FR-044: The MVP does not capture process output. A future output adapter must
   bound and redact output before exposing it.
+- FR-045: A workflow may persist an enabled interval schedule between 1 minute
+  and 7 days, or a daily start time in local `HH:MM` format.
+- FR-046: Scheduling runs only while the DevLauncher desktop process is active.
+- FR-047: Manual, single-step, and scheduled runs expose their trigger and use
+  the same status and cancellation commands.
+- FR-048: A workflow with an enabled schedule is marked as “自启动” and shows
+  its interval or daily time in the workflow list.
 
 ### MCP
 
@@ -142,11 +163,14 @@ snapshot. Credentials remain in the local OS credential store.
 5. Codex can preview and apply the same workflow through MCP.
 6. MCP cannot save inline credentials or run a script as part of preview.
 7. Existing tests, frontend build, and Rust checks pass.
+8. A workflow can start at a daily local time and is visibly marked as
+   “自启动” while its schedule is enabled.
 
 ## Exclusions
 
 - Visual node graph with arbitrary edges.
-- Cron or cloud scheduling.
+- General calendar/cron expressions, catch-up execution while the app was
+  offline, or cloud scheduling.
 - Shared multi-user workflow editing.
 - Unattended remote execution.
 - Secret creation through MCP.

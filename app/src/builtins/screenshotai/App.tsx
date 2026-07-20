@@ -525,15 +525,15 @@ export function ScreenshotAiApp() {
             </div>
             <div className="motion-scroll-area" style={{ flex: 1, minHeight: 0, background: "rgba(0,0,0,0.28)" }}>
               {selected ? (
-                <div style={{ position: "relative", width: selected.width * scale, height: selected.height * scale, margin: 14, boxShadow: "0 16px 50px rgba(0,0,0,0.32)" }}>
+                <div style={{ position: "relative", width: selected.width * scale, height: selected.height * scale, margin: 14 }}>
                   <img src={`data:image/jpeg;base64,${selected.data}`} alt="selected screenshot" draggable={false} style={{ display: "block", width: selected.width * scale, height: selected.height * scale, userSelect: "none", borderRadius: 4 }} />
                   {visibleAnnotations.map((annotation) => (
                     <div key={annotation.id} style={{ position: "absolute", left: `${annotation.x * 100}%`, top: `${annotation.y * 100}%`, transform: "translate(-50%, -50%)", display: "flex", alignItems: "center", gap: 8, pointerEvents: "none" }}>
-                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: annotationColor(annotation), border: "2px solid rgba(255,255,255,0.92)", color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.35)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 6px 16px rgba(0,0,0,0.25)" }}>
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: annotationColor(annotation), border: "2px solid rgba(255,255,255,0.92)", color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,0.35)", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         {annotation.id}
                       </div>
                       {annotation.label.trim() && (
-                        <div style={{ borderRadius: 8, background: "rgba(28,28,30,0.82)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 12, fontWeight: 600, padding: "5px 8px", boxShadow: "0 6px 16px rgba(0,0,0,0.22)", whiteSpace: "nowrap" }}>
+                        <div style={{ borderRadius: 8, background: "rgba(28,28,30,0.82)", border: "1px solid rgba(255,255,255,0.14)", color: "rgba(255,255,255,0.92)", fontSize: 12, fontWeight: 600, padding: "5px 8px", whiteSpace: "nowrap" }}>
                           {annotation.label}
                         </div>
                       )}

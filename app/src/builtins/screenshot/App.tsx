@@ -825,11 +825,8 @@ function Toolbar({
         overflowX: "auto",
         overflowY: "hidden",
         background: "rgba(20, 20, 24, 0.92)",
-        backdropFilter: "blur(32px)",
-        WebkitBackdropFilter: "blur(32px)",
         borderRadius: 16,
         border: "1px solid rgba(255,255,255,0.1)",
-        boxShadow: "0 8px 36px rgba(0,0,0,0.6), 0 1px 0 rgba(255,255,255,0.07) inset",
         userSelect: "none",
         zIndex: 9999,
         ...style,
@@ -2107,9 +2104,6 @@ export function ScreenshotApp() {
               borderRadius: 12,
               border: "1px solid rgba(255,255,255,0.14)",
               background: "rgba(20,20,24,0.96)",
-              backdropFilter: "blur(28px)",
-              WebkitBackdropFilter: "blur(28px)",
-              boxShadow: "0 18px 50px rgba(0,0,0,0.52)",
               color: "rgba(255,255,255,0.9)",
               zIndex: 2147483000,
             }}
@@ -2221,7 +2215,6 @@ export function ScreenshotApp() {
             borderRadius: 12,
             padding: captureError ? "14px 16px" : "6px 14px",
             maxWidth: "min(420px, calc(100vw - 32px))",
-            boxShadow: "0 14px 40px rgba(0,0,0,0.34)",
           }}>
             {captureError ? (
               <div style={{ display: "grid", gap: 10 }}>
@@ -2327,10 +2320,7 @@ export function ScreenshotApp() {
           fontSize: 13,
           fontWeight: 600,
           background: "rgba(28,28,30,0.78)",
-          backdropFilter: "blur(24px)",
-          WebkitBackdropFilter: "blur(24px)",
           border: "1px solid rgba(255,255,255,0.14)",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           borderRadius: 12,
           padding: "8px 14px",
           pointerEvents: "none",
@@ -2369,7 +2359,6 @@ export function ScreenshotApp() {
             textOverflow: "ellipsis",
             padding: "6px 9px",
             borderRadius: 8,
-            boxShadow: "0 10px 28px rgba(0,0,0,0.34)",
             zIndex: 10003,
           }}
         />
@@ -2408,7 +2397,6 @@ export function ScreenshotApp() {
             boxSizing: "border-box",
             padding: textInput.target ? "6px 8px" : "3px 4px",
             borderRadius: textInput.target ? 8 : "4px 4px 0 0",
-            boxShadow: textInput.target ? "0 8px 24px rgba(0,0,0,0.28)" : "none",
             zIndex: 10000,
           }}
         />

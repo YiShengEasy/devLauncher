@@ -44,11 +44,11 @@ const shellStyle: CSSProperties = {
   overflow: "hidden",
   boxSizing: "border-box",
   background:
-    "radial-gradient(circle at 34% 82%, rgba(35,126,112,0.34), transparent 28%), radial-gradient(circle at 76% 74%, rgba(37,72,132,0.26), transparent 30%), rgba(22,24,30,0.76)",
-  border: "1px solid rgba(180,195,225,0.36)",
-  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.18), 0 -18px 48px rgba(0,0,0,0.34)",
-  backdropFilter: "blur(34px) saturate(165%)",
-  WebkitBackdropFilter: "blur(34px) saturate(165%)",
+    "radial-gradient(circle at 34% 82%, rgba(35,126,112,0.22), transparent 28%), radial-gradient(circle at 76% 74%, rgba(37,72,132,0.18), transparent 30%), var(--theme-bg, rgba(22,24,30,0.76))",
+  border: "1px solid var(--theme-border, rgba(180,195,225,0.36))",
+  boxShadow: "var(--theme-window-shadow, 0 -2px 8px rgba(0,0,0,0.10)), inset 0 1px 0 rgba(255,255,255,0.18)",
+  backdropFilter: "blur(var(--theme-blur, 34px)) saturate(165%)",
+  WebkitBackdropFilter: "blur(var(--theme-blur, 34px)) saturate(165%)",
 };
 
 const iconButtonStyle: CSSProperties = {
@@ -212,7 +212,7 @@ export function ClipboardPanel({
   };
 
   return (
-    <div ref={rootRef} className="motion-panel" style={shellStyle} data-tauri-drag-region>
+    <div ref={rootRef} className="motion-panel theme-window-surface" style={shellStyle} data-tauri-drag-region>
       <header
         style={{
           display: "grid",

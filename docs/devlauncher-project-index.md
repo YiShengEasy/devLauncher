@@ -1,6 +1,6 @@
 # DevLauncher Project Index
 
-Last updated: 2026-07-18
+Last updated: 2026-07-19
 
 This index is the working map for future DevLauncher feature work. Update it whenever a new builtin, plugin, workflow capability, marketplace package, or major UI entry point is added.
 
@@ -57,6 +57,7 @@ Current builtin modules:
 - Screenshot: `app/src/builtins/screenshot`.
 - Web accounts: `app/src/builtins/webaccounts`.
 - Quick Memory: `app/src/builtins/quickmemory`.
+- Project Tasks / Runme: `app/src/builtins/projecttasks`.
 
 Native builtin commands are registered through `app/src-tauri/src/lib.rs` and grouped under `app/src-tauri/src/builtins`.
 
@@ -138,3 +139,5 @@ Current priority tracks:
 - Workflow template packages: market-discoverable packages imported into local workflows.
 - Monitor dashboard: lightweight status and run controls for monitoring workflows.
 - Ops dashboard: local health checks and command shortcuts before heavy Prometheus/Grafana integration.
+
+Runme project task discovery is documented in `docs/features/project-task-discovery/`. It discovers named shell code blocks in Markdown, sends validated commands to the terminal, and saves selected tasks as normal workflows.

@@ -217,6 +217,7 @@ const PREVIEW_RUN: WorkflowRun = {
   workflowId: "workflow-devlauncher-macos-release",
   workflowName: "发布 DevLauncher：macOS + GitHub + 官网",
   startedAt: 0,
+  trigger: "manual",
   status: "failed",
   currentStepId: "release-preflight",
   message: "发布前检查 · script exited with code 12: 发布前检查失败：工作区有未提交修改，请先提交代码后重试。",
@@ -253,7 +254,6 @@ export function WorkflowPreviewApp() {
           borderRadius: 12,
           border: "1px solid rgba(119,119,140,0.47)",
           background: "rgba(16,22,34,0.98)",
-          boxShadow: "0 24px 70px rgba(0,0,0,0.5)",
         }}
       >
         <WorkflowPanel

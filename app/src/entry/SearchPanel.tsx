@@ -15,9 +15,9 @@ const shellStyle: CSSProperties = {
   height: "100%",
   boxSizing: "border-box",
   padding: 12,
-  background: "rgba(12,14,24,0.92)",
+  background: "var(--theme-bg, rgba(12,14,24,0.92))",
   color: "rgba(255,255,255,0.9)",
-  border: "1px solid rgba(255,255,255,0.12)",
+  border: "1px solid var(--theme-border, rgba(255,255,255,0.12))",
   borderRadius: 14,
   overflow: "hidden",
   display: "grid",
@@ -198,7 +198,7 @@ export function SearchPanel({
   }
 
   return (
-    <div ref={shellRef} style={shellStyle}>
+    <div ref={shellRef} className="theme-window-surface" style={shellStyle}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
         <input
           autoFocus

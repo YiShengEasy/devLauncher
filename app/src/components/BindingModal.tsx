@@ -420,6 +420,7 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
   return (
     // Overlay
     <div
+      className="theme-modal-backdrop"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !confirmRequest) onClose();
@@ -430,15 +431,13 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
         zIndex: 1000,
         padding: 18,
         background: "rgba(3,7,18,0.52)",
-        backdropFilter: "blur(4px)",
-        WebkitBackdropFilter: "blur(4px)",
       }}
 
     >
       {/* Panel */}
       <div
         ref={rootRef}
-        className="motion-dialog"
+        className="motion-dialog theme-dialog-surface"
         style={{
           width: 800,
           maxWidth: "calc(100vw - 32px)",
@@ -446,8 +445,6 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
           minHeight: 0,
           display: "flex", flexDirection: "column",
           background: "var(--theme-bg, rgba(22, 24, 40, 0.97))",
-          backdropFilter: "blur(var(--theme-blur, 32px)) saturate(180%)",
-          WebkitBackdropFilter: "blur(var(--theme-blur, 32px)) saturate(180%)",
           border: "1px solid var(--theme-border, rgba(255,255,255,0.12))",
           borderRadius: 14,
           overflow: "hidden",

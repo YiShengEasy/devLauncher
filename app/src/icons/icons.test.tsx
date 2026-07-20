@@ -5,6 +5,7 @@ import {
   BUILTIN_ICON_COMPONENTS,
   CloseIcon,
   ClipboardIcon,
+  FavoriteIcon,
   FolderIcon,
   IconBase,
   PinIcon,
@@ -67,6 +68,7 @@ describe("icon categories", () => {
       "screenshotai",
       "webaccounts",
       "quickmemory",
+      "projecttasks",
     ]);
   });
 
@@ -77,10 +79,11 @@ describe("icon categories", () => {
         <PixelPetIcon size={28} />
         <CloseIcon size={32} />
         <PinIcon size={32} />
+        <FavoriteIcon size={32} filled />
       </>,
     );
 
-    expect(html.match(/viewBox="0 0 24 24"/g)).toHaveLength(4);
+    expect(html.match(/viewBox="0 0 24 24"/g)).toHaveLength(5);
     expect(html).toContain('width="16"');
     expect(html).toContain('width="28"');
     expect(html).toContain('width="32"');

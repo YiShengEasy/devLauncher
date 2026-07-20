@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize, PhysicalPosition } from "@tauri-apps/api/window";
+import {
+  currentMonitor,
+  getCurrentWindow,
+  LogicalSize,
+  PhysicalPosition,
+} from "@tauri-apps/api/window";
 import { loadConfig } from "@/api/config";
-import { ActionIcon } from "@/components/ActionIcon";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import type { Action } from "@/types/actions";
 import { listInstalledPlugins } from "@/plugins/api";
 import { pluginIconSrc } from "@/plugins/registry";
 import gsap from "gsap";
-import { KeyboardIcon } from "@/icons/entryIcons";
 import { executeAction } from "@/launcher/actionExecutor";
 import { motionDuration, motionEase, motionStagger } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
@@ -23,13 +26,19 @@ import {
 import {
   PET_BUTTON_SIZE,
   PET_CLOSED_WINDOW_SIZE,
-  PET_MENU_BUTTON_SIZE,
   PET_MENU_CLOSE_DELAY_MS,
   PET_OPEN_WINDOW_SIZE,
   buildPetMenuItems,
-  getCenteredResizeOffset,
+  clampPetWindowPosition,
+  getPetMenuItemKey,
+  getScaledCenteredResizeOffset,
   type PetMenuItem,
 } from "./petLayout";
+import {
+  shouldStartPetWindowDrag,
+  type PetMenuPoint,
+} from "./petMenuInteraction";
+import { PetRadialMenu } from "./PetRadialMenu";
 import {
   DEFAULT_PET_CODEX_STATUS,
   PET_CODEX_ENABLED_STORAGE_KEY,
@@ -56,6 +65,11 @@ type PetSpriteAction = {
   frameMs: number;
   frames: string[];
   loop: boolean;
+};
+
+type PendingPetPointerPress = {
+  pointerId: number;
+  origin: PetMenuPoint;
 };
 
 function petFrames(folder: string) {
@@ -143,7 +157,7 @@ const shellStyle: CSSProperties = {
 
 const centerButtonStyle: CSSProperties = {
   position: "relative",
-  zIndex: 3,
+  zIndex: 7,
   width: PET_BUTTON_SIZE.width,
   height: PET_BUTTON_SIZE.height,
   border: 0,
@@ -171,29 +185,6 @@ const bubbleMenuStyle: CSSProperties = {
   transformOrigin: "center",
   pointerEvents: "none",
   overflow: "visible",
-};
-
-const actionButtonStyle: CSSProperties = {
-  position: "absolute",
-  zIndex: 6,
-  width: PET_MENU_BUTTON_SIZE.width,
-  height: PET_MENU_BUTTON_SIZE.height,
-  borderRadius: 6,
-  border: "2px solid rgba(226,232,240,0.68)",
-  background: "rgba(30, 41, 59, 0.98)",
-  color: "rgba(255,255,255,0.9)",
-  cursor: "pointer",
-  fontSize: 11,
-  fontWeight: 800,
-  padding: 0,
-  outline: "none",
-  display: "grid",
-  placeItems: "center",
-  boxShadow: "0 3px 0 rgba(0,0,0,0.35)",
-  transform: "translate(-50%, -50%) scale(0.72)",
-  opacity: 0,
-  transition: "background 120ms ease, box-shadow 160ms ease, filter 160ms ease",
-  pointerEvents: "auto",
 };
 
 const codexBadgeStyle: CSSProperties = {
@@ -244,15 +235,6 @@ const codexMessageStyle: CSSProperties = {
   boxShadow: "0 6px 16px rgba(0,0,0,0.26)",
 };
 
-function getPetMenuItemKey(item: PetMenuItem): string {
-  return item.kind === "keyboard" ? "keyboard" : `custom-${item.slotIndex}`;
-}
-
-function PetMenuItemIcon({ item }: { item: PetMenuItem }) {
-  if (item.kind === "keyboard") return <KeyboardIcon size={18} decorative />;
-  return <ActionIcon action={item.action} size={18} />;
-}
-
 function PixelSiamesePet({
   actionId,
   frameSrc,
@@ -291,14 +273,49 @@ async function setPetWindowSize(open: boolean) {
   await getCurrentWindow().setSize(new LogicalSize(size.width, size.height));
 }
 
-async function setPetWindowLayout(open: boolean) {
+async function expandPetWindow(): Promise<EntryWindowPosition> {
   const win = getCurrentWindow();
   const position = await win.outerPosition();
-  const fromSize = open ? PET_CLOSED_WINDOW_SIZE : PET_OPEN_WINDOW_SIZE;
-  const toSize = open ? PET_OPEN_WINDOW_SIZE : PET_CLOSED_WINDOW_SIZE;
-  const offset = getCenteredResizeOffset(fromSize, toSize);
+  const scaleFactor = await win.scaleFactor();
+  const monitor = await currentMonitor();
+  const offset = getScaledCenteredResizeOffset(
+    PET_CLOSED_WINDOW_SIZE,
+    PET_OPEN_WINDOW_SIZE,
+    scaleFactor,
+  );
+  const physicalOpenSize = {
+    width: Math.round(PET_OPEN_WINDOW_SIZE.width * scaleFactor),
+    height: Math.round(PET_OPEN_WINDOW_SIZE.height * scaleFactor),
+  };
+  const desiredPosition = {
+    x: position.x + offset.x,
+    y: position.y + offset.y,
+  };
+  const nextPosition = monitor
+    ? clampPetWindowPosition(desiredPosition, physicalOpenSize, monitor.workArea)
+    : desiredPosition;
 
-  await win.setSize(new LogicalSize(toSize.width, toSize.height));
+  await win.setSize(new LogicalSize(PET_OPEN_WINDOW_SIZE.width, PET_OPEN_WINDOW_SIZE.height));
+  await win.setPosition(new PhysicalPosition(nextPosition.x, nextPosition.y));
+  return { x: position.x, y: position.y };
+}
+
+async function collapsePetWindow(closedPosition: EntryWindowPosition | null) {
+  const win = getCurrentWindow();
+  await win.setSize(new LogicalSize(PET_CLOSED_WINDOW_SIZE.width, PET_CLOSED_WINDOW_SIZE.height));
+
+  if (closedPosition) {
+    await win.setPosition(new PhysicalPosition(closedPosition.x, closedPosition.y));
+    return;
+  }
+
+  const position = await win.outerPosition();
+  const scaleFactor = await win.scaleFactor();
+  const offset = getScaledCenteredResizeOffset(
+    PET_OPEN_WINDOW_SIZE,
+    PET_CLOSED_WINDOW_SIZE,
+    scaleFactor,
+  );
   await win.setPosition(new PhysicalPosition(position.x + offset.x, position.y + offset.y));
 }
 
@@ -311,13 +328,17 @@ export function PetEntryApp() {
   const [codexStatus, setCodexStatus] = useState<PetCodexStatusPayload>(DEFAULT_PET_CODEX_STATUS);
   const [dismissedCodexMessageKey, setDismissedCodexMessageKey] = useState<string | null>(null);
   const [customMenuActions, setCustomMenuActions] = useState<Array<Action | null>>([]);
+  const [activeMenuItemKey, setActiveMenuItemKey] = useState<string | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const centerButtonRef = useRef<HTMLButtonElement>(null);
   const codexEnabledRef = useRef(codexEnabled);
-  const pointerStartRef = useRef<{ x: number; y: number } | null>(null);
-  const suppressClickRef = useRef(false);
+  const menuOpenRef = useRef(false);
+  const pendingPointerPressRef = useRef<PendingPetPointerPress | null>(null);
+  const windowDragPointerRef = useRef<number | null>(null);
   const closeLayoutTimerRef = useRef<number | null>(null);
+  const closedWindowPositionRef = useRef<EntryWindowPosition | null>(null);
+  const windowLayoutQueueRef = useRef<Promise<void>>(Promise.resolve());
   const spriteTimerRef = useRef<number | null>(null);
   const thinkingStatusTimerRef = useRef<number | null>(null);
   const reducedMotion = useReducedMotion();
@@ -503,17 +524,36 @@ export function PetEntryApp() {
     closeLayoutTimerRef.current = null;
   };
 
+  const schedulePetWindowLayout = (expanded: boolean) => {
+    windowLayoutQueueRef.current = windowLayoutQueueRef.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (expanded) {
+          closedWindowPositionRef.current = await expandPetWindow();
+          return;
+        }
+        await collapsePetWindow(closedWindowPositionRef.current);
+        closedWindowPositionRef.current = null;
+      })
+      .catch((error) => {
+        console.error("[DevLauncher] pet window layout failed:", error);
+      });
+  };
+
   const openPetMenu = () => {
     clearCloseLayoutTimer();
+    menuOpenRef.current = true;
     setOpen(true);
-    setPetWindowLayout(true).catch(console.error);
+    schedulePetWindowLayout(true);
   };
 
   const closePetMenu = () => {
     clearCloseLayoutTimer();
+    menuOpenRef.current = false;
+    setActiveMenuItemKey(null);
     setOpen(false);
     closeLayoutTimerRef.current = window.setTimeout(() => {
-      setPetWindowLayout(false).catch(console.error);
+      schedulePetWindowLayout(false);
       closeLayoutTimerRef.current = null;
     }, reducedMotion ? 0 : PET_MENU_CLOSE_DELAY_MS);
   };
@@ -635,6 +675,7 @@ export function PetEntryApp() {
     restorePetPosition().catch(console.error);
     currentWindow
       .onMoved(({ payload }) => {
+        if (menuOpenRef.current) return;
         setStoredEntryPosition("pet", { x: payload.x, y: payload.y });
       })
       .then((value) => {
@@ -831,41 +872,114 @@ export function PetEntryApp() {
     await executeAction(item.action, { invoke });
   }
 
-  function handlePointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0) return;
-    pointerStartRef.current = { x: event.clientX, y: event.clientY };
-    event.currentTarget.setPointerCapture(event.pointerId);
+  async function saveDraggedPetPosition() {
+    const position = await readCurrentPosition();
+    if (!menuOpenRef.current) {
+      setStoredEntryPosition("pet", position);
+      return;
+    }
+
+    const scaleFactor = await getCurrentWindow().scaleFactor();
+    const offset = getScaledCenteredResizeOffset(
+      PET_OPEN_WINDOW_SIZE,
+      PET_CLOSED_WINDOW_SIZE,
+      scaleFactor,
+    );
+    const closedPosition = {
+      x: position.x + offset.x,
+      y: position.y + offset.y,
+    };
+    closedWindowPositionRef.current = closedPosition;
+    setStoredEntryPosition("pet", closedPosition);
   }
 
-  function handlePointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
-    const start = pointerStartRef.current;
-    if (!start) return;
-    const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
-    if (distance < 10) return;
+  function handleCenterPointerDown(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    pendingPointerPressRef.current = null;
 
-    pointerStartRef.current = null;
-    suppressClickRef.current = true;
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch (error) {
+      console.warn("[DevLauncher] pet pointer capture failed:", error);
+    }
+
+    setActiveMenuItemKey(null);
+    const pointerId = event.pointerId;
+    const origin = { x: event.screenX, y: event.screenY };
+    pendingPointerPressRef.current = {
+      pointerId,
+      origin,
+    };
+  }
+
+  function updateCenterPointer(pointerId: number, screenX: number, screenY: number) {
+    const pendingPress = pendingPointerPressRef.current;
+    if (!pendingPress || pendingPress.pointerId !== pointerId) return;
+    if (!shouldStartPetWindowDrag(pendingPress.origin, { x: screenX, y: screenY })) {
+      return;
+    }
+
+    pendingPointerPressRef.current = null;
+    windowDragPointerRef.current = pointerId;
+    const centerButton = centerButtonRef.current;
+    if (centerButton?.hasPointerCapture(pointerId)) {
+      centerButton.releasePointerCapture(pointerId);
+    }
     getCurrentWindow()
       .startDragging()
-      .then(() => savePetPosition())
-      .catch(console.error);
+      .then(() => saveDraggedPetPosition())
+      .catch(console.error)
+      .finally(() => {
+        if (windowDragPointerRef.current === pointerId) {
+          windowDragPointerRef.current = null;
+        }
+      });
   }
 
-  function handlePointerUp() {
-    pointerStartRef.current = null;
-    savePetPosition().catch(console.error);
+  function finishCenterPointer(pointerId: number) {
+    const pendingPress = pendingPointerPressRef.current;
+    if (pendingPress?.pointerId === pointerId) {
+      pendingPointerPressRef.current = null;
+      setActiveMenuItemKey(null);
+      if (open) closePetMenu();
+      else openPetMenu();
+      return;
+    }
+
+    if (windowDragPointerRef.current === pointerId) {
+      windowDragPointerRef.current = null;
+    }
   }
 
-  function handleCenterClick() {
-    if (suppressClickRef.current) {
-      suppressClickRef.current = false;
-      return;
+  function cancelCenterPointer(pointerId: number) {
+    if (pendingPointerPressRef.current?.pointerId === pointerId) {
+      pendingPointerPressRef.current = null;
     }
-    if (open) {
-      closePetMenu();
-      return;
+    if (windowDragPointerRef.current === pointerId) {
+      windowDragPointerRef.current = null;
     }
-    openPetMenu();
+    setActiveMenuItemKey(null);
+  }
+
+  function handleCenterPointerMove(event: ReactPointerEvent<HTMLButtonElement>) {
+    updateCenterPointer(event.pointerId, event.screenX, event.screenY);
+  }
+
+  function handleCenterPointerUp(event: ReactPointerEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    finishCenterPointer(event.pointerId);
+  }
+
+  function handleCenterPointerCancel(event: ReactPointerEvent<HTMLButtonElement>) {
+    cancelCenterPointer(event.pointerId);
+  }
+
+  function handleActiveMenuItemChange(itemKey: string | null) {
+    setActiveMenuItemKey(itemKey);
   }
 
   function dismissCodexMessage() {
@@ -875,9 +989,14 @@ export function PetEntryApp() {
 
   return (
     <div ref={shellRef} className="pet-shell" style={shellStyle}>
-      <div
+      <PetRadialMenu
         ref={menuRef}
         className={`pet-bubble-menu ${open ? "is-open" : ""} ${modeTransition === "to-keyboard" ? "is-switching" : ""}`}
+        items={menuItems}
+        open={open}
+        activeItemKey={activeMenuItemKey}
+        onActiveItemChange={handleActiveMenuItemChange}
+        onActivateItem={(item) => runMenuItem(item).catch(console.error)}
         style={{
           ...bubbleMenuStyle,
           opacity: open ? 1 : 0,
@@ -885,43 +1004,23 @@ export function PetEntryApp() {
           transform: open ? "scale(1)" : bubbleMenuStyle.transform,
           pointerEvents: "none",
         }}
-      >
-        {menuItems.map((item) => (
-          <button
-            key={getPetMenuItemKey(item)}
-            className="pet-action-button"
-            onClick={() => runMenuItem(item).catch(console.error)}
-            style={{
-              ...actionButtonStyle,
-              left: item.left,
-              top: item.top,
-              opacity: open ? 1 : 0,
-              visibility: open ? "visible" : "hidden",
-              transform: open ? "translate(-50%, -50%) scale(1)" : actionButtonStyle.transform,
-            }}
-            data-pet-action={getPetMenuItemKey(item)}
-            aria-label={item.label}
-            title={item.title}
-            type="button"
-          >
-            <PetMenuItemIcon item={item} />
-          </button>
-        ))}
-      </div>
+      />
       <button
         ref={centerButtonRef}
         aria-label="像素猫入口"
-        onClick={handleCenterClick}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        onPointerDown={handleCenterPointerDown}
+        onPointerMove={handleCenterPointerMove}
+        onPointerUp={handleCenterPointerUp}
+        onPointerCancel={handleCenterPointerCancel}
+        onContextMenu={(event) => event.preventDefault()}
         style={{
           ...centerButtonStyle,
-          cursor: "grab",
+          cursor: open ? "pointer" : "grab",
           filter: open ? "drop-shadow(0 5px 0 rgba(0,0,0,0.18))" : "none",
         }}
-        title={open ? "收起菜单" : "展开快捷入口"}
+        title={open
+          ? "点击收起；点击扇区执行"
+          : "点击展开；直接拖动可移动"}
         type="button"
       >
         <PixelSiamesePet actionId={spriteAction.id} frameSrc={spriteFrameSrc} actionLabel={spriteAction.label} />

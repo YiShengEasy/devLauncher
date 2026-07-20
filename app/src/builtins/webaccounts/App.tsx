@@ -33,12 +33,12 @@ export function WebAccountsApp() {
   const isMac = navigator.platform.startsWith("Mac");
 
   return (
-    <div style={{
+    <div className="theme-window-surface" style={{
       minHeight: "100vh",
       padding: 18,
       boxSizing: "border-box",
       color: "#f8fafc",
-      background: "linear-gradient(180deg, rgba(10,12,20,0.94), rgba(16,20,32,0.94))",
+      background: "var(--theme-bg, rgba(16,20,32,0.94))",
       fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
     }}>
       <header style={{ marginBottom: 14 }}>

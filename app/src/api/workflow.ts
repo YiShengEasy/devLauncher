@@ -89,6 +89,10 @@ export function runWorkflow(workflowId: string): Promise<WorkflowRun> {
   return invoke("run_workflow", { workflowId });
 }
 
+export function runWorkflowStep(workflowId: string, stepId: string): Promise<WorkflowRun> {
+  return invoke("run_workflow_step", { workflowId, stepId });
+}
+
 export function listWorkflowRuns(): Promise<WorkflowRun[]> {
   return invoke("list_workflow_runs");
 }

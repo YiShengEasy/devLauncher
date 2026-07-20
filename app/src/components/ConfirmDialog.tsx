@@ -89,6 +89,7 @@ export function ConfirmDialog({
 
   return (
     <div
+      className="theme-modal-backdrop"
       role="presentation"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !busy) onCancel();
@@ -101,11 +102,10 @@ export function ConfirmDialog({
         placeItems: "center",
         padding: 20,
         background: "rgba(3,7,18,0.58)",
-        backdropFilter: "blur(5px)",
-        WebkitBackdropFilter: "blur(5px)",
       }}
     >
       <div
+        className="theme-dialog-surface"
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
@@ -115,9 +115,7 @@ export function ConfirmDialog({
           maxWidth: "calc(100vw - 32px)",
           borderRadius: 12,
           overflow: "hidden",
-          background: "var(--theme-bg-solid, #101622)",
-          border: "1px solid rgba(255,255,255,0.14)",
-          boxShadow: "0 24px 70px rgba(0,0,0,0.46)",
+          background: "var(--theme-bg, rgba(16,22,34,0.96))",
         }}
       >
         <header

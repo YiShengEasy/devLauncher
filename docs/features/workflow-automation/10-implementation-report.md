@@ -20,6 +20,11 @@ Release boundary: Workflow Automation MVP
 - Dangling workflow bindings are cleaned when their workflow is deleted.
 - Sequential execution with step delays, conditions, visible status, failure
   policy, cancellation, and manual confirmation.
+- Independent execution for an enabled step, with standalone status, terminal
+  output, and cancellation.
+- Persisted minute-interval and daily-local-time scheduling while DevLauncher is
+  running; scheduled workflows show an “自启动” marker, identify their trigger,
+  and reuse the normal run monitor and stop control.
 - Completion adapters for action return, launch stabilization, managed script
   exit, TCP port readiness, timer, and manual confirmation.
 - All workflow scripts execute in a managed PTY without opening the standalone
@@ -41,6 +46,7 @@ Release boundary: Workflow Automation MVP
   `process_started` is a documented stabilization heuristic.
 - Persistent cross-restart audit history remains a future addition; current run
   output is retained for the desktop process lifetime.
+- Calendar/cron expressions and offline catch-up execution remain deferred.
 
 ## Repository Evidence
 

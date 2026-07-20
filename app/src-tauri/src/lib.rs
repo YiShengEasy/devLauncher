@@ -109,6 +109,7 @@ pub fn run() {
             workflow::set_workflow_workspace_mode,
             workflow::set_binding_workspace_mode,
             workflow::run_workflow,
+            workflow::run_workflow_step,
             workflow::get_workflow_run,
             workflow::list_workflow_runs,
             workflow::cancel_workflow_run,
@@ -163,6 +164,7 @@ pub fn run() {
             builtins::terminal::terminal_take_pending_cmd,
             builtins::terminal::toggle_terminal_window,
             builtins::screenshot::toggle_screenshot_window,
+            builtins::screenshot::show_screenshot_window,
             builtins::screenshot::show_screenshot_editor_window,
             builtins::screenshot::get_pending_screenshot,
             builtins::screenshot::screenshot_write_file,
@@ -172,6 +174,9 @@ pub fn run() {
             builtins::quickmemory::load_quickmemory_data,
             builtins::quickmemory::save_quickmemory_data,
             builtins::quickmemory::toggle_quickmemory_window,
+            builtins::projecttasks::discover_runme_tasks,
+            builtins::projecttasks::runme_task_command,
+            builtins::projecttasks::toggle_projecttasks_window,
             entries::toggle_search_window,
             entries::show_search_window,
             entries::show_pet_window,
@@ -201,6 +206,7 @@ pub fn run() {
             builtins::clipboard::setup(app);
             video_tools::setup(app);
             keyboard_control_tap::setup(app.handle());
+            workflow::setup_scheduler(app.handle().clone());
             window_pinning::apply_all_startup_pin_states(app.handle());
             let _ = entries::show_pet_window(app.handle().clone(), None);
 

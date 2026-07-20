@@ -24,6 +24,8 @@
 - [x] Add managed script process-exit execution.
 - [x] Add launch-stabilization process-started completion.
 - [x] Add cancellation and run status.
+- [x] Add standalone single-step execution through the existing engine.
+- [x] Add persisted interval/daily schedules and the desktop scheduler loop.
 - [x] Register Tauri commands and events.
 - [x] Add Rust tests.
 
@@ -36,6 +38,8 @@
 - [x] Implement reorder, duplicate, enable, delete, and save.
 - [x] Implement page/key binding with replacement confirmation.
 - [x] Show run status, current step, failure, and cancellation.
+- [x] Add per-step “run separately” controls, schedule configuration, and
+  auto-start markers.
 - [x] Add a workflow action icon and keyboard execution support.
 
 ## Phase 4: Automation MCP

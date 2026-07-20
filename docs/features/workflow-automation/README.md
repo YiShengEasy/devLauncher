@@ -3,6 +3,7 @@
 Status: MVP implemented
 Started: 2026-07-18
 Completed: 2026-07-18
+Extended: 2026-07-20 (single-step runs, interval and daily scheduling)
 Feature slug: `workflow-automation`
 
 ## Goal
@@ -52,11 +53,14 @@ The first production slice includes:
 - A workflow manager using the existing DevLauncher visual language.
 - Binding a workflow to a virtual keyboard key.
 - Running and cancelling workflows with visible status.
+- Running one selected step independently through the same status and cancellation pipeline.
+- Starting enabled workflows on a persisted minute interval or daily local time
+  while DevLauncher is running, with an “自启动” marker in the workflow list.
 - A local MCP server with capability, read, preview, apply, bind, delete, and
   unbind tools.
 - Dry-run validation and deterministic safety checks before mutation or execution.
 
-Advanced branching graphs, schedules, cloud-triggered execution, and arbitrary
+Advanced branching graphs, general calendar/cron expressions, cloud-triggered execution, and arbitrary
 remote agents are outside the MVP. MCP-triggered run, cancellation, and run
 status are a later bridge; workflows run from the desktop UI or virtual keyboard
 in this release.

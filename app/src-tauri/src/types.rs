@@ -247,6 +247,31 @@ pub struct WorkflowStep {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkflowSchedule {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_schedule_mode")]
+    pub mode: String,
+    #[serde(default = "default_schedule_interval_minutes")]
+    pub interval_minutes: u64,
+    #[serde(default = "default_schedule_daily_time")]
+    pub daily_time: String,
+}
+
+fn default_schedule_mode() -> String {
+    "interval".into()
+}
+
+fn default_schedule_interval_minutes() -> u64 {
+    60
+}
+
+fn default_schedule_daily_time() -> String {
+    "09:00".into()
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkflowDefinition {
     pub id: String,
     pub name: String,
@@ -256,6 +281,8 @@ pub struct WorkflowDefinition {
     pub enabled: bool,
     #[serde(default = "default_failure_policy")]
     pub failure_policy: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<WorkflowSchedule>,
     #[serde(default)]
     pub steps: Vec<WorkflowStep>,
     #[serde(default)]

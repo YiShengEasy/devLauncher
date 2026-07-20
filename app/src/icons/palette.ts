@@ -21,6 +21,7 @@ export const iconColors = {
   screenshotai: "#c084fc",
   webaccounts: "#38bdf8",
   quickmemory: "#facc15",
+  projecttasks: "#2dd4bf",
 
   search: "#93c5fd",
   report: "#fbbf24",

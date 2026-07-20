@@ -5,6 +5,7 @@ use crate::platform::{current_platform, Platform};
 use crate::types::{
     generate_id, Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowStep,
 };
+use chrono::{Days, Local, LocalResult, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -18,7 +19,17 @@ const MAX_STEPS: usize = 64;
 const MAX_SCRIPT_BYTES: usize = 32 * 1024;
 const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 120_000;
+const MIN_SCHEDULE_INTERVAL_MINUTES: u64 = 1;
+const MAX_SCHEDULE_INTERVAL_MINUTES: u64 = 7 * 24 * 60;
 const CANCELLED: &str = "__workflow_cancelled__";
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkflowRunTrigger {
+    Manual,
+    Step,
+    Schedule,
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -64,6 +75,7 @@ pub struct WorkflowRun {
     pub workflow_id: String,
     pub workflow_name: String,
     pub started_at: u64,
+    pub trigger: WorkflowRunTrigger,
     pub status: WorkflowRunStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub current_step_id: Option<String>,
@@ -85,6 +97,13 @@ struct WorkflowEngineInner {
     runs: Mutex<HashMap<String, WorkflowRun>>,
     cancelled: Mutex<HashSet<String>>,
     manual_confirmations: Mutex<HashSet<(String, String)>>,
+    schedules: Mutex<HashMap<String, WorkflowScheduleRuntime>>,
+}
+
+#[derive(Debug, Clone)]
+struct WorkflowScheduleRuntime {
+    signature: String,
+    next_run_at: u64,
 }
 
 #[derive(Clone, Default)]
@@ -190,6 +209,29 @@ pub fn validate_workflow_definition(workflow: &WorkflowDefinition) -> WorkflowVa
     }
     if workflow.steps.len() > MAX_STEPS {
         errors.push(format!("workflow cannot exceed {MAX_STEPS} steps"));
+    }
+    if let Some(schedule) = workflow
+        .schedule
+        .as_ref()
+        .filter(|schedule| schedule.enabled)
+    {
+        match schedule.mode.as_str() {
+            "interval" => {
+                if !(MIN_SCHEDULE_INTERVAL_MINUTES..=MAX_SCHEDULE_INTERVAL_MINUTES)
+                    .contains(&schedule.interval_minutes)
+                {
+                    errors.push(format!(
+                        "schedule interval must be between {MIN_SCHEDULE_INTERVAL_MINUTES} and {MAX_SCHEDULE_INTERVAL_MINUTES} minutes"
+                    ));
+                }
+            }
+            "daily" => {
+                if parse_daily_time(&schedule.daily_time).is_none() {
+                    errors.push("daily schedule time must use HH:MM (00:00 to 23:59)".into());
+                }
+            }
+            _ => errors.push("schedule mode must be interval or daily".into()),
+        }
     }
 
     let mut ids = HashSet::new();
@@ -313,6 +355,161 @@ fn unix_time_millis() -> u64 {
         .unwrap_or(u64::MAX)
 }
 
+pub fn setup_scheduler(app: AppHandle) {
+    let inner = app.state::<WorkflowEngineState>().inner.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            scheduler_tick(&app, inner.clone()).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+    });
+}
+
+fn schedule_due(
+    schedules: &mut HashMap<String, WorkflowScheduleRuntime>,
+    workflow_id: &str,
+    interval_minutes: u64,
+    now: u64,
+) -> bool {
+    let interval_ms = interval_minutes.saturating_mul(60_000);
+    schedule_due_at(
+        schedules,
+        workflow_id,
+        format!("interval:{interval_minutes}"),
+        now.saturating_add(interval_ms),
+        now,
+    )
+}
+
+fn parse_daily_time(value: &str) -> Option<(u32, u32)> {
+    if value.len() != 5 || value.as_bytes().get(2) != Some(&b':') {
+        return None;
+    }
+    let hour = value.get(0..2)?.parse::<u32>().ok()?;
+    let minute = value.get(3..5)?.parse::<u32>().ok()?;
+    (hour < 24 && minute < 60).then_some((hour, minute))
+}
+
+fn next_daily_run_at(now: u64, daily_time: &str) -> Option<u64> {
+    let (hour, minute) = parse_daily_time(daily_time)?;
+    let now_i64 = i64::try_from(now).ok()?;
+    let now_local = Local.timestamp_millis_opt(now_i64).single()?;
+
+    for offset in 0..=2 {
+        let date = now_local.date_naive().checked_add_days(Days::new(offset))?;
+        let naive = date.and_hms_opt(hour, minute, 0)?;
+        let candidates = match Local.from_local_datetime(&naive) {
+            LocalResult::Single(value) => vec![value],
+            LocalResult::Ambiguous(first, second) => vec![first, second],
+            LocalResult::None => continue,
+        };
+        if let Some(next) = candidates
+            .into_iter()
+            .map(|value| value.timestamp_millis())
+            .filter(|value| *value > now_i64)
+            .min()
+        {
+            return u64::try_from(next).ok();
+        }
+    }
+    None
+}
+
+fn schedule_due_at(
+    schedules: &mut HashMap<String, WorkflowScheduleRuntime>,
+    workflow_id: &str,
+    signature: String,
+    next_run_at: u64,
+    now: u64,
+) -> bool {
+    let runtime =
+        schedules
+            .entry(workflow_id.to_string())
+            .or_insert_with(|| WorkflowScheduleRuntime {
+                signature: signature.clone(),
+                next_run_at,
+            });
+    if runtime.signature != signature {
+        runtime.signature = signature;
+        runtime.next_run_at = next_run_at;
+        return false;
+    }
+    if now < runtime.next_run_at {
+        return false;
+    }
+    runtime.next_run_at = next_run_at;
+    true
+}
+
+fn daily_schedule_due(
+    schedules: &mut HashMap<String, WorkflowScheduleRuntime>,
+    workflow_id: &str,
+    daily_time: &str,
+    now: u64,
+) -> bool {
+    let Some(next_run_at) = next_daily_run_at(now, daily_time) else {
+        return false;
+    };
+    schedule_due_at(
+        schedules,
+        workflow_id,
+        format!("daily:{daily_time}"),
+        next_run_at,
+        now,
+    )
+}
+
+async fn scheduler_tick(app: &AppHandle, inner: Arc<WorkflowEngineInner>) {
+    let Ok(config) = config::load_config(app.clone()) else {
+        return;
+    };
+    let now = unix_time_millis();
+    let mut due = Vec::new();
+    let mut configured = HashSet::new();
+
+    if let Ok(mut schedules) = inner.schedules.lock() {
+        for workflow in config.workflows {
+            let Some(schedule) = workflow
+                .schedule
+                .as_ref()
+                .filter(|schedule| schedule.enabled)
+            else {
+                continue;
+            };
+            if !workflow.enabled {
+                continue;
+            }
+
+            configured.insert(workflow.id.clone());
+            let is_due = match schedule.mode.as_str() {
+                "interval"
+                    if (MIN_SCHEDULE_INTERVAL_MINUTES..=MAX_SCHEDULE_INTERVAL_MINUTES)
+                        .contains(&schedule.interval_minutes) =>
+                {
+                    schedule_due(&mut schedules, &workflow.id, schedule.interval_minutes, now)
+                }
+                "daily" if parse_daily_time(&schedule.daily_time).is_some() => {
+                    daily_schedule_due(&mut schedules, &workflow.id, &schedule.daily_time, now)
+                }
+                _ => false,
+            };
+            if is_due {
+                due.push(workflow);
+            }
+        }
+        schedules.retain(|workflow_id, _| configured.contains(workflow_id));
+    }
+
+    for workflow in due {
+        let _ = start_workflow_definition(
+            app.clone(),
+            inner.clone(),
+            workflow,
+            WorkflowRunTrigger::Schedule,
+        );
+    }
+}
+
 fn update_run<F>(app: &AppHandle, inner: &WorkflowEngineInner, run_id: &str, update: F)
 where
     F: FnOnce(&mut WorkflowRun),
@@ -428,6 +625,9 @@ fn execute_action(app: &AppHandle, action: &Action) -> Result<(), String> {
             "screenshot" => crate::builtins::screenshot::toggle_screenshot_window(app.clone()),
             "webaccounts" => crate::builtins::webaccounts::toggle_webaccounts_window(app.clone()),
             "quickmemory" => crate::builtins::quickmemory::toggle_quickmemory_window(app.clone()),
+            "projecttasks" => {
+                crate::builtins::projecttasks::toggle_projecttasks_window(app.clone())
+            }
             _ => Err(format!("unknown builtin feature: {feature}")),
         };
     }
@@ -1230,18 +1430,12 @@ async fn execute_workflow(
     }
 }
 
-#[tauri::command]
-pub async fn run_workflow(
+fn start_workflow_definition(
     app: AppHandle,
-    workflow_id: String,
-    state: tauri::State<'_, WorkflowEngineState>,
+    inner: Arc<WorkflowEngineInner>,
+    workflow: WorkflowDefinition,
+    trigger: WorkflowRunTrigger,
 ) -> Result<WorkflowRun, String> {
-    let config = config::load_config(app.clone())?;
-    let workflow = config
-        .workflows
-        .into_iter()
-        .find(|workflow| workflow.id == workflow_id)
-        .ok_or_else(|| "workflow not found".to_string())?;
     if !workflow.enabled {
         return Err("workflow is disabled".into());
     }
@@ -1250,8 +1444,7 @@ pub async fn run_workflow(
         return Err(report.errors.join("; "));
     }
 
-    let already_running = state
-        .inner
+    let already_running = inner
         .runs
         .lock()
         .map_err(|_| "workflow state lock poisoned".to_string())?
@@ -1274,6 +1467,7 @@ pub async fn run_workflow(
         workflow_id: workflow.id.clone(),
         workflow_name: workflow.name.clone(),
         started_at: unix_time_millis(),
+        trigger,
         status: WorkflowRunStatus::Pending,
         current_step_id: None,
         steps: workflow
@@ -1290,17 +1484,81 @@ pub async fn run_workflow(
             .collect(),
         message: Some("workflow queued".into()),
     };
-    state
-        .inner
+    inner
         .runs
         .lock()
         .map_err(|_| "workflow state lock poisoned".to_string())?
         .insert(run.id.clone(), run.clone());
+    emit_run(&app, &inner, &run.id);
 
-    let inner = state.inner.clone();
     let run_id = run.id.clone();
     tauri::async_runtime::spawn(execute_workflow(app, inner, workflow, run_id));
     Ok(run)
+}
+
+#[tauri::command]
+pub async fn run_workflow(
+    app: AppHandle,
+    workflow_id: String,
+    state: tauri::State<'_, WorkflowEngineState>,
+) -> Result<WorkflowRun, String> {
+    let config = config::load_config(app.clone())?;
+    let workflow = config
+        .workflows
+        .into_iter()
+        .find(|workflow| workflow.id == workflow_id)
+        .ok_or_else(|| "workflow not found".to_string())?;
+    start_workflow_definition(
+        app,
+        state.inner.clone(),
+        workflow,
+        WorkflowRunTrigger::Manual,
+    )
+}
+
+fn standalone_step_workflow(
+    mut workflow: WorkflowDefinition,
+    step_id: &str,
+) -> Result<WorkflowDefinition, String> {
+    if !workflow.enabled {
+        return Err("workflow is disabled".into());
+    }
+    let mut step = workflow
+        .steps
+        .iter()
+        .find(|step| step.id == step_id)
+        .cloned()
+        .ok_or_else(|| "workflow step not found".to_string())?;
+    if !step.enabled {
+        return Err("workflow step is disabled".into());
+    }
+
+    step.enabled = true;
+    step.condition = StepCondition::Always;
+    step.delay_ms = 0;
+    workflow.name = format!("{} · {}", workflow.name, step.name);
+    workflow.failure_policy = "stop".into();
+    workflow.schedule = None;
+    workflow.steps = vec![step];
+    Ok(workflow)
+}
+
+#[tauri::command]
+pub async fn run_workflow_step(
+    app: AppHandle,
+    workflow_id: String,
+    step_id: String,
+    state: tauri::State<'_, WorkflowEngineState>,
+) -> Result<WorkflowRun, String> {
+    let config = config::load_config(app.clone())?;
+    let workflow = config
+        .workflows
+        .into_iter()
+        .find(|workflow| workflow.id == workflow_id)
+        .ok_or_else(|| "workflow not found".to_string())?;
+    let workflow = standalone_step_workflow(workflow, &step_id)?;
+
+    start_workflow_definition(app, state.inner.clone(), workflow, WorkflowRunTrigger::Step)
 }
 
 #[tauri::command]
@@ -1375,11 +1633,16 @@ pub fn confirm_workflow_step(
 #[cfg(test)]
 mod tests {
     use super::{
-        binding_workspace_size, evaluate_condition, process_output_tail, script_command_spec,
-        uses_managed_script_process, validate_workflow_definition, workflow_workspace_size,
+        binding_workspace_size, daily_schedule_due, evaluate_condition, next_daily_run_at,
+        parse_daily_time, process_output_tail, schedule_due, script_command_spec,
+        standalone_step_workflow, unix_time_millis, uses_managed_script_process,
+        validate_workflow_definition, workflow_workspace_size, WorkflowScheduleRuntime,
         WorkflowStepRunStatus, MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
     };
-    use crate::types::{Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowStep};
+    use crate::types::{
+        Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowSchedule, WorkflowStep,
+    };
+    use std::collections::HashMap;
 
     fn script_workflow(completion: CompletionRule) -> WorkflowDefinition {
         WorkflowDefinition {
@@ -1388,6 +1651,7 @@ mod tests {
             description: String::new(),
             enabled: true,
             failure_policy: "stop".into(),
+            schedule: None,
             steps: vec![WorkflowStep {
                 id: "step-1".into(),
                 name: "Echo".into(),
@@ -1416,6 +1680,113 @@ mod tests {
             timeout_ms: 5_000,
         });
         assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn validates_enabled_schedule_interval() {
+        let mut workflow = script_workflow(CompletionRule::ActionResolved);
+        workflow.schedule = Some(WorkflowSchedule {
+            enabled: true,
+            mode: "interval".into(),
+            interval_minutes: 0,
+            daily_time: "09:00".into(),
+        });
+        assert!(!validate_workflow_definition(&workflow).valid);
+
+        workflow.schedule = Some(WorkflowSchedule {
+            enabled: true,
+            mode: "interval".into(),
+            interval_minutes: 30,
+            daily_time: "09:00".into(),
+        });
+        assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn validates_daily_schedule_time() {
+        let mut workflow = script_workflow(CompletionRule::ActionResolved);
+        workflow.schedule = Some(WorkflowSchedule {
+            enabled: true,
+            mode: "daily".into(),
+            interval_minutes: 60,
+            daily_time: "24:00".into(),
+        });
+        assert!(!validate_workflow_definition(&workflow).valid);
+
+        workflow.schedule = Some(WorkflowSchedule {
+            enabled: true,
+            mode: "daily".into(),
+            interval_minutes: 60,
+            daily_time: "08:30".into(),
+        });
+        assert!(validate_workflow_definition(&workflow).valid);
+        assert_eq!(parse_daily_time("08:30"), Some((8, 30)));
+        assert_eq!(parse_daily_time("8:30"), None);
+    }
+
+    #[test]
+    fn daily_schedule_calculates_a_future_local_start() {
+        let now = unix_time_millis();
+        let next = next_daily_run_at(now, "09:00").expect("next daily start");
+        assert!(next > now);
+        assert!(next - now <= 25 * 60 * 60 * 1_000);
+    }
+
+    #[test]
+    fn daily_schedule_advances_after_it_becomes_due() {
+        let now = unix_time_millis();
+        let mut schedules = HashMap::from([(
+            "workflow-1".into(),
+            WorkflowScheduleRuntime {
+                signature: "daily:09:00".into(),
+                next_run_at: now,
+            },
+        )]);
+        assert!(daily_schedule_due(
+            &mut schedules,
+            "workflow-1",
+            "09:00",
+            now
+        ));
+        assert!(schedules["workflow-1"].next_run_at > now);
+        assert!(!daily_schedule_due(
+            &mut schedules,
+            "workflow-1",
+            "09:00",
+            now
+        ));
+    }
+
+    #[test]
+    fn interval_schedule_starts_after_the_configured_delay() {
+        let mut schedules = HashMap::new();
+        assert!(!schedule_due(&mut schedules, "workflow-1", 1, 1_000));
+        assert!(!schedule_due(&mut schedules, "workflow-1", 1, 60_999));
+        assert!(schedule_due(&mut schedules, "workflow-1", 1, 61_000));
+        assert!(!schedule_due(&mut schedules, "workflow-1", 2, 62_000));
+        assert!(schedule_due(&mut schedules, "workflow-1", 2, 182_000));
+    }
+
+    #[test]
+    fn standalone_step_ignores_sequence_condition_and_delay() {
+        let mut workflow = script_workflow(CompletionRule::ActionResolved);
+        workflow.schedule = Some(WorkflowSchedule {
+            enabled: true,
+            mode: "interval".into(),
+            interval_minutes: 30,
+            daily_time: "09:00".into(),
+        });
+        workflow.steps[0].condition = StepCondition::PreviousSuccess;
+        workflow.steps[0].delay_ms = 5_000;
+
+        let standalone = standalone_step_workflow(workflow, "step-1").expect("standalone step");
+        assert_eq!(standalone.steps.len(), 1);
+        assert!(matches!(
+            standalone.steps[0].condition,
+            StepCondition::Always
+        ));
+        assert_eq!(standalone.steps[0].delay_ms, 0);
+        assert!(standalone.schedule.is_none());
     }
 
     #[test]

@@ -11,9 +11,10 @@ import { manifest as screenshotAiManifest } from "@/builtins/screenshotai/manife
 import { manifest as screenshotManifest }   from "@/builtins/screenshot/manifest";
 import { manifest as webaccountsManifest }  from "@/builtins/webaccounts/manifest";
 import { manifest as quickMemoryManifest }  from "@/builtins/quickmemory/manifest";
+import { manifest as projectTasksManifest } from "@/builtins/projecttasks/manifest";
 
 // 内置功能 manifest 列表（新增插件在此添加）
-const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest, terminalManifest, screenshotAiManifest, screenshotManifest, webaccountsManifest, quickMemoryManifest] as const;
+const _BUILTIN_MANIFESTS = [clipboardManifest, jsonManifest, totpManifest, remoteManifest, terminalManifest, screenshotAiManifest, screenshotManifest, webaccountsManifest, quickMemoryManifest, projectTasksManifest] as const;
 
 /** 内置功能 ID 联合类型，自动从 manifest 派生 */
 export type BuiltinFeature = typeof _BUILTIN_MANIFESTS[number]["id"];
@@ -179,12 +180,20 @@ export interface WorkflowStep {
   onFailure?: WorkflowFailurePolicy;
 }
 
+export interface WorkflowSchedule {
+  enabled: boolean;
+  mode?: "interval" | "daily";
+  intervalMinutes: number;
+  dailyTime?: string;
+}
+
 export interface WorkflowDefinition {
   id: string;
   name: string;
   description: string;
   enabled: boolean;
   failurePolicy: WorkflowFailurePolicy;
+  schedule?: WorkflowSchedule;
   steps: WorkflowStep[];
   createdAt: string;
   updatedAt: string;
@@ -221,6 +230,7 @@ export interface WorkflowRun {
   workflowId: string;
   workflowName: string;
   startedAt: number;
+  trigger: "manual" | "step" | "schedule";
   status: WorkflowRunStatus;
   currentStepId?: string;
   steps: WorkflowStepRun[];

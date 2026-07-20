@@ -3,6 +3,7 @@ use portable_pty::{native_pty_system, Child, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -66,9 +67,21 @@ pub fn terminal_spawn(
     args: Vec<String>,
     cols: u16,
     rows: u16,
+    cwd: Option<String>,
     state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
-    spawn_pty_process(app, &state, session_id, cmd, args, cols, rows).map(|_| ())
+    let cwd = resolve_terminal_cwd(cwd)?;
+    spawn_pty_process_in_dir(
+        app,
+        &state,
+        session_id,
+        cmd,
+        args,
+        cols,
+        rows,
+        cwd.as_deref(),
+    )
+    .map(|_| ())
 }
 
 pub fn spawn_pty_process(
@@ -79,6 +92,39 @@ pub fn spawn_pty_process(
     args: Vec<String>,
     cols: u16,
     rows: u16,
+) -> Result<
+    (
+        Box<dyn Child + Send + Sync>,
+        Arc<Mutex<Vec<u8>>>,
+        Receiver<()>,
+    ),
+    String,
+> {
+    spawn_pty_process_in_dir(app, state, session_id, cmd, args, cols, rows, None)
+}
+
+fn resolve_terminal_cwd(cwd: Option<String>) -> Result<Option<PathBuf>, String> {
+    let Some(cwd) = cwd.filter(|value| !value.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(cwd)
+        .canonicalize()
+        .map_err(|error| format!("终端工作目录不存在：{error}"))?;
+    if !path.is_dir() {
+        return Err("终端工作路径不是目录".to_string());
+    }
+    Ok(Some(path))
+}
+
+fn spawn_pty_process_in_dir(
+    app: tauri::AppHandle,
+    state: &TerminalState,
+    session_id: String,
+    cmd: String,
+    args: Vec<String>,
+    cols: u16,
+    rows: u16,
+    cwd: Option<&Path>,
 ) -> Result<
     (
         Box<dyn Child + Send + Sync>,
@@ -100,6 +146,9 @@ pub fn spawn_pty_process(
     let mut cb = CommandBuilder::new(&cmd);
     for arg in &args {
         cb.arg(arg);
+    }
+    if let Some(cwd) = cwd {
+        cb.cwd(cwd);
     }
 
     let child = pair.slave.spawn_command(cb).map_err(|e| e.to_string())?;

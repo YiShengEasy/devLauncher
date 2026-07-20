@@ -1,0 +1,592 @@
+.projecttasks-window {
+  --pt-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  background: #11141b;
+  border-radius: 14px;
+  overflow: hidden;
+  clip-path: inset(0 round 14px);
+  isolation: isolate;
+  box-shadow: none;
+  font-optical-sizing: auto;
+  letter-spacing: 0;
+}
+
+.projecttasks-header {
+  background: rgba(17, 20, 27, 0.82);
+  backdrop-filter: blur(22px) saturate(135%);
+  -webkit-backdrop-filter: blur(22px) saturate(135%);
+}
+
+.projecttasks-project-sidebar {
+  background: rgba(8, 10, 15, 0.72);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+}
+
+.projecttasks-task-sidebar {
+  background: rgba(13, 16, 23, 0.76);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+}
+
+.projecttasks-detail {
+  background: rgba(18, 22, 30, 0.9);
+}
+
+.projecttasks-terminal {
+  height: clamp(190px, 30vh, 250px);
+  min-height: 170px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(4, 7, 12, 0.9);
+}
+
+.projecttasks-terminal-header {
+  min-height: 32px;
+  flex: 0 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  color: rgba(225, 231, 242, 0.48);
+  font-size: 9px;
+}
+
+.projecttasks-terminal-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.projecttasks-terminal-title strong {
+  flex-shrink: 0;
+  color: rgba(242, 246, 252, 0.78);
+  font-size: 10px;
+}
+
+.projecttasks-terminal-title span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projecttasks-terminal-status {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
+  border-radius: 50%;
+  background: #64748b;
+}
+
+.projecttasks-terminal-status[data-ready="true"] {
+  background: #2dd4bf;
+}
+
+.projecttasks-terminal-clear {
+  height: 24px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(225, 231, 242, 0.42);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.projecttasks-terminal-clear:hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(245, 247, 252, 0.78);
+}
+
+.projecttasks-terminal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding: 5px 8px 7px;
+}
+
+.projecttasks-terminal-body .xterm {
+  height: 100%;
+}
+
+.projecttasks-workflow-import-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+
+.projecttasks-workflow-import {
+  width: min(520px, calc(100vw - 36px));
+  max-height: min(520px, calc(100vh - 36px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--theme-bg-solid, #111827);
+  box-shadow: none;
+}
+
+.projecttasks-workflow-import-header {
+  min-height: 54px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 0 14px 0 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.projecttasks-workflow-import-header > div:first-child {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.projecttasks-workflow-import-header strong {
+  color: rgba(248, 250, 255, 0.92);
+  font-size: 13px;
+}
+
+.projecttasks-workflow-import-header span {
+  overflow: hidden;
+  color: rgba(220, 226, 239, 0.46);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projecttasks-workflow-import-body {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.projecttasks-workflow-import-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.projecttasks-workflow-import-modes button,
+.projecttasks-workflow-import-footer button {
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(225, 231, 242, 0.54);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.projecttasks-workflow-import-modes button[data-active="true"] {
+  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(59, 130, 246, 0.16);
+  color: rgba(248, 250, 255, 0.9);
+}
+
+.projecttasks-workflow-import-modes button:disabled,
+.projecttasks-workflow-import-footer button:disabled {
+  cursor: default;
+  opacity: 0.36;
+}
+
+.projecttasks-workflow-import-field {
+  display: grid;
+  gap: 7px;
+}
+
+.projecttasks-workflow-import-field > span {
+  color: rgba(225, 231, 242, 0.52);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.projecttasks-workflow-import-field input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  outline: none;
+  background: rgba(0, 0, 0, 0.22);
+  color: rgba(248, 250, 255, 0.9);
+  font-size: 11px;
+}
+
+.projecttasks-workflow-import-field input:focus {
+  border-color: rgba(96, 165, 250, 0.58);
+}
+
+.projecttasks-workflow-import-list {
+  max-height: 230px;
+  display: grid;
+  gap: 5px;
+  overflow: auto;
+}
+
+.projecttasks-workflow-import-list button {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(245, 247, 252, 0.78);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projecttasks-workflow-import-list button[data-active="true"] {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(20, 184, 166, 0.1);
+  color: rgba(248, 250, 255, 0.94);
+}
+
+.projecttasks-workflow-import-list small {
+  flex-shrink: 0;
+  color: rgba(220, 226, 239, 0.38);
+  font-size: 9px;
+}
+
+.projecttasks-workflow-import-error {
+  padding: 8px 10px;
+  border: 1px solid rgba(248, 113, 113, 0.24);
+  border-radius: 7px;
+  background: rgba(127, 29, 29, 0.16);
+  color: #fca5a5;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.projecttasks-workflow-import-footer {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 0 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.projecttasks-workflow-import-footer button {
+  min-width: 74px;
+  padding: 0 11px;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.projecttasks-workflow-import-footer button[data-primary="true"] {
+  border-color: rgba(45, 212, 191, 0.42);
+  background: rgba(20, 184, 166, 0.18);
+  color: #99f6e4;
+}
+
+.projecttasks-feedback {
+  position: fixed;
+  top: 68px;
+  right: 18px;
+  z-index: 9800;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 9px 12px;
+  border: 1px solid rgba(45, 212, 191, 0.34);
+  border-radius: 8px;
+  background: rgba(6, 78, 59, 0.94);
+  color: rgba(236, 253, 245, 0.94);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.projecttasks-sidebar-title {
+  color: rgba(245, 247, 252, 0.86);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.2;
+}
+
+.projecttasks-count {
+  min-width: 20px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(225, 231, 242, 0.5);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.projecttasks-project-row {
+  position: relative;
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  margin-bottom: 3px;
+  border-radius: 7px;
+  background: transparent;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.projecttasks-project-row[data-active="true"] {
+  background: rgba(72, 158, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(121, 187, 255, 0.1);
+}
+
+.projecttasks-project-main {
+  min-width: 0;
+  min-height: 68px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 4px 8px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 120ms var(--pt-ease-out), opacity 120ms ease;
+}
+
+.projecttasks-project-main:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.projecttasks-project-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: rgba(251, 191, 36, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.08);
+}
+
+.projecttasks-project-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.projecttasks-project-name {
+  overflow: hidden;
+  color: rgba(248, 250, 255, 0.9);
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projecttasks-project-meta {
+  margin-top: 3px;
+  overflow: hidden;
+  color: rgba(220, 226, 239, 0.48);
+  font-size: 9px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projecttasks-project-path {
+  margin-top: 2px;
+  overflow: hidden;
+  color: rgba(220, 226, 239, 0.3);
+  font-size: 9px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projecttasks-project-remove,
+.projecttasks-icon-button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(220, 226, 239, 0.38);
+  cursor: pointer;
+  transition: color 120ms ease, background-color 120ms ease, transform 120ms var(--pt-ease-out), opacity 120ms ease;
+}
+
+.projecttasks-project-remove {
+  margin-right: 4px;
+}
+
+.projecttasks-project-remove:focus-visible,
+.projecttasks-icon-button:focus-visible,
+.projecttasks-button:focus-visible,
+.projecttasks-filter-tab:focus-visible,
+.projecttasks-task-item:focus-visible {
+  outline: 2px solid rgba(96, 165, 250, 0.78);
+  outline-offset: 1px;
+}
+
+.projecttasks-project-remove:disabled,
+.projecttasks-icon-button:disabled,
+.projecttasks-button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.projecttasks-icon-button[data-scanning="true"] svg {
+  animation: projecttasks-spin 800ms linear infinite;
+}
+
+@keyframes projecttasks-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.projecttasks-button,
+.projecttasks-filter-tab,
+.projecttasks-task-item {
+  transition: transform 120ms var(--pt-ease-out), background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease, color 140ms ease, opacity 120ms ease;
+}
+
+.projecttasks-path-input {
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.projecttasks-path-input:focus {
+  border-color: rgba(96, 165, 250, 0.64) !important;
+  background: rgba(0, 0, 0, 0.24) !important;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.1);
+}
+
+.projecttasks-path-input::placeholder {
+  color: rgba(220, 226, 239, 0.28);
+}
+
+.projecttasks-button:active:not(:disabled),
+.projecttasks-icon-button:active:not(:disabled),
+.projecttasks-project-remove:active:not(:disabled),
+.projecttasks-filter-tab:active:not(:disabled),
+.projecttasks-task-item:active:not(:disabled),
+.projecttasks-project-main:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.projecttasks-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
+.projecttasks-scroll::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.projecttasks-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  background-clip: padding-box;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .projecttasks-project-row:hover:not([data-active="true"]) {
+    background: rgba(255, 255, 255, 0.045);
+  }
+
+  .projecttasks-project-row:hover .projecttasks-project-remove,
+  .projecttasks-project-remove:focus-visible {
+    color: rgba(248, 113, 113, 0.82);
+  }
+
+  .projecttasks-project-remove:hover {
+    background: rgba(248, 113, 113, 0.1);
+  }
+
+  .projecttasks-icon-button:hover,
+  .projecttasks-button:hover:not(:disabled),
+  .projecttasks-filter-tab:hover:not(:disabled) {
+    color: rgba(248, 250, 255, 0.94);
+  }
+
+  .projecttasks-icon-button:hover {
+    background-color: rgba(255, 255, 255, 0.09);
+  }
+
+  .projecttasks-button:hover:not(:disabled),
+  .projecttasks-filter-tab:hover:not(:disabled) {
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+
+  .projecttasks-task-item:hover:not([data-active="true"]) {
+    background: rgba(255, 255, 255, 0.055) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .projecttasks-window *,
+  .projecttasks-window *::before,
+  .projecttasks-window *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .projecttasks-icon-button[data-scanning="true"] svg {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .projecttasks-header,
+  .projecttasks-project-sidebar,
+  .projecttasks-task-sidebar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .projecttasks-header {
+    background: #171a22;
+  }
+
+  .projecttasks-project-sidebar {
+    background: #0c0f15;
+  }
+
+  .projecttasks-task-sidebar {
+    background: #121620;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .projecttasks-project-row[data-active="true"] {
+    box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.8);
+  }
+
+  .projecttasks-project-name,
+  .projecttasks-sidebar-title {
+    color: #fff;
+  }
+}

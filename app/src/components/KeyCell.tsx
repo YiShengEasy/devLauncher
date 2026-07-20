@@ -14,7 +14,8 @@ interface KeyCellProps {
   isDragSource?: boolean;
   isDropTarget?: boolean;
   isDragging?: boolean;
-  hoverResetSignal?: number;
+  isHovered?: boolean;
+  onHoverChange?: (keyId: KeyId, hovered: boolean) => void;
   onMouseDown?: (e: React.MouseEvent) => void;
   wasDrag?: () => boolean;
 }
@@ -60,22 +61,21 @@ function Tooltip({ text, visible }: { text: string; visible: boolean }) {
 
   return createPortal(
     <div
+      className="theme-popover-surface"
       style={{
         position: "fixed",
         left: pos.x + 14,
         top: pos.y + 14,
         zIndex: 99999,
         pointerEvents: "none",
-        background: "rgba(18,18,28,0.93)",
-        border: "1px solid rgba(255,255,255,0.12)",
+        background: "var(--theme-bg, rgba(18,18,28,0.93))",
+        border: "1px solid var(--theme-border, rgba(255,255,255,0.12))",
         borderRadius: 8,
         padding: "6px 10px",
         fontSize: 11,
         color: "rgba(255,255,255,0.82)",
         whiteSpace: "pre-line",
         lineHeight: 1.7,
-        backdropFilter: "blur(16px)",
-        boxShadow: "0 4px 20px rgba(0,0,0,0.55)",
         maxWidth: 200,
       }}
     >
@@ -93,22 +93,18 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
   isDragSource,
   isDropTarget,
   isDragging,
-  hoverResetSignal,
+  isHovered = false,
+  onHoverChange,
   onMouseDown,
   wasDrag,
 }, ref) {
   const [pressed, setPressed] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const action = binding?.action ?? null;
   const meta = action ? ACTION_TYPE_META[action.type] : null;
   const keyBgOpacity = useKeyboardStore((s) => s.theme.keyBgOpacity);
   const showKeyLabels = useKeyboardStore((s) => s.theme.showKeyLabels);
   const showActionName = Boolean(action) && showKeyLabels;
   const actionIconSize = showActionName ? KEY_ICON_SIZE_WITH_LABEL : KEY_ICON_SIZE_WITHOUT_LABEL;
-
-  useEffect(() => {
-    setHovered(false);
-  }, [hoverResetSignal]);
 
   const handleClick = () => {
     if (wasDrag?.()) return;
@@ -122,7 +118,7 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
   };
 
   const accent = meta?.color;
-  const hoverActive = hovered && !isDropTarget && !isDragging;
+  const hoverActive = isHovered && !isDropTarget && !isDragging;
   const borderColor = action
     ? KEYCAP_BORDER
     : hoverActive
@@ -133,7 +129,9 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
     width: KEY_WIDTH,
     height: KEY_HEIGHT,
     borderRadius: 8,
-    border: `1px solid ${borderColor}`,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor,
     background: keycapBackground({ accent, hover: hoverActive, keyBgOpacity }),
     boxShadow: action ? KEYCAP_SHADOW : "none",
     display: "flex",
@@ -202,9 +200,9 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
           e.preventDefault();
           onBind?.(keyId);
         }}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        onBlur={() => setHovered(false)}
+        onMouseEnter={() => onHoverChange?.(keyId, true)}
+        onMouseLeave={() => onHoverChange?.(keyId, false)}
+        onBlur={() => onHoverChange?.(keyId, false)}
         style={{ ...baseStyle, ...stateStyle }}
       >
         <span
@@ -261,7 +259,7 @@ export const KeyCell = forwardRef<HTMLDivElement, KeyCellProps>(function KeyCell
       </div>
       <Tooltip
         text={action ? `${action.name}\n[\u5feb\u6377\u952e ${keyId}] \u5de6\u952e\u6267\u884c / \u53f3\u952e\u7f16\u8f91` : `\u70b9\u51fb\u7ed1\u5b9a [${keyId}]`}
-        visible={hovered}
+        visible={isHovered && !isDragging}
       />
     </>
   );

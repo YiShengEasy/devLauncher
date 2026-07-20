@@ -137,11 +137,11 @@ mod windows {
     use std::sync::{Mutex, OnceLock};
     use std::time::{Duration, Instant};
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, GetMessageW, SetWindowsHookExW, KBDLLHOOKSTRUCT, LLKHF_INJECTED, MSG,
-        WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP, AllowSetForegroundWindow,
-    };
     use windows_sys::Win32::System::Threading::GetCurrentProcessId;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        AllowSetForegroundWindow, CallNextHookEx, GetMessageW, SetWindowsHookExW, KBDLLHOOKSTRUCT,
+        LLKHF_INJECTED, MSG, WH_KEYBOARD_LL, WM_KEYDOWN, WM_KEYUP,
+    };
 
     const DOUBLE_CONTROL_WINDOW: Duration = Duration::from_millis(550);
     const VK_CONTROL: u32 = 0x11;
@@ -230,7 +230,10 @@ mod windows {
                         false
                     }
                 } else if w_param as u32 == WM_KEYDOWN {
-                    eprintln!("[DBG] non-ctrl keydown vk=0x{:X} ctrl_down={}", event.vkCode, state.control_down);
+                    eprintln!(
+                        "[DBG] non-ctrl keydown vk=0x{:X} ctrl_down={}",
+                        event.vkCode, state.control_down
+                    );
                     state.cancel_pending_tap();
                     false
                 } else {

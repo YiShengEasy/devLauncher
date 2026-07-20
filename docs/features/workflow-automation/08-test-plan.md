@@ -20,6 +20,9 @@
 - Timer is cancellable.
 - Process-exit accepts configured codes and reports stderr safely.
 - Cancellation produces terminal states.
+- Enabled schedule intervals and daily `HH:MM` values validate inside the
+  supported bounds.
+- Standalone step plans ignore previous-step conditions and sequencing delay.
 
 ## MCP Contract Tests
 
@@ -41,6 +44,9 @@
 - Bind to an empty key.
 - Replace an occupied key through confirmation.
 - Run and cancel.
+- Run one step and inspect its status/output independently.
+- Enable interval and daily schedules, verify the “自启动” list marker, observe
+  a scheduled trigger, and stop the run.
 - Existing non-workflow bindings still execute.
 
 ## Manual Cross-Platform Checks

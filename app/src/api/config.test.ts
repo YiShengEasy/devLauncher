@@ -41,6 +41,7 @@ const workflow: WorkflowDefinition = {
   description: "Start and wait",
   enabled: true,
   failurePolicy: "stop",
+  schedule: { enabled: true, intervalMinutes: 30 },
   steps: [
     {
       id: "step-test",

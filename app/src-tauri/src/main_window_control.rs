@@ -29,10 +29,7 @@ pub fn dispatch(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), 
     .map_err(|error| error.to_string())
 }
 
-pub async fn run_serialized<T, F>(
-    app: &tauri::AppHandle,
-    operation: F,
-) -> Result<T, String>
+pub async fn run_serialized<T, F>(app: &tauri::AppHandle, operation: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
@@ -67,7 +64,10 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
     // Tauri's internal cache.
     let visible = unsafe { IsWindowVisible(hwnd) != 0 };
     let minimized = unsafe { IsIconic(hwnd) != 0 };
-    eprintln!("[DBG] execute({:?}) visible={} minimized={}", action, visible, minimized);
+    eprintln!(
+        "[DBG] execute({:?}) visible={} minimized={}",
+        action, visible, minimized
+    );
     let show_pet_before_main =
         matches!(action, MainWindowAction::Toggle) && (!visible || minimized);
 
@@ -84,7 +84,9 @@ fn execute(app: &tauri::AppHandle, action: MainWindowAction) -> Result<(), Strin
             }
             crate::window_pinning::apply_window_pin_state(app, "main")?;
             unsafe {
-                use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+                use windows_sys::Win32::System::Threading::{
+                    AttachThreadInput, GetCurrentThreadId,
+                };
                 use windows_sys::Win32::UI::WindowsAndMessaging::{
                     GetForegroundWindow, GetWindowThreadProcessId,
                 };

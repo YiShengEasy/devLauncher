@@ -9,6 +9,7 @@ import { UiAuditPreviewApp } from "./entry/UiAuditPreviewApp";
 import { WorkflowPreviewApp } from "./entry/WorkflowPreviewApp";
 import { PluginHostApp } from "./plugins/PluginHostApp";
 import { PinnedScreenshotApp } from "./builtins/screenshot/PinnedScreenshotApp";
+import { ThemeRuntime } from "./components/ThemeRuntime";
 import "./index.css";
 
 const params = new URLSearchParams(window.location.search);
@@ -38,4 +39,9 @@ function RoutedApp() {
   return <App />;
 }
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<RoutedApp />);
+ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+  <>
+    <ThemeRuntime />
+    <RoutedApp />
+  </>,
+);

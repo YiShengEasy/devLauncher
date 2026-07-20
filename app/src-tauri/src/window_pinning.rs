@@ -32,6 +32,7 @@ const SUPPORTED_WINDOWS: &[&str] = &[
     "screenshotai",
     "webaccounts",
     "quickmemory",
+    "projecttasks",
 ];
 
 const DEFAULT_PINNED_WINDOWS: &[&str] = &["main", "pet", "search"];
@@ -245,6 +246,7 @@ mod tests {
     fn classifies_supported_windows_and_defaults() {
         assert!(is_supported_window("main"));
         assert!(is_supported_window("quickmemory"));
+        assert!(is_supported_window("projecttasks"));
         assert!(!is_supported_window("screenshot"));
         assert!(!is_supported_window("missing"));
         assert!(default_pinned("main"));

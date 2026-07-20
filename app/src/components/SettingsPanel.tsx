@@ -4,6 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabledApi } from "@tauri-apps/plugin-autostart";
 import type { CSSProperties } from "react";
 import { loadConfig, saveConfig } from "@/api/config";
+import { THEME_CONFIG_CHANGED_EVENT } from "@/api/theme";
 import {
   generateCloudSyncKey,
   getCloudSyncStatus,
@@ -293,7 +294,9 @@ export function SettingsPanel({
   }, []);
 
   const persistTheme = (partial: Partial<ThemeConfig>) => {
+    const nextTheme = { ...theme, ...partial };
     setTheme(partial);
+    void emit(THEME_CONFIG_CHANGED_EVENT, nextTheme);
     setTimeout(async () => {
       const cfg = useKeyboardStore.getState().config;
       if (cfg) await saveConfig(cfg);
@@ -335,7 +338,9 @@ export function SettingsPanel({
   }
 
   const applyPreset = (preset: VisualThemePreset) => {
-    setTheme({ ...preset });
+    const nextTheme = { ...theme, ...preset };
+    setTheme(nextTheme);
+    void emit(THEME_CONFIG_CHANGED_EVENT, nextTheme);
     setTimeout(async () => {
       const cfg = useKeyboardStore.getState().config;
       if (cfg) await saveConfig(cfg);
@@ -942,7 +947,7 @@ export function SettingsPanel({
                   </label>
                 </div>
                 <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6 }}>
-                  快捷键：{shortcutLabels.pet}。打开搜索、截图报告、剪切板、键盘模式和隐藏操作；可拖动并保存位置。
+                  快捷键：{shortcutLabels.pet}。直接拖动宠物可移动并保存位置；单击展开菜单，点击扇区执行。
                 </div>
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.42)", marginTop: 8, lineHeight: 1.6 }}>
                   关闭时不会连接或探测 Codex。开启后只接收状态事件；未安装或未启动 Codex 时显示未连接，不影响启动。

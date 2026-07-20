@@ -156,6 +156,7 @@ fn workflow_summary(workflow: &WorkflowDefinition) -> Value {
         "name": workflow.name,
         "description": workflow.description,
         "enabled": workflow.enabled,
+        "schedule": workflow.schedule,
         "stepCount": workflow.steps.len(),
         "updatedAt": workflow.updated_at,
     })
@@ -169,10 +170,13 @@ fn capabilities() -> Value {
             "actions": ["app", "folder", "file", "url", "ssh", "script", "system", "builtin", "plugin"],
             "conditions": ["always", "previous_success", "previous_failed", "platform", "path_exists", "env_equals"],
             "completions": ["action_resolved", "process_started", "process_exit", "port_ready", "timer", "manual"],
+            "schedules": ["interval", "daily"],
             "platforms": ["macos", "windows", "linux"],
             "limits": {
                 "maxSteps": 64,
                 "maxScriptBytes": 32768,
+                "minScheduleIntervalMinutes": 1,
+                "maxScheduleIntervalMinutes": 10080,
                 "maxTimeoutMs": 86400000
             }
         }

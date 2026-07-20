@@ -108,6 +108,21 @@ applications are not closed automatically.
 - Different workflows may run concurrently.
 - Mutating a workflow does not change an already-started normalized run plan.
 
+## Standalone Step Runs
+
+`run_workflow_step` creates a one-step run plan from the saved step. It forces
+the standalone condition to `always` and sequencing delay to zero, while
+retaining the action, completion rule, managed terminal output, and cancellation.
+
+## Auto-start Scheduler
+
+The desktop runtime checks persisted enabled schedules once per second. A newly
+enabled interval starts counting from the current app session. A daily schedule
+computes its next occurrence from the operating system's local time, including
+local timezone changes. Missed starts while DevLauncher was not running are not
+replayed. Scheduled runs use the same one-active-run-per-workflow guard, status
+event, terminal output, and cancellation token as manual runs.
+
 ## Events
 
 ```text

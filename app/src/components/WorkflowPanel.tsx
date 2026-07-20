@@ -15,6 +15,7 @@ import {
   defaultCompletionForAction,
   listWorkflowRuns,
   runWorkflow,
+  runWorkflowStep,
   validateWorkflow,
 } from "@/api/workflow";
 import {
@@ -26,11 +27,11 @@ import {
 import { BindingModal } from "@/components/BindingModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ActionIcon } from "@/components/ActionIcon";
+import { MacWindowControls } from "@/components/MacWindowControls";
 import { planTerminalChunk } from "@/components/workflowTerminal";
 import {
   AddIcon,
   CheckIcon,
-  CloseIcon,
   CopyIcon,
   DeleteIcon,
   MoveDownIcon,
@@ -56,6 +57,8 @@ const PANEL: CSSProperties = {
   minHeight: 0,
   display: "flex",
   flexDirection: "column",
+  borderRadius: "inherit",
+  overflow: "hidden",
   color: "rgba(244,247,255,0.9)",
 };
 
@@ -175,6 +178,19 @@ function runStatusLabel(status: WorkflowRun["status"]): string {
   }
 }
 
+function runTriggerLabel(trigger: WorkflowRun["trigger"]): string {
+  if (trigger === "schedule") return "定时启动";
+  if (trigger === "step") return "单步执行";
+  return "手动启动";
+}
+
+function scheduleSummary(schedule: WorkflowDefinition["schedule"]): string {
+  if (!schedule?.enabled) return "";
+  return (schedule.mode ?? "interval") === "daily"
+    ? `每日 ${schedule.dailyTime ?? "09:00"}`
+    : `每 ${schedule.intervalMinutes} 分钟`;
+}
+
 function stepStatusLabel(status: WorkflowRun["steps"][number]["status"]): string {
   switch (status) {
     case "pending": return "待执行";
@@ -215,6 +231,7 @@ function formatRunLog(run: WorkflowRun): string {
   const summaryDetail = runSummaryDetail(run);
   const lines = [
     `工作流：${run.workflowName}`,
+    `启动方式：${runTriggerLabel(run.trigger)}`,
     `状态：${runStatusLabel(run.status)}`,
     ...(summaryDetail ? [`详情：${summaryDetail}`] : []),
     "",
@@ -507,6 +524,7 @@ export function WorkflowPanel({
   const [run, setRun] = useState<WorkflowRun | null>(initialRun ?? null);
   const [runPanelOpen, setRunPanelOpen] = useState(Boolean(initialRun));
   const [runLogCopied, setRunLogCopied] = useState(false);
+  const runsRef = useRef<WorkflowRun[]>(initialRun ? [initialRun] : []);
   const runTerminalRef = useRef<WorkflowRunTerminalHandle>(null);
   const [manualRequest, setManualRequest] = useState<{ runId: string; stepId: string; stepName: string } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
@@ -544,6 +562,12 @@ export function WorkflowPanel({
     ? Math.round((completedRunSteps / run.steps.length) * 100)
     : 0;
   const runningBlocked = isRunActive(run);
+  const rememberRun = (nextRun: WorkflowRun) => {
+    runsRef.current = [
+      ...runsRef.current.filter((item) => item.id !== nextRun.id),
+      nextRun,
+    ].sort((left, right) => left.startedAt - right.startedAt);
+  };
 
   useEffect(() => {
     const nextWorkflows = structuredClone(config.workflows ?? []);
@@ -566,6 +590,7 @@ export function WorkflowPanel({
     let disposeStatus: (() => void) | null = null;
     let disposeManual: (() => void) | null = null;
     listWorkflowRuns().then((runs) => {
+      runsRef.current = runs;
       const active = runs.find((item) => isRunActive(item));
       const latest = active ?? runs[runs.length - 1];
       if (latest) {
@@ -574,11 +599,13 @@ export function WorkflowPanel({
       }
     }).catch(() => undefined);
     listen<WorkflowRun>("workflow-run-status", (event) => {
+      rememberRun(event.payload);
       setRun((current) => (
         !current || current.id === event.payload.id || isRunActive(event.payload)
           ? event.payload
           : current
       ));
+      if (isRunActive(event.payload)) setRunPanelOpen(true);
     }).then((dispose) => {
       disposeStatus = dispose;
     }).catch(console.error);
@@ -760,6 +787,7 @@ export function WorkflowPanel({
     try {
       if (dirty && !await persist()) return;
       const started = await runWorkflow(workflowId);
+      rememberRun(started);
       setRun(started);
       setRunPanelOpen(true);
       setStatus("工作流已开始运行");
@@ -771,6 +799,20 @@ export function WorkflowPanel({
   const startRun = async () => {
     if (!workflow) return;
     await startWorkflowRun(workflow.id);
+  };
+
+  const startStepRun = async (stepId: string) => {
+    if (!workflow) return;
+    try {
+      if (dirty && !await persist()) return;
+      const started = await runWorkflowStep(workflow.id, stepId);
+      rememberRun(started);
+      setRun(started);
+      setRunPanelOpen(true);
+      setStatus("步骤已开始单独执行");
+    } catch (error) {
+      setStatus(String(error));
+    }
   };
 
   const copyRunLog = async () => {
@@ -843,9 +885,7 @@ export function WorkflowPanel({
           >
             运行
           </button>
-          <button style={ICON_BUTTON} onClick={onClose} title="关闭工作流" aria-label="关闭工作流">
-            <CloseIcon size={15} decorative />
-          </button>
+          <MacWindowControls onClose={onClose} closeTitle="关闭工作流" />
         </div>
       </div>
 
@@ -993,6 +1033,11 @@ export function WorkflowPanel({
                 onClick={() => {
                   setSelectedWorkflowId(item.id);
                   setSelectedStepId(item.steps[0]?.id ?? null);
+                  const latestRun = runsRef.current
+                    .filter((entry) => entry.workflowId === item.id)
+                    .at(-1) ?? null;
+                  setRun(latestRun);
+                  if (latestRun && isRunActive(latestRun)) setRunPanelOpen(true);
                 }}
                 style={{
                   width: "100%",
@@ -1011,12 +1056,32 @@ export function WorkflowPanel({
                   cursor: "pointer",
                 }}
               >
-                <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 700 }}>
-                  {item.name}
+                <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 700 }}>
+                    {item.name}
+                  </span>
+                  {item.schedule?.enabled && (
+                    <span
+                      title={`自启动：${scheduleSummary(item.schedule)}`}
+                      style={{
+                        flexShrink: 0,
+                        padding: "2px 5px",
+                        border: "1px solid rgba(52,211,153,0.34)",
+                        borderRadius: 999,
+                        background: "rgba(16,185,129,0.12)",
+                        color: "#6ee7b7",
+                        fontSize: 8,
+                        fontWeight: 750,
+                      }}
+                    >
+                      自启动
+                    </span>
+                  )}
                 </span>
                 <span style={{ display: "block", marginTop: 6, color: "rgba(255,255,255,0.36)", fontSize: 9 }}>
                   {item.steps.filter((entry) => entry.enabled).length} 个启用步骤
                   {item.enabled ? "" : " · 已停用"}
+                  {item.schedule?.enabled ? ` · ${scheduleSummary(item.schedule)}` : ""}
                 </span>
               </button>
             ))}
@@ -1073,7 +1138,7 @@ export function WorkflowPanel({
                 value={workflow.description}
                 onChange={(event) => updateWorkflow({ description: event.target.value })}
               />
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(145px, 1fr))", gap: 8, marginBottom: 14 }}>
                 <Field label="失败后">
                   <select style={INPUT} value={workflow.failurePolicy} onChange={(event) => updateWorkflow({ failurePolicy: event.target.value as WorkflowDefinition["failurePolicy"] })}>
                     <option value="stop">停止执行</option>
@@ -1086,6 +1151,67 @@ export function WorkflowPanel({
                     <option value="disabled">已停用</option>
                   </select>
                 </Field>
+                <Field label="定时启动">
+                  <select
+                    style={INPUT}
+                    value={workflow.schedule?.enabled ? (workflow.schedule.mode ?? "interval") : "disabled"}
+                    onChange={(event) => updateWorkflow({
+                      schedule: {
+                        enabled: event.target.value !== "disabled",
+                        mode: event.target.value === "disabled"
+                          ? (workflow.schedule?.mode ?? "interval")
+                          : event.target.value === "daily" ? "daily" : "interval",
+                        intervalMinutes: workflow.schedule?.intervalMinutes ?? 60,
+                        dailyTime: workflow.schedule?.dailyTime ?? "09:00",
+                      },
+                    })}
+                  >
+                    <option value="disabled">关闭</option>
+                    <option value="interval">按间隔启动</option>
+                    <option value="daily">每日固定时间</option>
+                  </select>
+                </Field>
+                {workflow.schedule?.enabled && (workflow.schedule.mode ?? "interval") === "interval" && (
+                  <Field label="启动间隔（分钟）">
+                    <input
+                      style={INPUT}
+                      type="number"
+                      min={1}
+                      max={10_080}
+                      value={workflow.schedule.intervalMinutes}
+                      onChange={(event) => updateWorkflow({
+                        schedule: {
+                          enabled: true,
+                          mode: "interval",
+                          intervalMinutes: Number(event.target.value),
+                          dailyTime: workflow.schedule?.dailyTime ?? "09:00",
+                        },
+                      })}
+                    />
+                  </Field>
+                )}
+                {workflow.schedule?.enabled && workflow.schedule.mode === "daily" && (
+                  <Field label="每日启动时间">
+                    <input
+                      style={INPUT}
+                      type="time"
+                      value={workflow.schedule.dailyTime ?? "09:00"}
+                      onChange={(event) => updateWorkflow({
+                        schedule: {
+                          enabled: true,
+                          mode: "daily",
+                          intervalMinutes: workflow.schedule?.intervalMinutes ?? 60,
+                          dailyTime: event.target.value,
+                        },
+                      })}
+                    />
+                  </Field>
+                )}
+                {workflow.schedule?.enabled && (
+                  <div style={{ gridColumn: "1 / -1", marginTop: -4, color: "rgba(255,255,255,0.36)", fontSize: 9, lineHeight: 1.5 }}>
+                    按系统本地时间、在 DevLauncher 后台运行时生效；关闭定时会停止后续触发，当前运行可在底部状态面板中停止。
+                  </div>
+                )}
               </div>
 
               <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
@@ -1162,6 +1288,18 @@ export function WorkflowPanel({
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 3 }}>
+                    <button
+                      type="button"
+                      style={{ ...BUTTON, height: 24, padding: "0 7px", fontSize: 9 }}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void startStepRun(item.id);
+                      }}
+                      disabled={runningBlocked || !workflow.enabled || !item.enabled}
+                      title="只执行这个步骤，不检查上一步条件和步骤延迟"
+                    >
+                      单独运行
+                    </button>
                     <button
                       style={{ ...ICON_BUTTON, width: 24, height: 24 }}
                       onClick={(event) => { event.stopPropagation(); moveStep(-1); }}
@@ -1501,7 +1639,7 @@ export function WorkflowPanel({
                     whiteSpace: "pre-wrap",
                     overflowWrap: "anywhere",
                   }}>
-                    {run.workflowName} · {runStatusLabel(run.status)}
+                    {run.workflowName} · {runTriggerLabel(run.trigger)} · {runStatusLabel(run.status)}
                     {runSummaryDetail(run) ? `\n${runSummaryDetail(run)}` : ""}
                   </div>
                   {run.steps.map((runStep, index) => {

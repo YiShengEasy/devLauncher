@@ -60,6 +60,12 @@ interface WorkflowDefinition {
   description: string;
   enabled: boolean;
   failurePolicy: "stop" | "continue";
+  schedule?: {
+    enabled: boolean;
+    mode?: "interval" | "daily"; // missing mode means interval
+    intervalMinutes: number;
+    dailyTime?: string; // local HH:MM
+  };
   steps: WorkflowStep[];
   createdAt: string;
   updatedAt: string;
@@ -92,6 +98,8 @@ type WorkflowRunStatus =
   | "succeeded"
   | "failed"
   | "cancelled";
+
+type WorkflowRunTrigger = "manual" | "step" | "schedule";
 
 type StepRunStatus =
   | "pending"
