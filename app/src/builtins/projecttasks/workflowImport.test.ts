@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { createWorkflowFromTemplate } from "@/api/workflowTemplates";
 import type { KeyboardConfig, ScriptAction, WorkflowDefinition } from "@/types/actions";
-import { importTaskIntoWorkflow } from "./workflowImport";
+import {
+  importTaskIntoWorkflow,
+  listUserCreatedWorkflows,
+} from "./workflowImport";
 
 const action: ScriptAction = {
   type: "script",
@@ -62,5 +66,17 @@ describe("project task workflow import", () => {
       type: "existing",
       workflowId: existing.id,
     })).toThrow("已经包含该任务");
+  });
+
+  it("only offers user-created workflows as import targets", () => {
+    const official = createWorkflowFromTemplate("release-preflight");
+    expect(listUserCreatedWorkflows([official, existing])).toEqual([existing]);
+    expect(() => importTaskIntoWorkflow({
+      ...config,
+      workflows: [official, existing],
+    }, action, source, {
+      type: "existing",
+      workflowId: official.id,
+    })).toThrow("用户自建");
   });
 });

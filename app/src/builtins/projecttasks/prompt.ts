@@ -38,6 +38,12 @@ export function buildRunmeRefactorPrompt(context: RunmeRefactorPromptContext): s
     "- 命令必须使用相对路径和项目自身的包管理器、缓存、脚本与配置；禁止写入开发者本机绝对路径。",
     "- 不是任务的示例使用 text、json、yaml 等准确语言，或者明确设置 ignore=true。",
     "",
+    "# 持久化项目规则",
+    "- 在项目根目录检查 AGENTS.md。如果不存在则创建；如果已存在则保留原有内容，只增量合并一个“Runme 任务维护规则”章节。",
+    "- 该章节必须约束后续编码助手：每次新增或修改可执行脚本、package script、Makefile target、容器/部署/运维命令时，都要判断它是否是可重复的项目任务；如果是，必须在同一次改动中新增或更新 TASKS.md 中对应的显式 Runme name 代码块。",
+    "- AGENTS.md 还必须说明：TASKS.md 只调用项目现有脚本或包命令，不复制实现；脚本被重命名、删除或参数变更时，必须同步修正任务入口并用 runme list 验证。",
+    "- 将这些规则作为项目长期维护契约，不是本次整理完成后即失效的临时说明。",
+    "",
     "# 改写边界",
     "- 保留 README 现有产品说明、架构说明、安装说明和对用户有价值的内容，不做无关重写。",
     "- 不新增一套与项目现有脚本重复的构建系统；优先调用已经存在的脚本、package scripts、Makefile target 或容器编排文件。",
@@ -50,6 +56,7 @@ export function buildRunmeRefactorPrompt(context: RunmeRefactorPromptContext): s
     `1. 在 ${root} 执行：runme list --json --project ${JSON.stringify(root)}`,
     "2. 列表中只能出现显式命名、真实可执行的任务，不应出现目录结构、接口示例、日志或普通描述。",
     "3. 对每个任务核对来源文件和底层脚本，确认名称能够表达动作和范围。",
-    "4. 输出修改文件清单、任务名称清单、每个任务对应的真实命令，以及未执行的高风险验证项。",
+    "4. 确认 AGENTS.md 已包含持久的 Runme 任务维护规则，后续新增执行脚本时会同步维护 TASKS.md。",
+    "5. 输出修改文件清单、任务名称清单、每个任务对应的真实命令，以及未执行的高风险验证项。",
   ].join("\n");
 }

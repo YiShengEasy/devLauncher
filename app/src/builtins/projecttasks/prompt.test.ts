@@ -13,6 +13,10 @@ describe("buildRunmeRefactorPrompt", () => {
     expect(prompt).toContain("项目根目录：/workspace/example");
     expect(prompt).toContain("```sh { name=dev-start }");
     expect(prompt).toContain("kebab-case");
+    expect(prompt).toContain("持久化项目规则");
+    expect(prompt).toContain("项目根目录检查 AGENTS.md");
+    expect(prompt).toContain("新增或修改可执行脚本");
+    expect(prompt).toContain("同一次改动中新增或更新 TASKS.md");
     expect(prompt).toContain("runme list --json --project \"/workspace/example\"");
   });
 

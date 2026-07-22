@@ -29,6 +29,7 @@ import { buildRunmeRefactorPrompt } from "./prompt";
 import { WorkflowImportDialog } from "./WorkflowImportDialog";
 import {
   importTaskIntoWorkflow,
+  listUserCreatedWorkflows,
   type WorkflowImportTarget,
 } from "./workflowImport";
 import "./projecttasks.css";
@@ -478,7 +479,7 @@ export function ProjectTasksApp() {
       setWorkflowImport({
         task: selectedTask,
         source: discovery,
-        workflows: config.workflows ?? [],
+        workflows: listUserCreatedWorkflows(config.workflows ?? []),
       });
       setWorkflowImportError("");
     } catch (error) {

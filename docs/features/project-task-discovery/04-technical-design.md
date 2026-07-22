@@ -38,7 +38,7 @@ flowchart TB
 
 提示词模板位于 app/src/builtins/projecttasks/prompt.ts，由项目路径、项目名、已扫描文件数和已发现任务数生成。扫描为空时默认展开；扫描有结果时保留“结果不准确”入口。
 
-提示词要求 AI 先从现有 package scripts、Makefile、脚本、容器和 CI 配置核对真实命令，再集中整理 TASKS.md 或 README。它禁止虚构命令、写入本机绝对路径或秘密，也禁止执行发布、部署、迁移、删除和 Git 提交。
+提示词要求 AI 先从现有 package scripts、Makefile、脚本、容器和 CI 配置核对真实命令，再集中整理 TASKS.md 或 README。同时必须创建或增量合并项目根目录的 `AGENTS.md`，持久约束后续编码助手在新增或修改执行脚本时，于同一次改动中同步新增或更新 `TASKS.md` 的显式 Runme 任务。它禁止虚构命令、写入本机绝对路径或秘密，也禁止执行发布、部署、迁移、删除和 Git 提交。
 
 ## 扫描项目历史
 

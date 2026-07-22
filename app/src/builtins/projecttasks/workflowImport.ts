@@ -1,4 +1,5 @@
 import { createWorkflow, createWorkflowStep } from "@/api/workflow";
+import { matchingOfficialTemplateId } from "@/api/workflowTemplates";
 import type {
   KeyboardConfig,
   ScriptAction,
@@ -31,6 +32,12 @@ function containsAction(workflow: WorkflowDefinition, action: ScriptAction): boo
   );
 }
 
+export function listUserCreatedWorkflows(
+  workflows: WorkflowDefinition[],
+): WorkflowDefinition[] {
+  return workflows.filter((workflow) => !matchingOfficialTemplateId(workflow));
+}
+
 export function importTaskIntoWorkflow(
   config: KeyboardConfig,
   action: ScriptAction,
@@ -56,8 +63,9 @@ export function importTaskIntoWorkflow(
     };
   }
 
-  const workflow = workflows.find((item) => item.id === target.workflowId);
-  if (!workflow) throw new Error("选择的工作流已不存在，请重新选择");
+  const workflow = listUserCreatedWorkflows(workflows)
+    .find((item) => item.id === target.workflowId);
+  if (!workflow) throw new Error("请选择一个用户自建的工作流");
   if (containsAction(workflow, action)) {
     throw new Error(`“${workflow.name}”中已经包含该任务`);
   }
