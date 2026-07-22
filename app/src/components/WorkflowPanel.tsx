@@ -29,6 +29,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ActionIcon } from "@/components/ActionIcon";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { planTerminalChunk } from "@/components/workflowTerminal";
+import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 import {
   AddIcon,
   CheckIcon,
@@ -533,6 +534,11 @@ export function WorkflowPanel({
   const [monitorOpen, setMonitorOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const workflowTemplates = useMemo(() => listWorkflowTemplates(), []);
+
+  useEscapeToClose(
+    onClose,
+    !editingStep && !confirmRequest && !manualRequest,
+  );
 
   const workflow = workflows.find((item) => item.id === selectedWorkflowId) ?? null;
   const step = workflow?.steps.find((item) => item.id === selectedStepId) ?? null;

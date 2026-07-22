@@ -24,7 +24,13 @@ use tauri::{
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
+#[cfg(target_os = "macos")]
+const KEYBOARD_GLOBAL_SHORTCUT: &str = "Option+J";
+#[cfg(not(target_os = "macos"))]
 const KEYBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+J";
+#[cfg(target_os = "macos")]
+const PET_GLOBAL_SHORTCUT: &str = "Option+P";
+#[cfg(not(target_os = "macos"))]
 const PET_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+P";
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -177,6 +183,10 @@ pub fn run() {
             builtins::projecttasks::discover_runme_tasks,
             builtins::projecttasks::runme_task_command,
             builtins::projecttasks::toggle_projecttasks_window,
+            builtins::projectconfigs::discover_project_configs,
+            builtins::projectconfigs::read_project_config,
+            builtins::projectconfigs::validate_project_config,
+            builtins::projectconfigs::save_project_config,
             entries::toggle_search_window,
             entries::show_search_window,
             entries::show_pet_window,

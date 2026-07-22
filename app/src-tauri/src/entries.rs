@@ -148,7 +148,7 @@ pub fn restore_main_window(app: &tauri::AppHandle) -> Result<(), String> {
         win.center().map_err(|e| e.to_string())?;
     }
 
-    focus_entry_window(&win)?;
+    win.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
 

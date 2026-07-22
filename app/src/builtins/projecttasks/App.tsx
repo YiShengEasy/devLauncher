@@ -8,6 +8,7 @@ import { loadConfig, saveConfig } from "@/api/config";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { AddIcon, CopyIcon, DeleteIcon, FavoriteIcon, FolderIcon, RetryIcon } from "@/icons";
+import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 import type { ScriptAction } from "@/types/actions";
 import {
   PROJECT_TASK_FAVORITES_STORAGE_KEY,
@@ -25,6 +26,7 @@ import {
 } from "./history";
 import type { ScannedProject } from "./history";
 import { ProjectTerminal, type ProjectTerminalHandle } from "./ProjectTerminal";
+import { ProjectConfigsPanel } from "./ProjectConfigsPanel";
 import { buildRunmeRefactorPrompt } from "./prompt";
 import { WorkflowImportDialog } from "./WorkflowImportDialog";
 import {
@@ -195,6 +197,7 @@ async function copyText(text: string): Promise<void> {
 }
 
 export function ProjectTasksApp() {
+  const [activeView, setActiveView] = useState<"tasks" | "configs">("tasks");
   const [projectHistory, setProjectHistory] = useState<ScannedProject[]>(() =>
     IS_DESIGN_PREVIEW
       ? PREVIEW_PROJECTS
@@ -235,6 +238,10 @@ export function ProjectTasksApp() {
     ),
   );
   const scanSequenceRef = useRef(0);
+
+  useEscapeToClose(() => {
+    void getCurrentWindow().hide();
+  }, IS_TAURI_RUNTIME && !workflowImport);
 
   const categoryCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -464,11 +471,17 @@ export function ProjectTasksApp() {
     }
   };
 
+  const toggleTaskFavoriteFor = (task: RunmeTask) => {
+    if (!discovery) return;
+    const reference = taskFavoriteRef(discovery.root, task);
+    const favorite = isTaskFavorite(favorites, reference);
+    setFavorites((current) => toggleTaskFavorite(current, reference));
+    setStatus(favorite ? `已取消收藏 ${task.name}` : `已收藏并置顶 ${task.name}`);
+  };
+
   const toggleSelectedTaskFavorite = () => {
-    if (!discovery || !selectedTask) return;
-    const favorite = taskFavoriteRef(discovery.root, selectedTask);
-    setFavorites((current) => toggleTaskFavorite(current, favorite));
-    setStatus(selectedTaskFavorite ? "已取消收藏" : "已收藏并置顶");
+    if (!selectedTask) return;
+    toggleTaskFavoriteFor(selectedTask);
   };
 
   const openWorkflowImportDialog = async () => {
@@ -573,21 +586,28 @@ export function ProjectTasksApp() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <BuiltinIcon feature="projecttasks" size={22} />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>项目任务</div>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>{activeView === "tasks" ? "项目任务" : "项目配置"}</div>
             <div style={{ marginTop: 2, fontSize: 10, color: "rgba(220,226,244,0.5)" }}>
-              Runme Markdown 任务发现器
+              {activeView === "tasks" ? "Runme Markdown 任务发现器" : "多环境配置发现、预览与编辑"}
             </div>
           </div>
         </div>
-        <MacWindowControls
-          showPin={IS_TAURI_RUNTIME}
-          onClose={() => getCurrentWindow().hide().catch(() => {})}
-          onMinimize={() => getCurrentWindow().minimize().catch(() => getCurrentWindow().hide().catch(() => {}))}
-          closeTitle="关闭项目任务"
-          minimizeTitle="最小化项目任务"
-        />
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div className="projecttasks-view-switch" role="tablist" aria-label="项目工具">
+            <button type="button" role="tab" aria-selected={activeView === "tasks"} data-active={activeView === "tasks"} onClick={() => setActiveView("tasks")}>任务</button>
+            <button type="button" role="tab" aria-selected={activeView === "configs"} data-active={activeView === "configs"} onClick={() => setActiveView("configs")}>配置</button>
+          </div>
+          <MacWindowControls
+            showPin={IS_TAURI_RUNTIME}
+            onClose={() => getCurrentWindow().hide().catch(() => {})}
+            onMinimize={() => getCurrentWindow().minimize().catch(() => getCurrentWindow().hide().catch(() => {}))}
+            closeTitle="关闭项目工具"
+            minimizeTitle="最小化项目工具"
+          />
+        </div>
       </header>
 
+      {activeView === "tasks" ? (
       <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
         <nav
           className="projecttasks-project-sidebar"
@@ -768,38 +788,49 @@ export function ProjectTasksApp() {
                     && isTaskFavorite(favorites, taskFavoriteRef(discovery.root, task)),
                   );
                   return (
-                    <button
-                      className="projecttasks-task-item"
-                      data-active={active}
-                      key={task.id}
-                      type="button"
-                      onClick={() => setSelectedId(task.id)}
-                      style={{
-                        width: "100%",
-                        display: "block",
-                        marginBottom: 7,
-                        padding: "10px 11px",
-                        borderRadius: 9,
-                        border: `1px solid ${active ? `${categoryColor(task.category)}88` : "rgba(255,255,255,0.08)"}`,
-                        background: active ? "rgba(255,255,255,0.075)" : "rgba(255,255,255,0.035)",
-                        color: "inherit",
-                        textAlign: "left",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 750 }}>
-                          {task.name}
-                        </span>
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0, fontSize: 9, color: riskColor(task.risk) }}>
-                          {favorite && <FavoriteIcon size={11} filled decorative style={{ color: "#fbbf24" }} />}
-                          {RISK_LABELS[task.risk] ?? task.risk}
-                        </span>
-                      </div>
-                      <div style={{ marginTop: 5, display: "flex", gap: 7, color: "rgba(220,226,244,0.46)", fontSize: 9 }}>
-                        <span>{task.file}:{task.line}</span>
-                      </div>
-                    </button>
+                    <div className="projecttasks-task-row" key={task.id}>
+                      <button
+                        className="projecttasks-task-item"
+                        data-active={active}
+                        type="button"
+                        onClick={() => setSelectedId(task.id)}
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          flex: 1,
+                          display: "block",
+                          padding: "10px 42px 10px 11px",
+                          borderRadius: 9,
+                          border: `1px solid ${active ? `${categoryColor(task.category)}88` : "rgba(255,255,255,0.08)"}`,
+                          background: active ? "rgba(255,255,255,0.075)" : "rgba(255,255,255,0.035)",
+                          color: "inherit",
+                          textAlign: "left",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 750 }}>
+                            {task.name}
+                          </span>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexShrink: 0, fontSize: 9, color: riskColor(task.risk) }}>
+                            {RISK_LABELS[task.risk] ?? task.risk}
+                          </span>
+                        </div>
+                        <div style={{ marginTop: 5, display: "flex", gap: 7, color: "rgba(220,226,244,0.46)", fontSize: 9 }}>
+                          <span>{task.file}:{task.line}</span>
+                        </div>
+                      </button>
+                      <button
+                        className="projecttasks-favorite-toggle"
+                        data-favorite={favorite}
+                        type="button"
+                        onClick={() => toggleTaskFavoriteFor(task)}
+                        title={favorite ? "取消收藏" : "收藏并置顶"}
+                        aria-label={favorite ? `取消收藏 ${task.name}` : `收藏并置顶 ${task.name}`}
+                      >
+                        <FavoriteIcon size={13} filled={favorite} decorative />
+                      </button>
+                    </div>
                   );
                 })}
               </section>
@@ -823,9 +854,10 @@ export function ProjectTasksApp() {
                 <button
                   type="button"
                   className="projecttasks-button"
+                  data-favorite={selectedTaskFavorite}
                   style={{
                     ...BUTTON,
-                    borderColor: selectedTaskFavorite ? "rgba(251,191,36,0.48)" : "rgba(255,255,255,0.13)",
+                    borderColor: selectedTaskFavorite ? "rgba(251,191,36,0.28)" : "rgba(255,255,255,0.13)",
                     color: selectedTaskFavorite ? "#fbbf24" : BUTTON.color,
                   }}
                   onClick={toggleSelectedTaskFavorite}
@@ -901,6 +933,9 @@ export function ProjectTasksApp() {
           <ProjectTerminal ref={terminalRef} cwd={discovery?.root ?? ""} />
         </main>
       </div>
+      ) : (
+        <ProjectConfigsPanel initialRoot={root} onRootChange={setRoot} />
+      )}
       {feedback && (
         <div className="projecttasks-feedback" role="status" aria-live="polite">
           {feedback}

@@ -10,9 +10,9 @@ export function getGlobalShortcuts(platform = navigator.platform): GlobalShortcu
   if (isMacPlatform(platform)) {
     return {
       keyboard: "DoubleControl",
-      clipboard: "CommandOrControl+Option+V",
-      search: "CommandOrControl+Option+K",
-      pet: "CommandOrControl+Option+P",
+      clipboard: "Option+V",
+      search: "Option+K",
+      pet: "Option+P",
     };
   }
 
@@ -27,10 +27,10 @@ export function getGlobalShortcuts(platform = navigator.platform): GlobalShortcu
 export function getGlobalShortcutLabels(platform = navigator.platform): GlobalShortcutMap {
   if (isMacPlatform(platform)) {
     return {
-      keyboard: "双击 Ctrl / Cmd+Opt+J",
-      clipboard: "Cmd+Opt+V",
-      search: "Cmd+Opt+K",
-      pet: "Cmd+Opt+P",
+      keyboard: "双击 Ctrl / Option+J",
+      clipboard: "Option+V",
+      search: "Option+K",
+      pet: "Option+P",
     };
   }
 
@@ -41,7 +41,8 @@ export function getGlobalShortcutLabels(platform = navigator.platform): GlobalSh
 }
 
 export function keyIdToShortcut(keyId: string, platform = navigator.platform): string {
-  const keyPart = /^\d$/.test(keyId) ? `Digit${keyId}` : `Key${keyId}`;
+  const normalizedKey = keyId.toUpperCase();
+  const keyPart = /^\d$/.test(normalizedKey) ? `Digit${normalizedKey}` : `Key${normalizedKey}`;
   if (isMacPlatform(platform)) {
     return `CommandOrControl+Option+${keyPart}`;
   }

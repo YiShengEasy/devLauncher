@@ -465,6 +465,57 @@ export default function App() {
   }, [config, activePageIndex, refreshPermissionIssue, showNotice]);
 
   useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (
+        event.repeat
+        || event.isComposing
+        || event.metaKey
+        || event.ctrlKey
+        || event.altKey
+        || showSettings
+        || showWorkflows
+        || bindingKey
+        || confirmRequest
+      ) return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.isContentEditable
+        || target?.closest("input, textarea, select, [contenteditable='true']")
+      ) return;
+
+      const normalizedKey = event.key.toUpperCase();
+      if (!/^[A-Z0-9]$/.test(normalizedKey)) return;
+      const keyId = normalizedKey as KeyId;
+
+      const state = useKeyboardStore.getState();
+      const action = state.config?.pages[state.activePageIndex]?.keys[keyId]?.action;
+      if (!action) return;
+
+      event.preventDefault();
+      void handleKeyClick(keyId);
+    };
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [bindingKey, confirmRequest, handleKeyClick, showSettings, showWorkflows]);
+
+  useEffect(() => {
+    const focusKeyboardPanel = () => {
+      if (showSettings || showWorkflows || bindingKey || confirmRequest) return;
+      const activeElement = document.activeElement as HTMLElement | null;
+      if (activeElement?.closest("input, textarea, select, [contenteditable='true']")) return;
+      window.requestAnimationFrame(() => {
+        rootPanelRef.current?.focus({ preventScroll: true });
+      });
+    };
+
+    window.addEventListener("focus", focusKeyboardPanel);
+    if (document.hasFocus()) focusKeyboardPanel();
+    return () => window.removeEventListener("focus", focusKeyboardPanel);
+  }, [bindingKey, confirmRequest, showSettings, showWorkflows]);
+
+  useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== "Tab" || e.repeat) return;
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
@@ -488,6 +539,7 @@ export default function App() {
     let cancelled = false;
 
     const setup = async () => {
+      const unavailableShortcuts: string[] = [];
       const previousShortcuts = registeredFrontendShortcutsRef.current;
       registeredFrontendShortcutsRef.current = [];
       if (previousShortcuts.length > 0) {
@@ -528,6 +580,7 @@ export default function App() {
           registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, shortcut];
         } catch (err) {
           console.warn(`Global shortcut ${shortcut} unavailable:`, err);
+          unavailableShortcuts.push(`${keyId} (${shortcut})`);
         }
       }
 
@@ -542,6 +595,7 @@ export default function App() {
           registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, GLOBAL_SHORTCUTS.clipboard];
         } catch (err) {
           console.warn(`${GLOBAL_SHORTCUTS.clipboard} shortcut unavailable:`, err);
+          unavailableShortcuts.push(`剪贴板 (${GLOBAL_SHORTCUTS.clipboard})`);
         }
       }
 
@@ -556,7 +610,12 @@ export default function App() {
           registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, GLOBAL_SHORTCUTS.search];
         } catch (err) {
           console.warn(`${GLOBAL_SHORTCUTS.search} search shortcut unavailable:`, err);
+          unavailableShortcuts.push(`搜索 (${GLOBAL_SHORTCUTS.search})`);
         }
+      }
+
+      if (!cancelled && unavailableShortcuts.length > 0) {
+        showNotice(`快捷键被系统或其他应用占用：${unavailableShortcuts.join("、")}`);
       }
 
     };
@@ -646,6 +705,7 @@ export default function App() {
       {/* Glass panel */}
       <div
         ref={rootPanelRef}
+        tabIndex={-1}
         className="glass entry-mode-shell"
         style={{
           width: 900, borderRadius: 16,
@@ -658,6 +718,7 @@ export default function App() {
           border: `1px solid ${theme.borderColor}`,
           boxShadow: "var(--theme-window-shadow, 0 2px 8px rgba(0,0,0,0.10))",
           position: "relative",
+          outline: "none",
         }}
       >
         {/* Header */}
@@ -672,7 +733,7 @@ export default function App() {
             cursor: "move",
           }}
         >
-          <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div data-tauri-drag-region style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
             <button
               ref={petModeButtonRef}
               title="Keyboard mode"
@@ -714,11 +775,21 @@ export default function App() {
             <span data-tauri-drag-region style={{ color: "rgba(222,227,238,0.58)", fontSize: 10, fontWeight: 500, letterSpacing: 0, pointerEvents: "none" }}>
               {"\u4e00\u952e\u542f\u52a8\u4f60\u7684\u5f00\u53d1\u5de5\u4f5c\u6d41"}
             </span>
-            {!isMacPlatform() && (
-              <span data-tauri-drag-region style={{ color: "rgba(222,227,238,0.46)", fontSize: 9, fontWeight: 500, letterSpacing: 0, pointerEvents: "none", whiteSpace: "nowrap" }}>
-                · 双击 Ctrl 唤起 · Alt + 字母/数字执行
-              </span>
-            )}
+            <span
+              data-tauri-drag-region
+              style={{
+                color: "rgba(222,227,238,0.5)",
+                fontSize: 9,
+                fontWeight: 500,
+                letterSpacing: 0,
+                pointerEvents: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {isMacPlatform()
+                ? "双击 Ctrl 唤起 · 单按字母/数字执行 · ⌘⌥ + 字母/数字后台执行"
+                : "双击 Ctrl 唤起 · 单按字母/数字执行 · Alt + 字母/数字后台执行"}
+            </span>
           </div>
 
           <div style={{ display: "flex", gap: 9, alignItems: "center" }}>

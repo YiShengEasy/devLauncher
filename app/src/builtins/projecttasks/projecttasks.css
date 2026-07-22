@@ -32,6 +32,431 @@
   background: rgba(18, 22, 30, 0.9);
 }
 
+.projecttasks-view-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.projecttasks-view-switch button {
+  height: 27px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(225, 231, 242, 0.46);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.projecttasks-view-switch button[data-active="true"] {
+  background: rgba(45, 212, 191, 0.14);
+  color: #9ff8e8;
+}
+
+.projectconfigs-layout {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.projectconfigs-projects {
+  width: 224px;
+  flex: 0 0 224px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.projectconfigs-files {
+  width: 330px;
+  flex: 0 0 330px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.projectconfigs-sidebar-heading {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3px 0 6px;
+  color: rgba(239, 243, 252, 0.78);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.projectconfigs-sidebar-heading b {
+  margin-left: 5px;
+  color: rgba(220, 226, 244, 0.36);
+  font-size: 9px;
+}
+
+.projectconfigs-project-list,
+.projectconfigs-file-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 6px;
+}
+
+.projectconfigs-project,
+.projectconfigs-file {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 6px;
+  padding: 9px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(236, 241, 250, 0.72);
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectconfigs-file-row,
+.projecttasks-task-row {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.projectconfigs-file-row .projectconfigs-file {
+  margin-bottom: 0;
+  padding-right: 42px;
+}
+
+.projecttasks-favorite-toggle {
+  width: 28px;
+  height: 28px;
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: rgba(220, 226, 244, 0.3);
+  cursor: pointer;
+}
+
+.projecttasks-favorite-toggle:hover {
+  background: rgba(251, 191, 36, 0.06);
+  color: rgba(251, 191, 36, 0.72);
+}
+
+.projecttasks-favorite-toggle[data-favorite="true"] {
+  color: #fbbf24;
+}
+
+.projectconfigs-actions button[data-favorite="true"] {
+  border-color: rgba(251, 191, 36, 0.28);
+  color: #fbbf24;
+}
+
+.projectconfigs-project:hover,
+.projectconfigs-file:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.projectconfigs-project[data-active="true"],
+.projectconfigs-file[data-active="true"] {
+  border-color: rgba(45, 212, 191, 0.28);
+  background: rgba(20, 184, 166, 0.1);
+}
+
+.projectconfigs-project > span,
+.projectconfigs-file > span {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.projectconfigs-project strong,
+.projectconfigs-file strong {
+  overflow: hidden;
+  color: rgba(244, 247, 253, 0.84);
+  font-size: 10.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectconfigs-project small,
+.projectconfigs-file small {
+  overflow: hidden;
+  color: rgba(220, 226, 244, 0.34);
+  font-size: 8.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectconfigs-file em {
+  color: rgba(220, 226, 244, 0.46);
+  font-size: 8.5px;
+  font-style: normal;
+}
+
+.projectconfigs-file > b {
+  flex-shrink: 0;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: rgba(251, 191, 36, 0.12);
+  color: #fbbf24;
+  font-size: 7.5px;
+}
+
+.projectconfigs-environments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 6px 2px 7px;
+}
+
+.projectconfigs-environments button {
+  height: 25px;
+  padding: 0 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.025);
+  color: rgba(220, 226, 244, 0.5);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.projectconfigs-environments button[data-active="true"] {
+  border-color: rgba(45, 212, 191, 0.38);
+  background: rgba(20, 184, 166, 0.1);
+  color: #9ff8e8;
+}
+
+.projectconfigs-environments button[data-production="true"][data-active="true"] {
+  border-color: rgba(251, 113, 133, 0.42);
+  background: rgba(244, 63, 94, 0.1);
+  color: #fda4af;
+}
+
+.projectconfigs-editor {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px 14px;
+}
+
+.projectconfigs-editor-header {
+  min-height: 48px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+}
+
+.projectconfigs-editor-header h2 {
+  margin: 0;
+  color: rgba(248, 250, 255, 0.92);
+  font-size: 16px;
+}
+
+.projectconfigs-editor-header p {
+  margin: 5px 0 0;
+  color: rgba(220, 226, 244, 0.42);
+  font-size: 9.5px;
+}
+
+.projectconfigs-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.projectconfigs-actions button,
+.projectconfigs-save-dialog button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(241, 245, 252, 0.72);
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.projectconfigs-actions button.primary,
+.projectconfigs-save-dialog button.primary {
+  border-color: rgba(45, 212, 191, 0.44);
+  background: rgba(20, 184, 166, 0.16);
+  color: #9ff8e8;
+}
+
+.projectconfigs-actions button:disabled,
+.projectconfigs-save-dialog button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.projectconfigs-sensitive-note {
+  margin-bottom: 9px;
+  padding: 8px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.18);
+  border-radius: 7px;
+  background: rgba(251, 191, 36, 0.055);
+  color: rgba(253, 230, 138, 0.68);
+  font-size: 9px;
+}
+
+.projectconfigs-preview,
+.projectconfigs-textarea {
+  flex: 1;
+  min-height: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 9px;
+  background: rgba(3, 6, 12, 0.52);
+  color: #c4f4e8;
+  font: 11px/1.6 "SFMono-Regular", Consolas, monospace;
+  tab-size: 2;
+  white-space: pre;
+}
+
+.projectconfigs-textarea {
+  width: 100%;
+  resize: none;
+  outline: none;
+}
+
+.projectconfigs-textarea:focus {
+  border-color: rgba(45, 212, 191, 0.38);
+}
+
+.projectconfigs-status {
+  min-height: 25px;
+  padding-top: 9px;
+  color: rgba(220, 226, 244, 0.44);
+  font-size: 9.5px;
+}
+
+.projectconfigs-empty {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 9px;
+  color: rgba(220, 226, 244, 0.3);
+}
+
+.projectconfigs-empty strong { font-size: 12px; }
+.projectconfigs-empty span { font-size: 9.5px; }
+
+.projectconfigs-save-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(2, 4, 8, 0.64);
+  backdrop-filter: blur(7px);
+}
+
+.projectconfigs-save-dialog {
+  width: min(820px, calc(100vw - 48px));
+  max-height: min(620px, calc(100vh - 110px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: #121721;
+}
+
+.projectconfigs-save-dialog > header,
+.projectconfigs-save-dialog > footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.projectconfigs-save-dialog > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.projectconfigs-save-dialog > header strong { font-size: 12px; }
+.projectconfigs-save-dialog > header span,
+.projectconfigs-save-dialog > footer > span { color: rgba(220, 226, 244, 0.4); font-size: 9px; }
+
+.projectconfigs-save-dialog > footer {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 0;
+}
+
+.projectconfigs-save-dialog > footer > div { display: flex; gap: 7px; }
+
+.projectconfigs-diff {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.projectconfigs-diff > div {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  background: #0d1119;
+}
+
+.projectconfigs-diff b { margin-bottom: 8px; color: rgba(238, 243, 251, 0.68); font-size: 9px; }
+.projectconfigs-diff pre { flex: 1; min-height: 180px; margin: 0; overflow: auto; color: rgba(215, 233, 229, 0.72); font: 10px/1.55 "SFMono-Regular", Consolas, monospace; white-space: pre; }
+
+.projectconfigs-production-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-top: 1px solid rgba(251, 113, 133, 0.18);
+  background: rgba(244, 63, 94, 0.065);
+  color: #fda4af;
+  font-size: 9.5px;
+}
+
 .projecttasks-terminal {
   height: clamp(190px, 30vh, 250px);
   min-height: 170px;
@@ -87,6 +512,12 @@
   background: #2dd4bf;
 }
 
+.projecttasks-terminal-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .projecttasks-terminal-clear {
   height: 24px;
   padding: 0 7px;
@@ -101,6 +532,11 @@
 .projecttasks-terminal-clear:hover {
   background: rgba(255, 255, 255, 0.07);
   color: rgba(245, 247, 252, 0.78);
+}
+
+.projecttasks-terminal-clear:disabled {
+  cursor: default;
+  opacity: 0.4;
 }
 
 .projecttasks-terminal-body {
@@ -442,6 +878,7 @@
 
 .projecttasks-project-remove:focus-visible,
 .projecttasks-icon-button:focus-visible,
+.projecttasks-favorite-toggle:focus-visible,
 .projecttasks-button:focus-visible,
 .projecttasks-filter-tab:focus-visible,
 .projecttasks-task-item:focus-visible {

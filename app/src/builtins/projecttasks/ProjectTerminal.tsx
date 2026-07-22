@@ -9,10 +9,29 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { planTerminalChunk } from "@/components/workflowTerminal";
 import { terminalChangeDirectoryCommand } from "./terminalCommand";
+import {
+  PROJECT_TERMINAL_SESSIONS_STORAGE_KEY,
+  findProjectTerminalSession,
+  parseProjectTerminalSessions,
+  removeProjectTerminalSession,
+  upsertProjectTerminalSession,
+} from "./projectTerminalSession";
 import "@xterm/xterm/css/xterm.css";
 
 type ShellSpec = [string, string[]];
+
+interface TerminalSnapshot {
+  data: string;
+  offset: number;
+  active: boolean;
+}
+
+interface TerminalDataChunk {
+  offset: number;
+  data: string;
+}
 
 export interface ProjectTerminalHandle {
   run: (command: string) => Promise<void>;
@@ -32,6 +51,26 @@ function toBase64(value: string): string {
   return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
 }
 
+function decodeBase64(value: string): Uint8Array {
+  return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+function loadStoredSessions() {
+  return parseProjectTerminalSessions(
+    localStorage.getItem(PROJECT_TERMINAL_SESSIONS_STORAGE_KEY),
+  );
+}
+
+function rememberSession(cwd: string, sessionId: string) {
+  const sessions = upsertProjectTerminalSession(loadStoredSessions(), { cwd, sessionId });
+  localStorage.setItem(PROJECT_TERMINAL_SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+}
+
+function forgetSession(cwd: string, sessionId: string) {
+  const sessions = removeProjectTerminalSession(loadStoredSessions(), cwd, sessionId);
+  localStorage.setItem(PROJECT_TERMINAL_SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+}
+
 function shellFallback(): ShellSpec {
   return navigator.platform.startsWith("Win")
     ? ["powershell.exe", []]
@@ -45,6 +84,8 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
     const sessionIdRef = useRef<string | null>(null);
     const readyRef = useRef(false);
     const [ready, setReady] = useState(false);
+    const [starting, setStarting] = useState(false);
+    const [generation, setGeneration] = useState(0);
 
     useImperativeHandle(ref, () => ({
       async run(command: string) {
@@ -67,7 +108,6 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
       const container = containerRef.current;
       if (!container || !cwd.trim()) return;
 
-      const sessionId = makeSessionId();
       const terminal = new Terminal({
         fontSize: 12,
         lineHeight: 1.2,
@@ -105,16 +145,75 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
       fitAddon.fit();
 
       terminalRef.current = terminal;
-      sessionIdRef.current = sessionId;
+      sessionIdRef.current = null;
       readyRef.current = false;
       setReady(false);
+      setStarting(true);
 
       let disposed = false;
-      let unlistenData: (() => void) | null = null;
-      let unlistenExit: (() => void) | null = null;
+      let initialized = false;
+      let currentOffset = 0;
+      let pending: TerminalDataChunk[] = [];
+      let listenerDisposers: Array<() => void> = [];
+
+      const setTerminalReady = (value: boolean) => {
+        readyRef.current = value;
+        setReady(value);
+        setStarting(false);
+      };
+
+      const appendChunk = (sessionId: string, chunk: TerminalDataChunk) => {
+        if (sessionIdRef.current !== sessionId) return;
+        const bytes = decodeBase64(chunk.data);
+        const plan = planTerminalChunk(currentOffset, chunk.offset, bytes.length);
+        if (plan.gap) {
+          pending.push(chunk);
+          return;
+        }
+        if (plan.skipBytes < bytes.length) terminal.write(bytes.slice(plan.skipBytes));
+        currentOffset = plan.nextOffset;
+      };
+
+      const flushPending = (sessionId: string) => {
+        pending.sort((left, right) => left.offset - right.offset);
+        const chunks = pending;
+        pending = [];
+        chunks.forEach((chunk) => appendChunk(sessionId, chunk));
+      };
+
+      const clearListeners = () => {
+        listenerDisposers.forEach((dispose) => dispose());
+        listenerDisposers = [];
+      };
+
+      const subscribe = async (sessionId: string): Promise<boolean> => {
+        const listeners = await Promise.all([
+          listen<TerminalDataChunk>(`terminal-data-v2-${sessionId}`, (event) => {
+            if (sessionIdRef.current !== sessionId) return;
+            if (!initialized) {
+              pending.push(event.payload);
+              return;
+            }
+            appendChunk(sessionId, event.payload);
+          }),
+          listen(`terminal-exit-${sessionId}`, () => {
+            if (sessionIdRef.current !== sessionId) return;
+            forgetSession(cwd, sessionId);
+            setTerminalReady(false);
+            terminal.write("\r\n\x1b[90m[终端进程已退出]\x1b[0m\r\n");
+          }),
+        ]);
+        if (disposed || sessionIdRef.current !== sessionId) {
+          listeners.forEach((dispose) => dispose());
+          return false;
+        }
+        listenerDisposers.push(...listeners);
+        return true;
+      };
 
       const inputSubscription = terminal.onData((data) => {
-        if (!readyRef.current) return;
+        const sessionId = sessionIdRef.current;
+        if (!sessionId || !readyRef.current) return;
         invoke("terminal_write", {
           sessionId,
           data: toBase64(data),
@@ -123,7 +222,8 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
 
       const resizeObserver = new ResizeObserver(() => {
         fitAddon.fit();
-        if (!readyRef.current) return;
+        const sessionId = sessionIdRef.current;
+        if (!sessionId || !readyRef.current) return;
         invoke("terminal_resize", {
           sessionId,
           cols: terminal.cols,
@@ -134,22 +234,46 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
 
       void (async () => {
         try {
-          [unlistenData, unlistenExit] = await Promise.all([
-            listen<string>(`terminal-data-${sessionId}`, (event) => {
-              const bytes = Uint8Array.from(atob(event.payload), (character) => character.charCodeAt(0));
-              terminal.write(bytes);
-            }),
-            listen(`terminal-exit-${sessionId}`, () => {
-              readyRef.current = false;
-              setReady(false);
-              terminal.write("\r\n\x1b[90m[终端进程已退出]\x1b[0m\r\n");
-            }),
-          ]);
-          if (disposed) {
-            unlistenData();
-            unlistenExit();
-            return;
+          const storedSessionId = findProjectTerminalSession(loadStoredSessions(), cwd);
+          if (storedSessionId) {
+            sessionIdRef.current = storedSessionId;
+            if (await subscribe(storedSessionId)) {
+              try {
+                const snapshot = await invoke<TerminalSnapshot>("terminal_snapshot", {
+                  sessionId: storedSessionId,
+                });
+                if (disposed || sessionIdRef.current !== storedSessionId) return;
+                const bytes = decodeBase64(snapshot.data);
+                if (bytes.length > 0) terminal.write(bytes);
+                currentOffset = snapshot.offset;
+                initialized = true;
+                flushPending(storedSessionId);
+                if (snapshot.active) {
+                  setTerminalReady(true);
+                  void invoke("terminal_resize", {
+                    sessionId: storedSessionId,
+                    cols: terminal.cols,
+                    rows: terminal.rows,
+                  }).catch(() => {});
+                  terminal.focus();
+                  return;
+                }
+              } catch {
+                // The backend no longer has this session; create a fresh terminal below.
+              }
+              clearListeners();
+              forgetSession(cwd, storedSessionId);
+              terminal.write("\r\n\x1b[90m[原终端会话已结束，正在新建终端]\x1b[0m\r\n");
+            }
           }
+
+          if (disposed) return;
+          const sessionId = makeSessionId();
+          sessionIdRef.current = sessionId;
+          initialized = false;
+          currentOffset = 0;
+          pending = [];
+          if (!(await subscribe(sessionId))) return;
           const [cmd, args] = await invoke<ShellSpec>("get_default_shell").catch(shellFallback);
           if (disposed) return;
           await invoke("terminal_spawn", {
@@ -160,6 +284,7 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
             rows: terminal.rows,
             cwd,
           });
+          rememberSession(cwd, sessionId);
           if (disposed) return;
           const changeDirectoryCommand = terminalChangeDirectoryCommand(
             cwd,
@@ -170,11 +295,13 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
             data: toBase64(`${changeDirectoryCommand}\r`),
           });
           if (disposed) return;
-          readyRef.current = true;
-          setReady(true);
+          initialized = true;
+          flushPending(sessionId);
+          setTerminalReady(true);
           terminal.focus();
         } catch (error) {
           if (!disposed) {
+            setTerminalReady(false);
             terminal.write(`\r\n\x1b[31m[终端启动失败] ${String(error)}\x1b[0m\r\n`);
           }
         }
@@ -184,16 +311,31 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
         disposed = true;
         readyRef.current = false;
         setReady(false);
+        setStarting(false);
         resizeObserver.disconnect();
         inputSubscription.dispose();
-        unlistenData?.();
-        unlistenExit?.();
-        invoke("terminal_kill", { sessionId }).catch(() => {});
+        clearListeners();
         terminal.dispose();
         terminalRef.current = null;
-        if (sessionIdRef.current === sessionId) sessionIdRef.current = null;
+        sessionIdRef.current = null;
       };
-    }, [cwd]);
+    }, [cwd, generation]);
+
+    const stopTerminal = async () => {
+      const sessionId = sessionIdRef.current;
+      if (!sessionId) return;
+      try {
+        await invoke("terminal_kill", { sessionId });
+        forgetSession(cwd, sessionId);
+        sessionIdRef.current = null;
+        readyRef.current = false;
+        setReady(false);
+        setStarting(false);
+        terminalRef.current?.write("\r\n\x1b[90m[终端已手动结束]\x1b[0m\r\n");
+      } catch (error) {
+        terminalRef.current?.write(`\r\n\x1b[31m[终端结束失败] ${String(error)}\x1b[0m\r\n`);
+      }
+    };
 
     return (
       <section className="projecttasks-terminal" aria-label="项目终端">
@@ -203,16 +345,29 @@ export const ProjectTerminal = forwardRef<ProjectTerminalHandle, ProjectTerminal
             <strong>终端</strong>
             <span title={cwd}>{cwd || "未选择项目"}</span>
           </div>
-          <button
-            type="button"
-            className="projecttasks-terminal-clear"
-            onClick={() => {
-              terminalRef.current?.clear();
-              terminalRef.current?.focus();
-            }}
-          >
-            清空
-          </button>
+          <div className="projecttasks-terminal-controls">
+            <button
+              type="button"
+              className="projecttasks-terminal-clear"
+              onClick={() => {
+                terminalRef.current?.clear();
+                terminalRef.current?.focus();
+              }}
+            >
+              清空
+            </button>
+            <button
+              type="button"
+              className="projecttasks-terminal-clear"
+              disabled={starting}
+              onClick={() => {
+                if (ready) void stopTerminal();
+                else setGeneration((value) => value + 1);
+              }}
+            >
+              {starting ? "启动中" : ready ? "结束" : "新建"}
+            </button>
+          </div>
         </header>
         <div ref={containerRef} className="projecttasks-terminal-body" />
       </section>
