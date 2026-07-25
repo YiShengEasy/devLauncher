@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run build && npm run build:widget",
     "frontendDist": "../dist"
   },
   "app": {
@@ -231,9 +231,23 @@
       "csp": null
     }
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["devlauncher"]
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "files": {
+        "PlugIns/DevLauncherWidget.appex": "target/widget-derived/Build/Products/Release/DevLauncherWidget.appex",
+        "MacOS/DevLauncherWidgetReloader": "target/widget-derived/DevLauncherWidgetReloader"
+      },
+      "infoPlist": "macos-widget-info.plist"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

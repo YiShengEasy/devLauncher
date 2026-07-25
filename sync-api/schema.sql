@@ -15,8 +15,12 @@ create table if not exists sync_snapshots (
   content_hash text not null,
   keyboard_config jsonb not null,
   quickmemory_data jsonb not null,
+  projecttasks_data jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+
+alter table sync_snapshots
+  add column if not exists projecttasks_data jsonb not null default '{}'::jsonb;
 
 create index if not exists sync_snapshots_key_created_idx
   on sync_snapshots(sync_key_id, created_at desc);

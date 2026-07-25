@@ -34,6 +34,7 @@ import {
   listUserCreatedWorkflows,
   type WorkflowImportTarget,
 } from "./workflowImport";
+import { loadProjectTasksData, updateProjectTasksData } from "./storage";
 import "./projecttasks.css";
 
 interface RunmeTask {
@@ -230,8 +231,10 @@ export function ProjectTasksApp() {
   const [workflowImportBusy, setWorkflowImportBusy] = useState(false);
   const [workflowImportError, setWorkflowImportError] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [storageLoaded, setStorageLoaded] = useState(IS_DESIGN_PREVIEW);
   const terminalRef = useRef<ProjectTerminalHandle>(null);
   const feedbackTimerRef = useRef<number | null>(null);
+  const initialScanStartedRef = useRef(false);
   const discoveryCacheRef = useRef(
     new Map<string, RunmeDiscovery>(
       IS_DESIGN_PREVIEW ? [[PREVIEW_DISCOVERY.root, PREVIEW_DISCOVERY]] : [],
@@ -305,8 +308,23 @@ export function ProjectTasksApp() {
   );
 
   useEffect(() => {
-    localStorage.setItem(PROJECT_TASK_FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
-  }, [favorites]);
+    if (IS_DESIGN_PREVIEW) return;
+    let cancelled = false;
+    loadProjectTasksData()
+      .then((data) => {
+        if (cancelled) return;
+        setProjectHistory(data.projects);
+        setFavorites(data.taskFavorites);
+        if (data.lastRoot) setRoot(data.lastRoot);
+      })
+      .catch((error) => setStatus(`读取任务记录失败：${String(error)}`))
+      .finally(() => {
+        if (!cancelled) setStorageLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current);
@@ -341,6 +359,7 @@ export function ProjectTasksApp() {
         lastScannedAt: Date.now(),
       });
       localStorage.setItem(PROJECT_HISTORY_STORAGE_KEY, JSON.stringify(next));
+      void updateProjectTasksData({ projects: next, lastRoot: result.root });
       return next;
     });
   };
@@ -388,6 +407,7 @@ export function ProjectTasksApp() {
       setScanningRoot(null);
       applyDiscovery(cached);
       localStorage.setItem(LEGACY_ROOT_STORAGE_KEY, cached.root);
+      void updateProjectTasksData({ lastRoot: cached.root });
       setStatus(`已切换到 ${cached.projectName}；点击刷新可重新扫描文档`);
       return;
     }
@@ -395,12 +415,13 @@ export function ProjectTasksApp() {
   };
 
   useEffect(() => {
-    if (IS_DESIGN_PREVIEW) return;
-    const storedRoot = projectHistory[0]?.root;
+    if (IS_DESIGN_PREVIEW || !storageLoaded || initialScanStartedRef.current) return;
+    const storedRoot = root || projectHistory[0]?.root;
     if (!storedRoot) return;
+    initialScanStartedRef.current = true;
     setRoot(storedRoot);
     void scanProject(storedRoot, true);
-  }, []);
+  }, [storageLoaded, projectHistory, root]);
 
   const removeScannedProject = (projectRoot: string) => {
     discoveryCacheRef.current.delete(projectRoot);
@@ -418,6 +439,10 @@ export function ProjectTasksApp() {
           localStorage.removeItem(LEGACY_ROOT_STORAGE_KEY);
         }
       }
+      void updateProjectTasksData({
+        projects: next,
+        lastRoot: next[0]?.root ?? "",
+      });
       return next;
     });
     if (root === projectRoot || discovery?.root === projectRoot) {
@@ -475,7 +500,12 @@ export function ProjectTasksApp() {
     if (!discovery) return;
     const reference = taskFavoriteRef(discovery.root, task);
     const favorite = isTaskFavorite(favorites, reference);
-    setFavorites((current) => toggleTaskFavorite(current, reference));
+    setFavorites((current) => {
+      const next = toggleTaskFavorite(current, reference);
+      localStorage.setItem(PROJECT_TASK_FAVORITES_STORAGE_KEY, JSON.stringify(next));
+      void updateProjectTasksData({ taskFavorites: next });
+      return next;
+    });
     setStatus(favorite ? `已取消收藏 ${task.name}` : `已收藏并置顶 ${task.name}`);
   };
 

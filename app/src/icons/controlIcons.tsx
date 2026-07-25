@@ -97,6 +97,17 @@ export function CopyIcon(props: IconProps) {
   );
 }
 
+export function PasteIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.copy)}>
+      <path d="M9 5.5h6" />
+      <path d="M9.5 4h5A1.5 1.5 0 0 1 16 5.5V7H8V5.5A1.5 1.5 0 0 1 9.5 4Z" />
+      <path d="M7 6H5.8A1.8 1.8 0 0 0 4 7.8v11.4A1.8 1.8 0 0 0 5.8 21h12.4a1.8 1.8 0 0 0 1.8-1.8V7.8A1.8 1.8 0 0 0 18.2 6H17" />
+      <path d="M8 12h8M8 16h5" opacity={0.7} />
+    </IconBase>
+  );
+}
+
 export function DownloadIcon(props: IconProps) {
   return (
     <IconBase {...withIconColor(props, iconColors.download)}>

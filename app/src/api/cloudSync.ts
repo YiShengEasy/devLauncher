@@ -12,6 +12,7 @@ export interface CloudSyncSnapshotMeta {
 export interface CloudSyncStatus {
   baseUrl: string;
   hasSyncKey: boolean;
+  syncKey?: string | null;
   latestSnapshot?: CloudSyncSnapshotMeta | null;
 }
 
@@ -29,6 +30,10 @@ export interface CloudSyncRestoreResult {
 
 export function getCloudSyncStatus(): Promise<CloudSyncStatus> {
   return invoke<CloudSyncStatus>("sync_get_status");
+}
+
+export function getLocalCloudSyncStatus(): Promise<CloudSyncStatus> {
+  return invoke<CloudSyncStatus>("sync_get_local_status");
 }
 
 export function generateCloudSyncKey(baseUrl: string, label?: string): Promise<CloudSyncGeneratedKey> {

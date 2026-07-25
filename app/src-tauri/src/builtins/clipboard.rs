@@ -208,6 +208,22 @@ fn position_clipboard_dock(
     win.set_position(position).map_err(|e| e.to_string())
 }
 
+#[cfg(target_os = "macos")]
+fn show_clipboard_dock(win: &tauri::WebviewWindow) -> Result<(), String> {
+    use objc2_app_kit::NSWindow;
+
+    let ns_window = win.ns_window().map_err(|e| e.to_string())? as *mut NSWindow;
+    let ns_window =
+        (unsafe { ns_window.as_ref() }).ok_or_else(|| "clipboard ns_window is null".to_string())?;
+    ns_window.orderFrontRegardless();
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_clipboard_dock(win: &tauri::WebviewWindow) -> Result<(), String> {
+    win.show().map_err(|e| e.to_string())
+}
+
 // -----------------------------------------------
 // Setup: manage state + spawn polling thread
 // -----------------------------------------------
@@ -388,7 +404,7 @@ pub fn toggle_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
         } else {
             apply_pin_state(&app, "clipboard");
             position_clipboard_dock(&app, &win)?;
-            win.show().map_err(|e| e.to_string())?;
+            show_clipboard_dock(&win)?;
             win.set_focus().map_err(|e| e.to_string())?;
             let _ = app.emit_to("clipboard", "clipboard-refresh", ());
         }
@@ -401,7 +417,7 @@ pub fn show_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("clipboard") {
         apply_pin_state(&app, "clipboard");
         position_clipboard_dock(&app, &win)?;
-        win.show().map_err(|e| e.to_string())?;
+        show_clipboard_dock(&win)?;
         win.unminimize().map_err(|e| e.to_string())?;
         win.set_focus().map_err(|e| e.to_string())?;
         let _ = app.emit_to("clipboard", "clipboard-refresh", ());

@@ -648,6 +648,27 @@ fn execute_action(app: &AppHandle, action: &Action) -> Result<(), String> {
     actions::execute_action_value(app, value, terminal_state.inner())
 }
 
+pub(crate) fn execute_bound_action(app: &AppHandle, action: &Action) -> Result<(), String> {
+    if let Action::Workflow { workflow_id, .. } = action {
+        let config = config::load_config(app.clone())?;
+        let workflow = config
+            .workflows
+            .into_iter()
+            .find(|workflow| workflow.id == *workflow_id)
+            .ok_or_else(|| "workflow not found".to_string())?;
+        let state = app.state::<WorkflowEngineState>();
+        start_workflow_definition(
+            app.clone(),
+            state.inner.clone(),
+            workflow,
+            WorkflowRunTrigger::Manual,
+        )?;
+        return Ok(());
+    }
+
+    execute_action(app, action)
+}
+
 fn script_command_spec(action: &Action) -> Result<(String, Vec<String>), String> {
     let Action::Script {
         shell,

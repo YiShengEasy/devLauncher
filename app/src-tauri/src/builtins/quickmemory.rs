@@ -21,6 +21,8 @@ pub struct QuickMemoryData {
     pub order: HashMap<String, Vec<String>>,
     #[serde(default)]
     pub copy_counts: HashMap<String, u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projecttasks_data: Option<crate::builtins::projecttasks::ProjectTasksData>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -158,6 +160,7 @@ mod tests {
                 vec!["custom-ai-chat".into()],
             )]),
             copy_counts: std::collections::HashMap::from([("custom-ai-chat".into(), 2)]),
+            projecttasks_data: None,
         };
 
         write_quickmemory_data_to_path(&path, &data).expect("write should succeed");

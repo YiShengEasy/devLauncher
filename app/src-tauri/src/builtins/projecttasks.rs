@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,6 +10,75 @@ use crate::window_pinning;
 
 const MAX_MARKDOWN_FILES: usize = 512;
 const MAX_MARKDOWN_BYTES: u64 = 1024 * 1024;
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTasksData {
+    #[serde(default)]
+    pub projects: Vec<ScannedProject>,
+    #[serde(default)]
+    pub task_favorites: Vec<FavoriteTaskRef>,
+    #[serde(default)]
+    pub config_favorites: Vec<FavoriteConfigRef>,
+    #[serde(default)]
+    pub last_root: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannedProject {
+    pub root: String,
+    pub name: String,
+    pub task_count: u32,
+    pub scanned_files: u32,
+    pub last_scanned_at: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FavoriteTaskRef {
+    pub root: String,
+    pub file: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct FavoriteConfigRef {
+    pub root: String,
+    pub path: String,
+}
+
+pub fn projecttasks_data_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("projecttasks_data.json")
+}
+
+pub fn read_projecttasks_data_from_path(path: &Path) -> Result<ProjectTasksData, String> {
+    if !path.exists() {
+        return Ok(ProjectTasksData::default());
+    }
+    let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&content).map_err(|e| e.to_string())
+}
+
+pub fn write_projecttasks_data_to_path(path: &Path, data: &ProjectTasksData) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
+    fs::write(path, json).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn load_projecttasks_data(app: tauri::AppHandle) -> Result<ProjectTasksData, String> {
+    read_projecttasks_data_from_path(&projecttasks_data_path(&app))
+}
+
+#[tauri::command]
+pub fn save_projecttasks_data(app: tauri::AppHandle, data: ProjectTasksData) -> Result<(), String> {
+    write_projecttasks_data_to_path(&projecttasks_data_path(&app), &data)
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -166,9 +236,13 @@ pub fn runme_task_command(root: String, file: String, name: String) -> Result<St
         return Err("任务名称已不存在，建议重新扫描项目".to_string());
     }
 
+    let runme = resolve_runme_executable()
+        .map(|path| shell_quote(&path.to_string_lossy()))
+        .unwrap_or_else(|| "runme".to_string());
     Ok(format!(
-        "cd {} && runme run {} --project {} --filename {}",
+        "cd {} && {} run {} --project {} --filename {}",
         shell_quote(&root_path.to_string_lossy()),
+        runme,
         shell_quote(&name),
         shell_quote(&root_path.to_string_lossy()),
         shell_quote(&relative),
@@ -260,7 +334,10 @@ fn collect_markdown_files(
 }
 
 fn runme_cli_info(root: &Path) -> (bool, Option<String>) {
-    let output = Command::new("runme")
+    let Some(executable) = resolve_runme_executable() else {
+        return (false, None);
+    };
+    let output = Command::new(executable)
         .arg("--version")
         .current_dir(root)
         .output();
@@ -275,7 +352,8 @@ fn runme_cli_info(root: &Path) -> (bool, Option<String>) {
 }
 
 fn runme_list_tasks(root: &Path) -> Result<Vec<RunmeCliTask>, String> {
-    let output = Command::new("runme")
+    let executable = resolve_runme_executable().ok_or_else(|| "未检测到 Runme CLI".to_string())?;
+    let output = Command::new(executable)
         .args(["list", "--json", "--project"])
         .arg(root)
         .current_dir(root)
@@ -293,6 +371,34 @@ fn runme_list_tasks(root: &Path) -> Result<Vec<RunmeCliTask>, String> {
         });
     }
     parse_runme_list_json(&output.stdout)
+}
+
+fn resolve_runme_executable() -> Option<PathBuf> {
+    let executable_name = if cfg!(windows) { "runme.exe" } else { "runme" };
+    if let Some(path) = env::var_os("PATH") {
+        for directory in env::split_paths(&path) {
+            let candidate = directory.join(executable_name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("/bin/zsh")
+            .args(["-lic", "command -v runme"])
+            .output()
+            .ok()?;
+        if output.status.success() {
+            let candidate = PathBuf::from(String::from_utf8_lossy(&output.stdout).trim());
+            if candidate.is_absolute() && candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    None
 }
 
 fn parse_runme_list_json(bytes: &[u8]) -> Result<Vec<RunmeCliTask>, String> {
@@ -662,10 +768,42 @@ fn shell_quote(value: &str) -> String {
 mod tests {
     use super::{
         attribute_value, build_tasks_from_cli, classify_category, parse_markdown_blocks,
-        parse_markdown_tasks, parse_runme_list_json, runme_task_command, RunmeCliTask,
+        parse_markdown_tasks, parse_runme_list_json, read_projecttasks_data_from_path,
+        runme_task_command, write_projecttasks_data_to_path, FavoriteTaskRef, ProjectTasksData,
+        RunmeCliTask, ScannedProject,
     };
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn writes_and_reads_shared_projecttasks_data() {
+        let directory = tempdir().expect("temporary data directory");
+        let path = directory.path().join("projecttasks_data.json");
+        let data = ProjectTasksData {
+            projects: vec![ScannedProject {
+                root: "/projects/demo".into(),
+                name: "demo".into(),
+                task_count: 3,
+                scanned_files: 4,
+                last_scanned_at: 123,
+            }],
+            task_favorites: vec![FavoriteTaskRef {
+                root: "/projects/demo".into(),
+                file: "TASKS.md".into(),
+                name: "test".into(),
+            }],
+            config_favorites: Vec::new(),
+            last_root: "/projects/demo".into(),
+        };
+
+        write_projecttasks_data_to_path(&path, &data).expect("write project task data");
+        let loaded = read_projecttasks_data_from_path(&path).expect("read project task data");
+
+        assert_eq!(loaded.projects.len(), 1);
+        assert_eq!(loaded.projects[0].task_count, 3);
+        assert_eq!(loaded.task_favorites[0].name, "test");
+        assert_eq!(loaded.last_root, "/projects/demo");
+    }
 
     #[test]
     fn parses_named_runme_blocks_and_metadata() {

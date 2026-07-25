@@ -18,6 +18,7 @@ import {
   upsertProjectHistory,
   type ScannedProject,
 } from "./history";
+import { loadProjectTasksData, updateProjectTasksData } from "./storage";
 
 interface ProjectConfigFile {
   path: string;
@@ -100,12 +101,27 @@ export function ProjectConfigsPanel({ initialRoot, onRootChange }: ProjectConfig
   const [productionConfirmed, setProductionConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("选择项目后扫描配置文件");
+  const [storageLoaded, setStorageLoaded] = useState(false);
   const scanSequence = useRef(0);
   const initialScanStarted = useRef(false);
 
   useEffect(() => {
-    localStorage.setItem(PROJECT_CONFIG_FAVORITES_STORAGE_KEY, JSON.stringify(favorites));
-  }, [favorites]);
+    let cancelled = false;
+    loadProjectTasksData()
+      .then((data) => {
+        if (cancelled) return;
+        setProjects(data.projects);
+        setFavorites(data.configFavorites);
+        if (!initialRoot && data.lastRoot) setRoot(data.lastRoot);
+      })
+      .catch((error) => setStatus(`读取项目记录失败：${String(error)}`))
+      .finally(() => {
+        if (!cancelled) setStorageLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const environments = useMemo(() => {
     const values = new Map<string, string>();
@@ -141,6 +157,7 @@ export function ProjectConfigsPanel({ initialRoot, onRootChange }: ProjectConfig
         lastScannedAt: existing?.lastScannedAt ?? Date.now(),
       });
       localStorage.setItem(PROJECT_HISTORY_STORAGE_KEY, JSON.stringify(next));
+      void updateProjectTasksData({ projects: next, lastRoot: result.root });
       return next;
     });
   };
@@ -148,7 +165,12 @@ export function ProjectConfigsPanel({ initialRoot, onRootChange }: ProjectConfig
   const toggleFavorite = (projectRoot: string, file: ProjectConfigFile) => {
     const reference = { root: projectRoot, path: file.path };
     const favorite = isConfigFavorite(favorites, reference);
-    setFavorites((current) => toggleConfigFavorite(current, reference));
+    setFavorites((current) => {
+      const next = toggleConfigFavorite(current, reference);
+      localStorage.setItem(PROJECT_CONFIG_FAVORITES_STORAGE_KEY, JSON.stringify(next));
+      void updateProjectTasksData({ configFavorites: next });
+      return next;
+    });
     setStatus(favorite ? `已取消收藏 ${file.path}` : `已收藏并置顶 ${file.path}`);
   };
 
@@ -207,12 +229,12 @@ export function ProjectConfigsPanel({ initialRoot, onRootChange }: ProjectConfig
   };
 
   useEffect(() => {
-    if (initialScanStarted.current) return;
+    if (!storageLoaded || initialScanStarted.current) return;
     const projectRoot = resolveInitialConfigRoot(initialRoot, projects);
     if (!projectRoot) return;
     initialScanStarted.current = true;
     void scanProject(projectRoot);
-  }, [initialRoot, projects]);
+  }, [initialRoot, projects, storageLoaded]);
 
   const chooseProject = async () => {
     if (!IS_TAURI_RUNTIME) return;

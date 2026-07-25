@@ -174,6 +174,12 @@ fn hide_window_if_present(app: &tauri::AppHandle, label: &str) -> Result<(), Str
     Ok(())
 }
 
+pub(crate) fn hide_primary_entry_windows(app: &tauri::AppHandle) -> Result<(), String> {
+    hide_window_if_present(app, "main")?;
+    hide_window_if_present(app, "pet")?;
+    hide_window_if_present(app, "search")
+}
+
 pub fn set_pet_action(app: &tauri::AppHandle, action: &str) {
     let _ = app.emit(PET_ACTION_EVENT, action);
 }

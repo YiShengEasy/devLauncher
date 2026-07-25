@@ -1,0 +1,59 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* DevLauncherWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* DevLauncherWidget.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000010 /* DevLauncherWidget.appex */ = {isa = PBXFileReference; explicitFileType = wrapper.app-extension; includeInIndex = 0; path = DevLauncherWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000011 /* DevLauncherWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevLauncherWidget.swift; sourceTree = "<group>"; };
+		A10000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000013 /* DevLauncherWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = DevLauncherWidget.entitlements; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000021 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000030 = {isa = PBXGroup; children = ( A10000000000000000000031 /* DevLauncherWidget */, A10000000000000000000032 /* Products */, ); sourceTree = "<group>"; };
+		A10000000000000000000031 /* DevLauncherWidget */ = {isa = PBXGroup; children = ( A10000000000000000000011 /* DevLauncherWidget.swift */, A10000000000000000000012 /* Info.plist */, A10000000000000000000013 /* DevLauncherWidget.entitlements */, ); sourceTree = "<group>"; };
+		A10000000000000000000032 /* Products */ = {isa = PBXGroup; children = ( A10000000000000000000010 /* DevLauncherWidget.appex */, ); name = Products; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000040 /* DevLauncherWidget */ = {isa = PBXNativeTarget; buildConfigurationList = A10000000000000000000051 /* Build configuration list for PBXNativeTarget "DevLauncherWidget" */; buildPhases = ( A10000000000000000000020 /* Sources */, A10000000000000000000021 /* Frameworks */, A10000000000000000000022 /* Resources */, ); buildRules = ( ); dependencies = ( ); name = DevLauncherWidget; productName = DevLauncherWidget; productReference = A10000000000000000000010 /* DevLauncherWidget.appex */; productType = "com.apple.product-type.app-extension"; };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000050 /* Project object */ = {isa = PBXProject; attributes = { LastSwiftUpdateCheck = 2600; ORGANIZATIONNAME = DevLauncher; TargetAttributes = { A10000000000000000000040 = { CreatedOnToolsVersion = 26.0; }; }; }; buildConfigurationList = A10000000000000000000052 /* Build configuration list for PBXProject "DevLauncherWidget" */; compatibilityVersion = "Xcode 15.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = ( en, Base, ); mainGroup = A10000000000000000000030; productRefGroup = A10000000000000000000032 /* Products */; projectDirPath = ""; projectRoot = ""; targets = ( A10000000000000000000040 /* DevLauncherWidget */, ); };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000022 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000020 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ( A10000000000000000000001 /* DevLauncherWidget.swift in Sources */, ); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000060 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; APPLICATION_EXTENSION_API_ONLY = YES; CLANG_ENABLE_MODULES = YES; CODE_SIGN_ENTITLEMENTS = DevLauncherWidget.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = ""; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Info.plist; MACOSX_DEPLOYMENT_TARGET = 14.0; PRODUCT_BUNDLE_IDENTIFIER = com.yisheng.app.widget; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SKIP_INSTALL = YES; SWIFT_VERSION = 5.0; WRAPPER_EXTENSION = appex; }; name = Debug; };
+		A10000000000000000000061 /* Release */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; APPLICATION_EXTENSION_API_ONLY = YES; CLANG_ENABLE_MODULES = YES; CODE_SIGN_ENTITLEMENTS = DevLauncherWidget.entitlements; CODE_SIGN_IDENTITY = "-"; CODE_SIGNING_ALLOWED = NO; CODE_SIGNING_REQUIRED = NO; CURRENT_PROJECT_VERSION = 1; DEVELOPMENT_TEAM = ""; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = NO; INFOPLIST_FILE = Info.plist; MACOSX_DEPLOYMENT_TARGET = 14.0; PRODUCT_BUNDLE_IDENTIFIER = com.yisheng.app.widget; PRODUCT_NAME = "$(TARGET_NAME)"; SDKROOT = macosx; SKIP_INSTALL = YES; SWIFT_OPTIMIZATION_LEVEL = "-O"; SWIFT_VERSION = 5.0; WRAPPER_EXTENSION = appex; }; name = Release; };
+		A10000000000000000000062 /* Project Debug */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; SDKROOT = macosx; }; name = Debug; };
+		A10000000000000000000063 /* Project Release */ = {isa = XCBuildConfiguration; buildSettings = { ALWAYS_SEARCH_USER_PATHS = NO; CLANG_ENABLE_MODULES = YES; SDKROOT = macosx; }; name = Release; };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000051 /* Build configuration list for PBXNativeTarget "DevLauncherWidget" */ = {isa = XCConfigurationList; buildConfigurations = ( A10000000000000000000060 /* Debug */, A10000000000000000000061 /* Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000052 /* Build configuration list for PBXProject "DevLauncherWidget" */ = {isa = XCConfigurationList; buildConfigurations = ( A10000000000000000000062 /* Project Debug */, A10000000000000000000063 /* Project Release */, ); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A10000000000000000000050 /* Project object */;
+}

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { KeyboardConfig, Action, PetConfig, ThemeConfig, WorkflowDefinition } from "@/types/actions";
+import type { KeyboardConfig, Action, PetConfig, ThemeConfig, WidgetConfig, WorkflowDefinition } from "@/types/actions";
 import { DEFAULT_PET_CONFIG, DEFAULT_THEME, PET_CUSTOM_ACTION_SLOT_COUNT } from "@/types/actions";
 
 // 从 Rust 序列化的 Page 结构，keys 是 Record<string, Action>
@@ -23,6 +23,7 @@ interface RawConfig {
   pages: RawPage[];
   theme?: Partial<ThemeConfig>;
   pet?: RawPetConfig;
+  widget?: WidgetConfig;
   schemaVersion?: number;
   revision?: number;
   workflows?: WorkflowDefinition[];
@@ -59,6 +60,9 @@ export function normalizeConfig(raw: RawConfig): KeyboardConfig {
     })),
     theme: { ...DEFAULT_THEME, ...raw.theme },
     pet: normalizePetConfig(raw.pet),
+    widget: {
+      shortcuts: raw.widget?.shortcuts ?? [],
+    },
     workflows: raw.workflows ?? [],
   };
 }
@@ -77,6 +81,9 @@ export function toRawConfig(config: KeyboardConfig): RawConfig {
     })),
     theme: config.theme,
     workflows: config.workflows ?? [],
+    widget: {
+      shortcuts: config.widget?.shortcuts ?? [],
+    },
     pet: config.pet ? {
       ...config.pet,
       menu: {

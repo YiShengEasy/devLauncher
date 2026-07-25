@@ -13,8 +13,10 @@ mod translation;
 pub mod types;
 mod utils;
 mod video_tools;
+mod widget_sync;
 mod window_pinning;
 pub mod workflow;
+mod workflow_window;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -22,6 +24,7 @@ use tauri::{
     Emitter,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 #[cfg(target_os = "macos")]
@@ -33,20 +36,89 @@ const PET_GLOBAL_SHORTCUT: &str = "Option+P";
 #[cfg(not(target_os = "macos"))]
 const PET_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+P";
 
+#[derive(Debug, PartialEq, Eq)]
+enum WidgetDeepLinkAction {
+    Clipboard,
+    Binding { page: usize, key: String },
+}
+
+fn parse_widget_deep_link(value: &str) -> Option<WidgetDeepLinkAction> {
+    let url = tauri::Url::parse(value).ok()?;
+    if url.scheme() != "devlauncher" {
+        return None;
+    }
+
+    match url.host_str()? {
+        "run" => url
+            .query_pairs()
+            .any(|(name, value)| name == "feature" && value == "clipboard")
+            .then_some(WidgetDeepLinkAction::Clipboard),
+        "run-binding" => {
+            let mut page = None;
+            let mut key = None;
+            for (name, value) in url.query_pairs() {
+                match name.as_ref() {
+                    "page" => page = value.parse::<usize>().ok(),
+                    "key" => key = Some(value.to_ascii_uppercase()),
+                    _ => {}
+                }
+            }
+            Some(WidgetDeepLinkAction::Binding {
+                page: page?,
+                key: key?.to_string(),
+            })
+        }
+        _ => None,
+    }
+}
+
+fn handle_widget_deep_link(app: &tauri::AppHandle, value: &str) -> bool {
+    let Some(action) = parse_widget_deep_link(value) else {
+        return false;
+    };
+
+    let _ = entries::hide_primary_entry_windows(app);
+    let result = match action {
+        WidgetDeepLinkAction::Clipboard => builtins::clipboard::show_clipboard_window(app.clone()),
+        WidgetDeepLinkAction::Binding { page, key } => config::load_config(app.clone())
+            .and_then(|config| {
+                let page = config
+                    .pages
+                    .get(page)
+                    .ok_or_else(|| "widget binding page not found".to_string())?;
+                page.keys
+                    .get(&key)
+                    .ok_or_else(|| "widget binding key not found".to_string())
+                    .cloned()
+            })
+            .and_then(|action| workflow::execute_bound_action(app, &action)),
+    };
+
+    if let Err(error) = result {
+        eprintln!("failed to execute widget action: {error}");
+    }
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .manage(workflow::WorkflowEngineState::default())
         .plugin(
             tauri_plugin_single_instance::Builder::new()
-                .callback(|app, _argv, _cwd| {
-                    let _ = main_window_control::dispatch(
-                        app,
-                        main_window_control::MainWindowAction::Show,
-                    );
+                .callback(|app, argv, _cwd| {
+                    let widget_action = argv.iter().any(|arg| handle_widget_deep_link(app, arg));
+
+                    if !widget_action {
+                        let _ = main_window_control::dispatch(
+                            app,
+                            main_window_control::MainWindowAction::Show,
+                        );
+                    }
                 })
                 .build(),
         )
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
@@ -89,6 +161,7 @@ pub fn run() {
             config::save_config,
             config::get_config_path,
             cloud_sync::sync_get_status,
+            cloud_sync::sync_get_local_status,
             cloud_sync::sync_generate_key,
             cloud_sync::sync_save_key,
             cloud_sync::sync_upload_snapshot,
@@ -120,6 +193,7 @@ pub fn run() {
             workflow::list_workflow_runs,
             workflow::cancel_workflow_run,
             workflow::confirm_workflow_step,
+            workflow_window::show_workflow_window,
             main_window_control::control_main_window,
             actions::save_ssh_password,
             actions::delete_ssh_password,
@@ -183,6 +257,8 @@ pub fn run() {
             builtins::projecttasks::discover_runme_tasks,
             builtins::projecttasks::runme_task_command,
             builtins::projecttasks::toggle_projecttasks_window,
+            builtins::projecttasks::load_projecttasks_data,
+            builtins::projecttasks::save_projecttasks_data,
             builtins::projectconfigs::discover_project_configs,
             builtins::projectconfigs::read_project_config,
             builtins::projectconfigs::validate_project_config,
@@ -218,7 +294,25 @@ pub fn run() {
             keyboard_control_tap::setup(app.handle());
             workflow::setup_scheduler(app.handle().clone());
             window_pinning::apply_all_startup_pin_states(app.handle());
+            if let Ok(config) = config::load_config(app.handle().clone()) {
+                if let Err(error) = widget_sync::sync_widget_snapshot(app.handle(), &config) {
+                    eprintln!("failed to sync widget shortcuts at startup: {error}");
+                }
+            }
             let _ = entries::show_pet_window(app.handle().clone(), None);
+
+            if let Some(urls) = app.deep_link().get_current()? {
+                urls.iter().for_each(|url| {
+                    handle_widget_deep_link(app.handle(), url.as_str());
+                });
+            }
+
+            let deep_link_app = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                event.urls().iter().for_each(|url| {
+                    handle_widget_deep_link(&deep_link_app, url.as_str());
+                });
+            });
 
             let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
             let settings_item = MenuItem::with_id(app, "settings", "设置", true, None::<&str>)?;
@@ -272,14 +366,36 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| match event {
+        .run(|app, event| match event {
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
-                let _ = main_window_control::dispatch(
-                    _app,
-                    main_window_control::MainWindowAction::Show,
-                );
+                let _ =
+                    main_window_control::dispatch(app, main_window_control::MainWindowAction::Show);
             }
             _ => {}
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_widget_deep_link, WidgetDeepLinkAction};
+
+    #[test]
+    fn parses_widget_deep_links() {
+        assert_eq!(
+            parse_widget_deep_link("devlauncher://run?feature=clipboard"),
+            Some(WidgetDeepLinkAction::Clipboard)
+        );
+        assert_eq!(
+            parse_widget_deep_link("devlauncher://run-binding?page=1&key=q"),
+            Some(WidgetDeepLinkAction::Binding {
+                page: 1,
+                key: "Q".into(),
+            })
+        );
+        assert_eq!(
+            parse_widget_deep_link("devlauncher://run?feature=keyboard"),
+            None
+        );
+    }
 }

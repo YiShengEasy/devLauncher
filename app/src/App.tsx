@@ -369,6 +369,25 @@ export default function App() {
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
+    listen("workflow-config-saved", async () => {
+      try {
+        const nextConfig = await loadConfig();
+        const current = useKeyboardStore.getState();
+        useKeyboardStore.setState({ config: nextConfig, theme: nextConfig.theme ?? current.theme });
+        showNotice("工作流配置已同步", "success");
+      } catch (error) {
+        showNotice(`同步工作流失败：${String(error)}`);
+      }
+    }).then((dispose) => {
+      unlisten = dispose;
+    }).catch(console.error);
+    return () => {
+      unlisten?.();
+    };
+  }, [showNotice]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
     refreshPluginIcons();
     listen("plugins-changed", () => {
       refreshPluginIcons();
@@ -821,7 +840,11 @@ export default function App() {
             <button
               onClick={() => {
                 setShowSettings(false);
-                setShowWorkflows((show) => !show);
+                invoke("show_workflow_window").catch((error) => {
+                  console.error("show_workflow_window failed:", error);
+                  showNotice("独立工作流窗口打开失败，已使用原弹框。");
+                  setShowWorkflows(true);
+                });
               }}
               style={{
                 width: 32,

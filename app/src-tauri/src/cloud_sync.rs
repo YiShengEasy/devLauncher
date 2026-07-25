@@ -2,6 +2,10 @@ use crate::builtins::quickmemory::{
     quickmemory_data_path, read_quickmemory_data_from_path, write_quickmemory_data_to_path,
     QuickMemoryData,
 };
+use crate::builtins::projecttasks::{
+    projecttasks_data_path, read_projecttasks_data_from_path, write_projecttasks_data_to_path,
+    ProjectTasksData,
+};
 use crate::config::{config_path, read_config_from_path, write_config_to_path};
 use crate::types::KeyboardConfig;
 use serde::{Deserialize, Serialize};
@@ -45,6 +49,7 @@ pub struct CloudSyncSnapshotMeta {
 pub struct CloudSyncStatus {
     pub base_url: String,
     pub has_sync_key: bool,
+    pub sync_key: Option<String>,
     pub latest_snapshot: Option<CloudSyncSnapshotMeta>,
 }
 
@@ -73,6 +78,7 @@ struct SnapshotUploadPayload {
     content_hash: String,
     keyboard_config: KeyboardConfig,
     quickmemory_data: QuickMemoryData,
+    projecttasks_data: ProjectTasksData,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -86,6 +92,8 @@ struct SnapshotPayload {
     created_at: String,
     keyboard_config: KeyboardConfig,
     quickmemory_data: QuickMemoryData,
+    #[serde(default)]
+    projecttasks_data: ProjectTasksData,
 }
 
 #[derive(Debug, Deserialize)]
@@ -259,11 +267,13 @@ fn device_name() -> String {
 fn content_hash(
     keyboard_config: &KeyboardConfig,
     quickmemory_data: &QuickMemoryData,
+    projecttasks_data: &ProjectTasksData,
 ) -> Result<String, String> {
     let value = serde_json::json!({
         "schemaVersion": SYNC_SCHEMA_VERSION,
         "keyboardConfig": keyboard_config,
         "quickmemoryData": quickmemory_data,
+        "projecttasksData": projecttasks_data,
     });
     let bytes = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
     let digest = Sha256::digest(bytes);
@@ -308,8 +318,12 @@ fn backup_existing_file(path: &Path) -> Result<Option<PathBuf>, String> {
 
 fn assemble_upload_payload(app: &tauri::AppHandle) -> Result<SnapshotUploadPayload, String> {
     let keyboard_config = read_config_from_path(&config_path(app))?;
-    let quickmemory_data = read_quickmemory_data_from_path(&quickmemory_data_path(app))?;
-    let content_hash = content_hash(&keyboard_config, &quickmemory_data)?;
+    let projecttasks_data = read_projecttasks_data_from_path(&projecttasks_data_path(app))?;
+    let mut quickmemory_data = read_quickmemory_data_from_path(&quickmemory_data_path(app))?;
+    // Keep task records inside the existing QuickMemory payload as well, so
+    // already-deployed schema-v1 sync servers preserve them without an upgrade.
+    quickmemory_data.projecttasks_data = Some(projecttasks_data.clone());
+    let content_hash = content_hash(&keyboard_config, &quickmemory_data, &projecttasks_data)?;
 
     Ok(SnapshotUploadPayload {
         schema_version: SYNC_SCHEMA_VERSION,
@@ -318,6 +332,7 @@ fn assemble_upload_payload(app: &tauri::AppHandle) -> Result<SnapshotUploadPaylo
         content_hash,
         keyboard_config,
         quickmemory_data,
+        projecttasks_data,
     })
 }
 
@@ -336,6 +351,7 @@ pub fn sync_save_key(
     Ok(CloudSyncStatus {
         base_url: settings.base_url,
         has_sync_key: true,
+        sync_key: Some(key.trim().to_string()),
         latest_snapshot: None,
     })
 }
@@ -365,13 +381,26 @@ pub fn sync_generate_key(
 
     Ok(CloudSyncGeneratedKey {
         id: generated.id,
-        sync_key: generated.sync_key,
+        sync_key: generated.sync_key.clone(),
         label: generated.label,
         status: CloudSyncStatus {
             base_url: settings.base_url,
             has_sync_key: true,
+            sync_key: Some(generated.sync_key),
             latest_snapshot: None,
         },
+    })
+}
+
+#[tauri::command]
+pub fn sync_get_local_status(app: tauri::AppHandle) -> Result<CloudSyncStatus, String> {
+    let settings = load_sync_settings(&app);
+    let sync_key = load_sync_key(&app)?;
+    Ok(CloudSyncStatus {
+        base_url: settings.base_url,
+        has_sync_key: sync_key.is_some(),
+        sync_key,
+        latest_snapshot: None,
     })
 }
 
@@ -382,6 +411,7 @@ pub fn sync_get_status(app: tauri::AppHandle) -> Result<CloudSyncStatus, String>
         return Ok(CloudSyncStatus {
             base_url: settings.base_url,
             has_sync_key: false,
+            sync_key: None,
             latest_snapshot: None,
         });
     };
@@ -396,6 +426,7 @@ pub fn sync_get_status(app: tauri::AppHandle) -> Result<CloudSyncStatus, String>
     Ok(CloudSyncStatus {
         base_url: settings.base_url,
         has_sync_key: true,
+        sync_key: Some(sync_key),
         latest_snapshot: status.latest_snapshot,
     })
 }
@@ -438,6 +469,7 @@ pub fn sync_restore_latest_snapshot(
 
     let config_file = config_path(&app);
     let quickmemory_file = quickmemory_data_path(&app);
+    let projecttasks_file = projecttasks_data_path(&app);
     let mut backup_paths = Vec::new();
 
     if let Some(path) = backup_existing_file(&config_file)? {
@@ -446,9 +478,24 @@ pub fn sync_restore_latest_snapshot(
     if let Some(path) = backup_existing_file(&quickmemory_file)? {
         backup_paths.push(path.to_string_lossy().to_string());
     }
+    if let Some(path) = backup_existing_file(&projecttasks_file)? {
+        backup_paths.push(path.to_string_lossy().to_string());
+    }
+
+    let mut quickmemory_data = snapshot.quickmemory_data;
+    let projecttasks_data = if snapshot.projecttasks_data.projects.is_empty()
+        && snapshot.projecttasks_data.task_favorites.is_empty()
+        && snapshot.projecttasks_data.config_favorites.is_empty()
+        && snapshot.projecttasks_data.last_root.is_empty()
+    {
+        quickmemory_data.projecttasks_data.take().unwrap_or_default()
+    } else {
+        snapshot.projecttasks_data
+    };
 
     write_config_to_path(&config_file, &snapshot.keyboard_config)?;
-    write_quickmemory_data_to_path(&quickmemory_file, &snapshot.quickmemory_data)?;
+    write_quickmemory_data_to_path(&quickmemory_file, &quickmemory_data)?;
+    write_projecttasks_data_to_path(&projecttasks_file, &projecttasks_data)?;
 
     Ok(CloudSyncRestoreResult {
         snapshot: CloudSyncSnapshotMeta {

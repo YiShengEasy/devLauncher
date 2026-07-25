@@ -16,6 +16,7 @@ import { isMacPlatform } from "@/platform/shortcuts";
 import { listInstalledPlugins } from "@/plugins/api";
 import { pluginIconSrc } from "@/plugins/registry";
 import type { InstalledPlugin } from "@/plugins/types";
+import { matchingOfficialTemplateId } from "@/api/workflowTemplates";
 
 interface BindingModalProps {
   keyId: string;
@@ -149,7 +150,10 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
   );
   const initialWorkflowAction = initialAction?.type === "workflow" ? initialAction as WorkflowAction : null;
   const [workflowSelection, setWorkflowSelection] = useState(initialWorkflowAction?.workflowId ?? "");
-  const workflowOptions = workflows ?? [];
+  const workflowOptions = useMemo(
+    () => (workflows ?? []).filter((workflow) => !matchingOfficialTemplateId(workflow)),
+    [workflows],
+  );
 
   useEffect(() => {
     listInstalledPlugins()
@@ -169,9 +173,9 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
   }, [firstPluginOptionKey, pluginSelection]);
 
   useEffect(() => {
-    if (workflowSelection || workflowOptions.length === 0) return;
+    if (workflowOptions.some((workflow) => workflow.id === workflowSelection)) return;
     const firstEnabled = workflowOptions.find((workflow) => workflow.enabled);
-    setWorkflowSelection(firstEnabled?.id ?? workflowOptions[0].id);
+    setWorkflowSelection(firstEnabled?.id ?? workflowOptions[0]?.id ?? "");
   }, [workflowOptions, workflowSelection]);
 
   useEffect(() => {
@@ -972,7 +976,7 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
                     disabled={!workflow.enabled}
                     onClick={() => setWorkflowSelection(workflow.id)}
                     style={{
-                      minHeight: 64,
+                      minHeight: 52,
                       padding: "10px 11px",
                       borderRadius: 9,
                       cursor: workflow.enabled ? "pointer" : "not-allowed",
@@ -1007,10 +1011,11 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
                       <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
                         {workflow.name}
                       </strong>
-                      <span style={{ display: "block", marginTop: 5, color: "rgba(255,255,255,0.4)", fontSize: 10 }}>
-                        {workflow.steps.filter((step) => step.enabled).length} 个启用步骤
-                        {workflow.enabled ? "" : " · 已停用"}
-                      </span>
+                      {!workflow.enabled && (
+                        <span style={{ display: "block", marginTop: 4, color: "rgba(255,255,255,0.4)", fontSize: 10 }}>
+                          已停用
+                        </span>
+                      )}
                     </span>
                   </button>
                 );

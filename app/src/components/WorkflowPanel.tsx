@@ -37,8 +37,14 @@ import {
   DeleteIcon,
   MoveDownIcon,
   MoveUpIcon,
+  PasteIcon,
   WorkflowIcon,
 } from "@/icons";
+import {
+  copyWorkflowStep,
+  pasteWorkflowStep,
+  type WorkflowStepClipboard,
+} from "@/components/workflowStepClipboard";
 import type {
   Action,
   CompletionRule,
@@ -107,6 +113,13 @@ const ICON_BUTTON: CSSProperties = {
   ...BUTTON,
   width: 30,
   padding: 0,
+};
+
+const DANGER_BUTTON: CSSProperties = {
+  ...BUTTON,
+  border: "1px solid rgba(248,113,113,0.32)",
+  background: "rgba(127,29,29,0.2)",
+  color: "rgba(254,202,202,0.92)",
 };
 
 const LABEL: CSSProperties = {
@@ -532,6 +545,7 @@ export function WorkflowPanel({
   const [workflowQuery, setWorkflowQuery] = useState("");
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [monitorOpen, setMonitorOpen] = useState(false);
+  const [stepClipboard, setStepClipboard] = useState<WorkflowStepClipboard | null>(null);
   const [dirty, setDirty] = useState(false);
   const workflowTemplates = useMemo(() => listWorkflowTemplates(), []);
 
@@ -726,9 +740,9 @@ export function WorkflowPanel({
   const deleteWorkflow = () => {
     if (!workflow) return;
     setConfirmRequest({
-      title: "删除工作流",
-      message: `将删除“${workflow.name}”。已有键盘绑定会在保存时一并移除。`,
-      confirmLabel: "删除工作流",
+      title: "删除整个工作流",
+      message: `将删除工作流“${workflow.name}”及其中的 ${workflow.steps.length} 个步骤。\n已有键盘绑定会在保存时一并移除。`,
+      confirmLabel: "删除整个工作流",
       onConfirm: () => {
         const next = workflows.filter((item) => item.id !== workflow.id);
         const nextPages = config.pages.map((page) => ({
@@ -781,12 +795,38 @@ export function WorkflowPanel({
     updateWorkflow({ steps });
   };
 
+  const copySelectedStep = () => {
+    if (!workflow || !step) return;
+    setStepClipboard(copyWorkflowStep(step, workflow.id, workflow.name));
+    setStatus(`已复制步骤“${step.name}”，可切换工作流后粘贴`);
+  };
+
+  const pasteCopiedStep = () => {
+    if (!workflow || !stepClipboard) return;
+    const newStepId = createWorkflowStep(stepClipboard.step.action).id;
+    const pastedStep = pasteWorkflowStep(stepClipboard, workflow.id, newStepId);
+    updateWorkflow({ steps: [...workflow.steps, pastedStep] });
+    setSelectedStepId(pastedStep.id);
+    setStatus(`已从“${stepClipboard.sourceWorkflowName}”粘贴步骤“${pastedStep.name}”`);
+  };
+
   const deleteStep = () => {
     if (!workflow || !step) return;
-    const index = workflow.steps.findIndex((item) => item.id === step.id);
-    const steps = workflow.steps.filter((item) => item.id !== step.id);
-    updateWorkflow({ steps });
-    setSelectedStepId(steps[Math.min(index, steps.length - 1)]?.id ?? null);
+    const stepId = step.id;
+    const stepName = step.name;
+    const stepNumber = workflow.steps.findIndex((item) => item.id === stepId) + 1;
+    setConfirmRequest({
+      title: "删除单个步骤",
+      message: `仅删除步骤 ${String(stepNumber).padStart(2, "0")} · “${stepName}”。\n工作流“${workflow.name}”及其他步骤不会被删除。`,
+      confirmLabel: "删除此步骤",
+      onConfirm: () => {
+        const index = workflow.steps.findIndex((item) => item.id === stepId);
+        const steps = workflow.steps.filter((item) => item.id !== stepId);
+        updateWorkflow({ steps });
+        setSelectedStepId(steps[Math.min(index, steps.length - 1)]?.id ?? null);
+        setConfirmRequest(null);
+      },
+    });
   };
 
   const startWorkflowRun = async (workflowId: string) => {
@@ -1092,16 +1132,31 @@ export function WorkflowPanel({
               </button>
             ))}
           </div>
-          <div style={{ flexShrink: 0, display: "grid", gridTemplateColumns: "1fr 30px 30px", gap: 6, padding: 8, borderTop: "1px solid rgba(255,255,255,0.09)" }}>
-            <button style={BUTTON} onClick={createNewWorkflow}>
-              <AddIcon size={13} decorative />
-              新建
-            </button>
-            <button style={ICON_BUTTON} onClick={duplicateWorkflow} disabled={!workflow} title="复制工作流" aria-label="复制工作流">
-              <CopyIcon size={13} decorative />
-            </button>
-            <button style={ICON_BUTTON} onClick={deleteWorkflow} disabled={!workflow} title="删除工作流" aria-label="删除工作流">
+          <div style={{ flexShrink: 0, padding: 8, borderTop: "1px solid rgba(255,255,255,0.09)" }}>
+            <div style={{ minWidth: 0, marginBottom: 7 }}>
+              <strong style={{ display: "block", color: "rgba(255,255,255,0.4)", fontSize: 9 }}>工作流操作</strong>
+              <span style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.62)", fontSize: 10 }}>
+                {workflow?.name ?? "未选择工作流"}
+              </span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 30px", gap: 6 }}>
+              <button style={BUTTON} onClick={createNewWorkflow}>
+                <AddIcon size={13} decorative />
+                新建工作流
+              </button>
+              <button style={ICON_BUTTON} onClick={duplicateWorkflow} disabled={!workflow} title="复制当前工作流" aria-label="复制当前工作流">
+                <CopyIcon size={13} decorative />
+              </button>
+            </div>
+            <button
+              type="button"
+              style={{ ...DANGER_BUTTON, width: "100%", marginTop: 6 }}
+              onClick={deleteWorkflow}
+              disabled={!workflow}
+              title={workflow ? `删除工作流“${workflow.name}”` : "请先选择工作流"}
+            >
               <DeleteIcon size={13} decorative />
+              删除当前工作流
             </button>
           </div>
         </aside>
@@ -1222,10 +1277,24 @@ export function WorkflowPanel({
 
               <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
                 <strong style={{ fontSize: 11 }}>执行步骤</strong>
-                <button style={{ ...BUTTON, marginLeft: "auto" }} onClick={() => setEditingStep("new")}>
-                  <AddIcon size={13} decorative />
-                  添加步骤
-                </button>
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 7 }}>
+                  <button
+                    type="button"
+                    style={BUTTON}
+                    onClick={pasteCopiedStep}
+                    disabled={!stepClipboard}
+                    title={stepClipboard
+                      ? `粘贴“${stepClipboard.step.name}”（来自 ${stepClipboard.sourceWorkflowName}）`
+                      : "请先复制一个步骤"}
+                  >
+                    <PasteIcon size={13} decorative />
+                    粘贴步骤
+                  </button>
+                  <button style={BUTTON} onClick={() => setEditingStep("new")}>
+                    <AddIcon size={13} decorative />
+                    添加步骤
+                  </button>
+                </div>
               </div>
               {workflow.steps.map((item, index) => {
                 const stepRun = run?.workflowId === workflow.id
@@ -1334,7 +1403,44 @@ export function WorkflowPanel({
         </main>
 
         <aside style={{ minWidth: 0, minHeight: 0, overflow: "auto", padding: 16, borderLeft: "1px solid rgba(255,255,255,0.09)" }}>
-          <strong style={{ display: "block", marginBottom: 16, fontSize: 11 }}>步骤属性</strong>
+          <div style={{
+            position: "sticky",
+            top: -16,
+            zIndex: 2,
+            minHeight: 52,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 8,
+            margin: "-16px -16px 14px",
+            padding: "10px 16px",
+            borderBottom: "1px solid rgba(255,255,255,0.09)",
+            background: "var(--theme-bg, rgba(17,20,27,0.98))",
+          }}>
+            <strong style={{ fontSize: 11 }}>步骤属性</strong>
+            {step && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button
+                  type="button"
+                  style={{ ...BUTTON, height: 30, padding: "0 9px", fontSize: 10 }}
+                  onClick={copySelectedStep}
+                  title="复制当前步骤，可粘贴到其他工作流"
+                >
+                  <CopyIcon size={13} decorative />
+                  复制步骤
+                </button>
+                <button
+                  type="button"
+                  style={{ ...DANGER_BUTTON, height: 30, padding: "0 9px", fontSize: 10 }}
+                  onClick={deleteStep}
+                  title="仅删除当前步骤"
+                >
+                  <DeleteIcon size={13} decorative />
+                  删除此步骤
+                </button>
+              </div>
+            )}
+          </div>
           {!step ? (
             <div style={{ display: "grid", placeItems: "center", height: "100%", color: "rgba(255,255,255,0.34)", textAlign: "center", fontSize: 10, lineHeight: 1.6 }}>
               选择步骤后编辑条件和完成判定
@@ -1513,7 +1619,7 @@ export function WorkflowPanel({
               <Field label="执行前延迟（毫秒）">
                 <input style={INPUT} type="number" min={0} value={step.delayMs} onChange={(event) => updateStep({ delayMs: Number(event.target.value) })} />
               </Field>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 7, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.09)" }}>
+              <div style={{ paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.09)" }}>
                 {step.action.type === "script" ? (
                   <div style={{ display: "flex", alignItems: "center", color: "rgba(255,255,255,0.34)", fontSize: 10 }}>
                     脚本内容已在上方编辑
@@ -1521,9 +1627,6 @@ export function WorkflowPanel({
                 ) : (
                   <button style={BUTTON} onClick={() => setEditingStep(step)}>更换动作</button>
                 )}
-                <button style={ICON_BUTTON} onClick={deleteStep} title="删除步骤" aria-label="删除步骤">
-                  <DeleteIcon size={13} decorative />
-                </button>
               </div>
             </>
           )}

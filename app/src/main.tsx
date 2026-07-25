@@ -7,6 +7,7 @@ import { PetEntryApp } from "./entry/PetEntryApp";
 import { BrowserPreviewApp } from "./entry/BrowserPreviewApp";
 import { UiAuditPreviewApp } from "./entry/UiAuditPreviewApp";
 import { WorkflowPreviewApp } from "./entry/WorkflowPreviewApp";
+import { WorkflowWindowApp } from "./entry/WorkflowWindowApp";
 import { PluginHostApp } from "./plugins/PluginHostApp";
 import { PinnedScreenshotApp } from "./builtins/screenshot/PinnedScreenshotApp";
 import { ThemeRuntime } from "./components/ThemeRuntime";
@@ -25,6 +26,7 @@ function RoutedApp() {
   if (preview === "pet-motion" || (!isTauriRuntime && !entry && !view)) return <BrowserPreviewApp />;
   if (entry === "search") return <SearchEntryApp />;
   if (entry === "pet") return <PetEntryApp />;
+  if (entry === "workflow-window") return <WorkflowWindowApp />;
   if (entry === "plugin-host") return <PluginHostApp />;
   if (entry === "screenshot-pin") return <PinnedScreenshotApp />;
 

@@ -287,6 +287,15 @@ export interface PetConfig {
   menu: PetMenuConfig;
 }
 
+export interface WidgetShortcut {
+  pageIndex: number;
+  keyId: KeyId;
+}
+
+export interface WidgetConfig {
+  shortcuts: WidgetShortcut[];
+}
+
 export const DEFAULT_THEME: ThemeConfig = {
   bgColor: "#101622",
   bgOpacity: 0.92,
@@ -309,6 +318,7 @@ export interface KeyboardConfig {
   pages: Page[];
   theme?: ThemeConfig;
   pet?: PetConfig;
+  widget?: WidgetConfig;
   schemaVersion?: number;
   revision?: number;
   workflows?: WorkflowDefinition[];

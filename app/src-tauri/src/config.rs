@@ -20,6 +20,7 @@ pub fn default_config() -> KeyboardConfig {
         workflows: vec![],
         theme: Default::default(),
         pet: Default::default(),
+        widget: Default::default(),
     }
 }
 
@@ -59,7 +60,11 @@ pub fn load_config(app: tauri::AppHandle) -> Result<KeyboardConfig, String> {
 #[tauri::command]
 pub fn save_config(app: tauri::AppHandle, config: KeyboardConfig) -> Result<(), String> {
     let path = config_path(&app);
-    write_config_to_path(&path, &config)
+    write_config_to_path(&path, &config)?;
+    if let Err(error) = crate::widget_sync::sync_widget_snapshot(&app, &config) {
+        eprintln!("failed to sync widget shortcuts: {error}");
+    }
+    Ok(())
 }
 
 #[tauri::command]

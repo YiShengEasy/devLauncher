@@ -33,9 +33,10 @@ const SUPPORTED_WINDOWS: &[&str] = &[
     "webaccounts",
     "quickmemory",
     "projecttasks",
+    "workflow",
 ];
 
-const DEFAULT_PINNED_WINDOWS: &[&str] = &["main", "pet", "search"];
+const DEFAULT_PINNED_WINDOWS: &[&str] = &["main", "pet", "search", "workflow"];
 
 pub fn is_supported_window(label: &str) -> bool {
     SUPPORTED_WINDOWS.contains(&label)
@@ -247,11 +248,13 @@ mod tests {
         assert!(is_supported_window("main"));
         assert!(is_supported_window("quickmemory"));
         assert!(is_supported_window("projecttasks"));
+        assert!(is_supported_window("workflow"));
         assert!(!is_supported_window("screenshot"));
         assert!(!is_supported_window("missing"));
         assert!(default_pinned("main"));
         assert!(default_pinned("pet"));
         assert!(default_pinned("search"));
+        assert!(default_pinned("workflow"));
         assert!(!default_pinned("clipboard"));
         assert!(!default_pinned("quickmemory"));
     }

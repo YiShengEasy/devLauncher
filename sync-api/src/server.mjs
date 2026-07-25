@@ -100,6 +100,9 @@ function validateSnapshotBody(body) {
   if (body.schemaVersion !== 1) return "schemaVersion must be 1";
   if (!body.keyboardConfig || typeof body.keyboardConfig !== "object") return "keyboardConfig must be an object";
   if (!body.quickmemoryData || typeof body.quickmemoryData !== "object") return "quickmemoryData must be an object";
+  if (body.projecttasksData !== undefined && (!body.projecttasksData || typeof body.projecttasksData !== "object")) {
+    return "projecttasksData must be an object";
+  }
   return null;
 }
 
@@ -119,6 +122,7 @@ function snapshotResponse(row, includePayload) {
     ...base,
     keyboardConfig: row.keyboard_config,
     quickmemoryData: row.quickmemory_data,
+    projecttasksData: row.projecttasks_data,
   };
 }
 
@@ -167,8 +171,8 @@ async function createSnapshot(req, res) {
   const { rows } = await pool.query(
     `insert into sync_snapshots (
        id, sync_key_id, device_name, app_version, schema_version,
-       content_hash, keyboard_config, quickmemory_data
-     ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+       content_hash, keyboard_config, quickmemory_data, projecttasks_data
+     ) values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9::jsonb)
      returning id, schema_version, device_name, app_version, content_hash, created_at`,
     [
       id,
@@ -179,6 +183,7 @@ async function createSnapshot(req, res) {
       contentHash,
       JSON.stringify(body.keyboardConfig),
       JSON.stringify(body.quickmemoryData),
+      JSON.stringify(body.projecttasksData ?? {}),
     ],
   );
 
@@ -191,7 +196,7 @@ async function latestSnapshot(req, res) {
 
   const { rows } = await pool.query(
     `select id, schema_version, device_name, app_version, content_hash,
-            keyboard_config, quickmemory_data, created_at
+            keyboard_config, quickmemory_data, projecttasks_data, created_at
        from sync_snapshots
       where sync_key_id = $1
       order by created_at desc

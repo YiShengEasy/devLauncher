@@ -366,6 +366,20 @@ pub struct PetConfig {
     pub menu: PetMenuConfig,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct WidgetShortcut {
+    #[serde(rename = "pageIndex")]
+    pub page_index: usize,
+    #[serde(rename = "keyId")]
+    pub key_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct WidgetConfig {
+    #[serde(default)]
+    pub shortcuts: Vec<WidgetShortcut>,
+}
+
 impl Default for PetCodexConfig {
     fn default() -> Self {
         Self { enabled: false }
@@ -385,6 +399,8 @@ pub struct KeyboardConfig {
     pub theme: ThemeConfig,
     #[serde(default)]
     pub pet: PetConfig,
+    #[serde(default)]
+    pub widget: WidgetConfig,
 }
 
 fn default_schema_version() -> u32 {

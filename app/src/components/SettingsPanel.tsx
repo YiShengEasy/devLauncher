@@ -8,6 +8,7 @@ import { THEME_CONFIG_CHANGED_EVENT } from "@/api/theme";
 import {
   generateCloudSyncKey,
   getCloudSyncStatus,
+  getLocalCloudSyncStatus,
   restoreLatestCloudSyncSnapshot,
   saveCloudSyncKey,
   uploadCloudSyncSnapshot,
@@ -19,13 +20,14 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { PluginCenter } from "@/components/PluginCenter";
 import { writePetCodexEnabled } from "@/entry/petCodexStatus";
+import { buildKeyboardActionRecords } from "@/launcher/actionIndex";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
 import { getGlobalShortcutLabels } from "@/platform/shortcuts";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { ACTION_TYPE_META, DEFAULT_THEME, PET_CUSTOM_ACTION_SLOT_COUNT } from "@/types/actions";
-import type { Action, KeyId, KeyMap, KeyboardConfig, ThemeConfig, UrlAction } from "@/types/actions";
+import type { Action, KeyId, KeyMap, KeyboardConfig, ThemeConfig, UrlAction, WidgetShortcut } from "@/types/actions";
 
 const PRESET_COLORS = [
   "#101622",
@@ -73,7 +75,7 @@ const THEME_PRESETS: { name: string; theme: VisualThemePreset }[] = [
   },
 ];
 
-type SettingsSection = "appearance" | "webaccounts" | "entries" | "cloudSync" | "plugins";
+type SettingsSection = "appearance" | "widget" | "webaccounts" | "entries" | "cloudSync" | "plugins";
 
 interface WebAccountEntry {
   id: string;
@@ -211,6 +213,8 @@ export function SettingsPanel({
   const shortcutLabels = getGlobalShortcutLabels();
   const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
   const webAccounts = useMemo(() => getWebAccountEntries(config), [config]);
+  const keyboardActions = useMemo(() => buildKeyboardActionRecords(config), [config]);
+  const widgetShortcuts = config?.widget?.shortcuts ?? [];
   const [editingId, setEditingId] = useState<string | null>(null);
   const [petMenuEditIndex, setPetMenuEditIndex] = useState<number | null>(null);
   const editingEntry = webAccounts.find((entry) => entry.id === editingId) ?? webAccounts[0] ?? null;
@@ -273,13 +277,14 @@ export function SettingsPanel({
   useEffect(() => {
     let cancelled = false;
     setCloudSyncLoading("status");
-    getCloudSyncStatus()
+    getLocalCloudSyncStatus()
       .then((syncStatus) => {
         if (cancelled) return;
         setCloudSyncBaseUrl(syncStatus.baseUrl);
         setCloudSyncHasKey(syncStatus.hasSyncKey);
+        setCloudSyncKey(syncStatus.syncKey ?? "");
         setCloudSyncLatest(syncStatus.latestSnapshot ?? null);
-        setCloudSyncMessage(syncStatus.hasSyncKey ? "云端同步已连接。" : "尚未保存同步密钥。");
+        setCloudSyncMessage(syncStatus.hasSyncKey ? "已读取本机保存的同步密钥，可点击“刷新状态”检查服务器。" : "尚未保存同步密钥。");
       })
       .catch((error) => {
         if (!cancelled) setCloudSyncMessage(`读取同步状态失败：${String(error)}`);
@@ -337,6 +342,33 @@ export function SettingsPanel({
     setStatus(action ? "宠物菜单已更新。" : "宠物菜单绑定已清空。");
   }
 
+  async function persistWidgetShortcuts(shortcuts: WidgetShortcut[]) {
+    if (!config) return;
+    await persistConfig({
+      ...config,
+      widget: { shortcuts },
+    });
+    setStatus("小组件快捷入口已更新，桌面可能需要约一分钟刷新。");
+  }
+
+  function toggleWidgetShortcut(pageIndex: number, keyId: KeyId) {
+    const existingIndex = widgetShortcuts.findIndex(
+      (shortcut) => shortcut.pageIndex === pageIndex && shortcut.keyId === keyId,
+    );
+    const next = existingIndex >= 0
+      ? widgetShortcuts.filter((_, index) => index !== existingIndex)
+      : [...widgetShortcuts, { pageIndex, keyId }];
+    void persistWidgetShortcuts(next).catch((error) => setStatus(String(error)));
+  }
+
+  function moveWidgetShortcut(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    if (target < 0 || target >= widgetShortcuts.length) return;
+    const next = [...widgetShortcuts];
+    [next[index], next[target]] = [next[target], next[index]];
+    void persistWidgetShortcuts(next).catch((error) => setStatus(String(error)));
+  }
+
   const applyPreset = (preset: VisualThemePreset) => {
     const nextTheme = { ...theme, ...preset };
     setTheme(nextTheme);
@@ -391,6 +423,7 @@ export function SettingsPanel({
       const syncStatus = await getCloudSyncStatus();
       setCloudSyncBaseUrl(syncStatus.baseUrl);
       setCloudSyncHasKey(syncStatus.hasSyncKey);
+      setCloudSyncKey(syncStatus.syncKey ?? "");
       setCloudSyncLatest(syncStatus.latestSnapshot ?? null);
       setCloudSyncMessage(syncStatus.hasSyncKey ? "云端同步状态已刷新。" : "尚未保存同步密钥。");
     } catch (error) {
@@ -407,9 +440,9 @@ export function SettingsPanel({
       const syncStatus = await saveCloudSyncKey(cloudSyncKey, cloudSyncBaseUrl);
       setCloudSyncBaseUrl(syncStatus.baseUrl);
       setCloudSyncHasKey(syncStatus.hasSyncKey);
+      setCloudSyncKey(syncStatus.syncKey ?? cloudSyncKey);
       setCloudSyncLatest(syncStatus.latestSnapshot ?? null);
-      setCloudSyncKey("");
-      setCloudSyncMessage("同步密钥已保存到本机凭据存储。请保存好密钥，新设备恢复时需要它，丢失后无法从本机找回。");
+      setCloudSyncMessage("同步密钥已保存到本机凭据存储，并会持续显示在输入框中，便于复制到新设备。");
     } catch (error) {
       setCloudSyncMessage(`保存同步密钥失败：${String(error)}`);
     } finally {
@@ -426,7 +459,7 @@ export function SettingsPanel({
       setCloudSyncHasKey(generated.status.hasSyncKey);
       setCloudSyncLatest(generated.status.latestSnapshot ?? null);
       setCloudSyncKey(generated.syncKey);
-      setCloudSyncMessage("已生成并保存同步密钥。请立即保存好输入框里的密钥，新设备恢复时需要它，丢失后无法找回。");
+      setCloudSyncMessage("已生成并保存同步密钥。密钥会持续显示在输入框中，可复制到新设备恢复。");
     } catch (error) {
       setCloudSyncMessage(`生成同步密钥失败：${String(error)}`);
     } finally {
@@ -708,6 +741,7 @@ export function SettingsPanel({
         </div>
 	        {[
 	          ["appearance", "外观"],
+	          ["widget", "小组件"],
 	          ["webaccounts", "网页账号"],
 	          ["entries", "入口"],
 	          ["cloudSync", "云同步"],
@@ -750,6 +784,8 @@ export function SettingsPanel({
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.84)" }}>
 	            {activeSection === "appearance"
 	              ? "外观设置"
+	              : activeSection === "widget"
+	                ? "桌面小组件"
 	              : activeSection === "entries"
 	                ? "入口设置"
 	                : activeSection === "cloudSync"
@@ -881,6 +917,115 @@ export function SettingsPanel({
                 </button>
               </div>
             </>
+          ) : activeSection === "widget" ? (
+            <section className="motion-list" style={{ padding: 2 }}>
+              <h2 style={{ margin: "0 0 8px", fontSize: 16 }}>小组件快捷入口</h2>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.48)", lineHeight: 1.65, marginBottom: 12 }}>
+                从虚拟键盘已有绑定中任意选择。小、中、大尺寸分别最多显示 4、8、16 个；超出部分仍会保存，可通过调整顺序决定优先显示。
+              </div>
+
+              <div style={{ ...panelStyle, padding: 12, marginBottom: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.76)", marginBottom: 8 }}>
+                  已选择 · {widgetShortcuts.length}
+                </div>
+                {widgetShortcuts.length === 0 ? (
+                  <div style={{ padding: "12px 4px", fontSize: 11, color: "rgba(255,255,255,0.4)" }}>
+                    尚未选择。请从下方绑定列表添加。
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 7 }}>
+                    {widgetShortcuts.map((shortcut, index) => {
+                      const record = keyboardActions.find(
+                        (item) => item.id === `keyboard:${shortcut.pageIndex}:${shortcut.keyId}`,
+                      );
+                      if (!record?.action) return null;
+                      return (
+                        <div
+                          key={`${shortcut.pageIndex}:${shortcut.keyId}`}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "32px minmax(0, 1fr) auto",
+                            alignItems: "center",
+                            gap: 9,
+                            padding: "7px 8px",
+                            borderRadius: 8,
+                            border: "1px solid rgba(125,211,252,0.22)",
+                            background: "rgba(14,165,233,0.08)",
+                          }}
+                        >
+                          <ActionIcon action={record.action} size={28} />
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {record.title}
+                            </div>
+                            <div style={{ marginTop: 3, fontSize: 10, color: "rgba(255,255,255,0.42)" }}>
+                              {record.subtitle}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 5 }}>
+                            <button type="button" aria-label="上移" disabled={index === 0} onClick={() => moveWidgetShortcut(index, -1)} style={{ ...BUTTON, padding: "4px 7px" }}>↑</button>
+                            <button type="button" aria-label="下移" disabled={index === widgetShortcuts.length - 1} onClick={() => moveWidgetShortcut(index, 1)} style={{ ...BUTTON, padding: "4px 7px" }}>↓</button>
+                            <button type="button" onClick={() => toggleWidgetShortcut(shortcut.pageIndex, shortcut.keyId)} style={{ ...BUTTON, padding: "4px 7px", color: "rgba(248,113,113,0.9)" }}>移除</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ ...panelStyle, padding: 12 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.76)", marginBottom: 8 }}>
+                  虚拟键盘绑定
+                </div>
+                {keyboardActions.length === 0 ? (
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)" }}>当前没有可添加的绑定。</div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 7 }}>
+                    {keyboardActions.map((record) => {
+                      if (!record.action || record.keyId === undefined) return null;
+                      const pageIndex = Number(record.id.split(":")[1]);
+                      const selected = widgetShortcuts.some(
+                        (shortcut) => shortcut.pageIndex === pageIndex && shortcut.keyId === record.keyId,
+                      );
+                      return (
+                        <button
+                          key={record.id}
+                          type="button"
+                          onClick={() => toggleWidgetShortcut(pageIndex, record.keyId!)}
+                          style={{
+                            minWidth: 0,
+                            padding: 8,
+                            borderRadius: 8,
+                            border: selected ? "1px solid rgba(96,165,250,0.52)" : "1px solid rgba(255,255,255,0.1)",
+                            background: selected ? "rgba(59,130,246,0.18)" : "rgba(255,255,255,0.035)",
+                            color: "rgba(255,255,255,0.76)",
+                            display: "grid",
+                            gridTemplateColumns: "30px minmax(0, 1fr) auto",
+                            alignItems: "center",
+                            gap: 8,
+                            textAlign: "left",
+                            cursor: "pointer",
+                          }}
+                        >
+                          <ActionIcon action={record.action} size={28} />
+                          <span style={{ minWidth: 0 }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{record.title}</span>
+                            <span style={{ display: "block", marginTop: 3, fontSize: 10, color: "rgba(255,255,255,0.42)" }}>{record.subtitle}</span>
+                          </span>
+                          <span style={{ fontSize: 15, color: selected ? "#60a5fa" : "rgba(255,255,255,0.35)" }}>{selected ? "✓" : "+"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+              {status && (
+                <div style={{ marginTop: 10, color: status.includes("失败") ? "rgba(248,113,113,0.9)" : "rgba(74,222,128,0.86)", fontSize: 11 }}>
+                  {status}
+                </div>
+              )}
+            </section>
           ) : activeSection === "entries" ? (
             <section className="motion-list" style={{ padding: 2 }}>
               <h2 style={{ margin: "0 0 12px", fontSize: 16 }}>入口</h2>
@@ -1031,11 +1176,12 @@ export function SettingsPanel({
 	                    <div style={LABEL}>同步密钥</div>
 	                    <input
 	                      style={INPUT}
-	                      type="password"
+	                      type="text"
 	                      value={cloudSyncKey}
 	                      onChange={(event) => setCloudSyncKey(event.target.value)}
-	                      placeholder={cloudSyncHasKey ? "已保存，留空保持不变" : "输入 dlsk_..."}
-	                      autoComplete="new-password"
+	                      placeholder="输入或生成 dlsk_..."
+	                      autoComplete="off"
+	                      spellCheck={false}
 	                    />
 	                  </div>
 	                </div>
@@ -1072,7 +1218,7 @@ export function SettingsPanel({
 	                  <div>
 	                    <div style={{ fontSize: 13, fontWeight: 700 }}>配置快照</div>
 	                    <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 6, lineHeight: 1.6 }}>
-	                      上传当前 `keyboard.yaml` 与 QuickMemory 自定义数据；恢复时会先备份本机文件再覆盖。
+	                      上传当前 `keyboard.yaml`、QuickMemory 自定义数据与任务发现记录；恢复时会先备份本机文件再覆盖。
 	                    </div>
 	                  </div>
 	                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
