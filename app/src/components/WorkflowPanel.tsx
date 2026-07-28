@@ -49,6 +49,7 @@ import type {
   Action,
   CompletionRule,
   KeyboardConfig,
+  ProjectTaskAction,
   ScriptAction,
   StepCondition,
   WorkflowDefinition,
@@ -177,6 +178,7 @@ function statusColor(status?: WorkflowRun["status"]): string {
   if (status === "succeeded") return "#34d399";
   if (status === "failed") return "#f87171";
   if (status === "cancelled") return "#fbbf24";
+  if (status === "interrupted") return "#fb923c";
   if (status === "running" || status === "waiting") return "#60a5fa";
   return "rgba(255,255,255,0.38)";
 }
@@ -189,6 +191,7 @@ function runStatusLabel(status: WorkflowRun["status"]): string {
     case "succeeded": return "已完成";
     case "failed": return "失败";
     case "cancelled": return "已取消";
+    case "interrupted": return "已中断";
   }
 }
 
@@ -1494,6 +1497,23 @@ export function WorkflowPanel({
                       spellCheck={false}
                     />
                   </div>
+                ) : step.action.type === "project_task" ? (
+                  <div style={{ display: "grid", gap: 7 }}>
+                    <div style={{
+                      padding: "9px",
+                      borderRadius: 7,
+                      border: "1px solid rgba(34,211,238,0.2)",
+                      background: "rgba(8,145,178,0.08)",
+                      color: "rgba(207,250,254,0.74)",
+                      fontSize: 10,
+                      lineHeight: 1.55,
+                    }}>
+                      {`${(step.action as ProjectTaskAction).provider} · ${(step.action as ProjectTaskAction).file} · ${(step.action as ProjectTaskAction).taskName}`}
+                    </div>
+                    <div style={{ color: "rgba(255,255,255,0.36)", fontSize: 9.5, lineHeight: 1.55 }}>
+                      执行时会按项目 ID 和来源重新解析，不在工作流中保存绝对路径或命令快照。
+                    </div>
+                  </div>
                 ) : (
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{
@@ -1620,9 +1640,9 @@ export function WorkflowPanel({
                 <input style={INPUT} type="number" min={0} value={step.delayMs} onChange={(event) => updateStep({ delayMs: Number(event.target.value) })} />
               </Field>
               <div style={{ paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.09)" }}>
-                {step.action.type === "script" ? (
+                {step.action.type === "script" || step.action.type === "project_task" ? (
                   <div style={{ display: "flex", alignItems: "center", color: "rgba(255,255,255,0.34)", fontSize: 10 }}>
-                    脚本内容已在上方编辑
+                    {step.action.type === "script" ? "脚本内容已在上方编辑" : "项目任务引用由项目工作台维护"}
                   </div>
                 ) : (
                   <button style={BUTTON} onClick={() => setEditingStep(step)}>更换动作</button>

@@ -17,13 +17,27 @@ import {
 } from "./history";
 
 export interface ProjectTasksData {
+  schemaVersion: number;
+  projectProfiles: ProjectProfile[];
   projects: ScannedProject[];
   taskFavorites: FavoriteTaskRef[];
   configFavorites: FavoriteConfigRef[];
   lastRoot: string;
 }
 
+export interface ProjectProfile {
+  id: string;
+  name: string;
+  root: string;
+  createdAt: number;
+  lastVisitedAt: number;
+  status: "ready" | "missing" | string;
+  repositoryHint?: string;
+}
+
 const EMPTY_DATA: ProjectTasksData = {
+  schemaVersion: 2,
+  projectProfiles: [],
   projects: [],
   taskFavorites: [],
   configFavorites: [],
@@ -32,6 +46,8 @@ const EMPTY_DATA: ProjectTasksData = {
 
 function localStorageData(): ProjectTasksData {
   return {
+    schemaVersion: 2,
+    projectProfiles: [],
     projects: parseProjectHistory(
       localStorage.getItem(PROJECT_HISTORY_STORAGE_KEY),
       localStorage.getItem(LEGACY_ROOT_STORAGE_KEY),
@@ -43,7 +59,14 @@ function localStorageData(): ProjectTasksData {
 }
 
 function normalizeData(data: Partial<ProjectTasksData> | null | undefined): ProjectTasksData {
+  const profiles = Array.isArray(data?.projectProfiles)
+    ? data.projectProfiles.filter((profile): profile is ProjectProfile =>
+        Boolean(profile && typeof profile.id === "string" && typeof profile.root === "string")
+      )
+    : [];
   return {
+    schemaVersion: typeof data?.schemaVersion === "number" ? Math.max(2, data.schemaVersion) : 2,
+    projectProfiles: profiles,
     projects: parseProjectHistory(JSON.stringify(data?.projects ?? [])),
     taskFavorites: parseTaskFavorites(JSON.stringify(data?.taskFavorites ?? [])),
     configFavorites: parseConfigFavorites(JSON.stringify(data?.configFavorites ?? [])),
@@ -55,6 +78,8 @@ export async function loadProjectTasksData(): Promise<ProjectTasksData> {
   const stored = normalizeData(await invoke<ProjectTasksData>("load_projecttasks_data"));
   const legacy = localStorageData();
   const migrated: ProjectTasksData = {
+    schemaVersion: stored.schemaVersion,
+    projectProfiles: stored.projectProfiles,
     projects: stored.projects.length ? stored.projects : legacy.projects,
     taskFavorites: stored.taskFavorites.length ? stored.taskFavorites : legacy.taskFavorites,
     configFavorites: stored.configFavorites.length ? stored.configFavorites : legacy.configFavorites,

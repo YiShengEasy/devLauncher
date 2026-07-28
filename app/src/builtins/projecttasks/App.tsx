@@ -9,7 +9,7 @@ import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { MacWindowControls } from "@/components/MacWindowControls";
 import { AddIcon, CopyIcon, DeleteIcon, FavoriteIcon, FolderIcon, RetryIcon } from "@/icons";
 import { useEscapeToClose } from "@/hooks/useEscapeToClose";
-import type { ScriptAction } from "@/types/actions";
+import type { ProjectTaskAction } from "@/types/actions";
 import {
   PROJECT_TASK_FAVORITES_STORAGE_KEY,
   isTaskFavorite,
@@ -27,6 +27,7 @@ import {
 import type { ScannedProject } from "./history";
 import { ProjectTerminal, type ProjectTerminalHandle } from "./ProjectTerminal";
 import { ProjectConfigsPanel } from "./ProjectConfigsPanel";
+import { RunHistoryPanel } from "./RunHistoryPanel";
 import { buildRunmeRefactorPrompt } from "./prompt";
 import { WorkflowImportDialog } from "./WorkflowImportDialog";
 import {
@@ -34,11 +35,14 @@ import {
   listUserCreatedWorkflows,
   type WorkflowImportTarget,
 } from "./workflowImport";
-import { loadProjectTasksData, updateProjectTasksData } from "./storage";
+import { loadProjectTasksData, updateProjectTasksData, type ProjectProfile } from "./storage";
 import "./projecttasks.css";
 
 interface RunmeTask {
   id: string;
+  provider: string;
+  providerLabel: string;
+  sourceKey: string;
   name: string;
   file: string;
   line: number;
@@ -50,11 +54,15 @@ interface RunmeTask {
 }
 
 interface RunmeDiscovery {
+  projectId: string;
   root: string;
   projectName: string;
   runmeAvailable: boolean;
   runmeVersion?: string;
   scannedFiles: number;
+  providers: string[];
+  gitBranch?: string;
+  repositoryHint?: string;
   tasks: RunmeTask[];
   warnings: string[];
 }
@@ -71,16 +79,18 @@ const PREVIEW_PROJECTS: ScannedProject[] = [
   { root: "/Users/demo/Projects/inspiration-diary", name: "inspiration-diary", taskCount: 3, scannedFiles: 5, lastScannedAt: Date.now() - 86_400_000 },
 ];
 const PREVIEW_DISCOVERY: RunmeDiscovery = {
+  projectId: "project-preview",
   root: PREVIEW_ROOT,
   projectName: "devLauncher",
   runmeAvailable: true,
   runmeVersion: "runme 3.17.2",
   scannedFiles: 14,
+  providers: ["runme", "package"],
   tasks: [
-    { id: "preview:dev", name: "dev-start", file: "TASKS.md", line: 8, language: "sh", command: "npm run tauri:dev:mac", category: "develop", risk: "safe", runnable: true },
-    { id: "preview:test", name: "test-all", file: "TASKS.md", line: 16, language: "sh", command: "npm test\ncargo test", category: "test", risk: "safe", runnable: true },
-    { id: "preview:build", name: "build-macos", file: "TASKS.md", line: 24, language: "sh", command: "npm run release:mac", category: "build", risk: "safe", runnable: true },
-    { id: "preview:release", name: "release-github", file: "TASKS.md", line: 32, language: "sh", command: "git push origin main", category: "release", risk: "review", runnable: true },
+    { id: "preview:dev", provider: "package", providerLabel: "Package Scripts", sourceKey: "dev", name: "dev", file: "package.json", line: 8, language: "package-script", command: "npm run 'dev'", category: "develop", risk: "safe", runnable: true },
+    { id: "preview:test", provider: "runme", providerLabel: "Runme", sourceKey: "test-all", name: "test-all", file: "TASKS.md", line: 16, language: "sh", command: "npm test\ncargo test", category: "test", risk: "safe", runnable: true },
+    { id: "preview:build", provider: "runme", providerLabel: "Runme", sourceKey: "build-macos", name: "build-macos", file: "TASKS.md", line: 24, language: "sh", command: "npm run release:mac", category: "build", risk: "safe", runnable: true },
+    { id: "preview:release", provider: "runme", providerLabel: "Runme", sourceKey: "release-github", name: "release-github", file: "TASKS.md", line: 32, language: "sh", command: "git push origin main", category: "release", risk: "review", runnable: true },
   ],
   warnings: [],
 };
@@ -198,7 +208,7 @@ async function copyText(text: string): Promise<void> {
 }
 
 export function ProjectTasksApp() {
-  const [activeView, setActiveView] = useState<"tasks" | "configs">("tasks");
+  const [activeView, setActiveView] = useState<"tasks" | "configs" | "runs">("tasks");
   const [projectHistory, setProjectHistory] = useState<ScannedProject[]>(() =>
     IS_DESIGN_PREVIEW
       ? PREVIEW_PROJECTS
@@ -313,7 +323,11 @@ export function ProjectTasksApp() {
     loadProjectTasksData()
       .then((data) => {
         if (cancelled) return;
-        setProjectHistory(data.projects);
+        const profiles = new Map(data.projectProfiles.map((profile) => [profile.id, profile]));
+        setProjectHistory(data.projects.map((project) => ({
+          ...project,
+          status: project.projectId ? profiles.get(project.projectId)?.status : project.status,
+        })));
         setFavorites(data.taskFavorites);
         if (data.lastRoot) setRoot(data.lastRoot);
       })
@@ -352,6 +366,8 @@ export function ProjectTasksApp() {
     discoveryCacheRef.current.set(result.root, result);
     setProjectHistory((projects) => {
       const next = upsertProjectHistory(projects, {
+        projectId: result.projectId,
+        status: "ready",
         root: result.root,
         name: result.projectName,
         taskCount: result.tasks.length,
@@ -378,17 +394,17 @@ export function ProjectTasksApp() {
       setSelectedId(null);
       setCategoryFilter("all");
     }
-    setStatus("正在扫描 Markdown 任务…");
+    setStatus("正在扫描项目任务来源…");
     try {
-      const result = await invoke<RunmeDiscovery>("discover_runme_tasks", { root: projectRoot });
+      const result = await invoke<RunmeDiscovery>("discover_project_tasks", { root: projectRoot });
       rememberDiscovery(result);
       if (requestId !== scanSequenceRef.current) return;
       applyDiscovery(result);
       localStorage.setItem(LEGACY_ROOT_STORAGE_KEY, result.root);
       setStatus(
         result.tasks.length === 0
-          ? `扫描了 ${result.scannedFiles} 个 Markdown 文件，没有发现显式命名任务`
-          : `已发现 ${result.tasks.length} 个任务，扫描 ${result.scannedFiles} 个 Markdown 文件`,
+          ? `扫描了 ${result.scannedFiles} 个任务来源，没有发现可用任务`
+          : `已发现 ${result.tasks.length} 个任务，来源：${result.providers.join("、")}`,
       );
     } catch (error) {
       if (requestId !== scanSequenceRef.current) return;
@@ -414,36 +430,75 @@ export function ProjectTasksApp() {
     void scanProject(projectRoot, true);
   };
 
+  const relocateProject = async (project: ScannedProject) => {
+    if (!project.projectId) {
+      await chooseProject();
+      return;
+    }
+    const selected = await dialogOpen({
+      directory: true,
+      multiple: false,
+      title: `重新定位 ${project.name}`,
+    });
+    if (typeof selected !== "string") return;
+    try {
+      const profile = await invoke<ProjectProfile>("relocate_project_profile", {
+        projectId: project.projectId,
+        root: selected,
+      });
+      const next = projectHistory.map((item) => (
+        item.projectId === project.projectId
+          ? { ...item, root: profile.root, name: profile.name, status: "ready" }
+          : item
+      ));
+      setProjectHistory(next);
+      localStorage.setItem(PROJECT_HISTORY_STORAGE_KEY, JSON.stringify(next));
+      setRoot(profile.root);
+      await scanProject(profile.root, true);
+    } catch (error) {
+      setStatus(`重新定位失败：${String(error)}`);
+    }
+  };
+
   useEffect(() => {
     if (IS_DESIGN_PREVIEW || !storageLoaded || initialScanStartedRef.current) return;
     const storedRoot = root || projectHistory[0]?.root;
     if (!storedRoot) return;
+    const storedProject = projectHistory.find((project) => project.root === storedRoot);
+    if (storedProject?.status === "missing") {
+      setStatus(`${storedProject.name} 的目录已移动，请点击项目重新定位`);
+      return;
+    }
     initialScanStartedRef.current = true;
     setRoot(storedRoot);
     void scanProject(storedRoot, true);
   }, [storageLoaded, projectHistory, root]);
 
-  const removeScannedProject = (projectRoot: string) => {
+  const removeScannedProject = async (projectRoot: string) => {
     discoveryCacheRef.current.delete(projectRoot);
     if (scanningRoot === projectRoot) {
       scanSequenceRef.current += 1;
       setScanningRoot(null);
     }
-    setProjectHistory((projects) => {
-      const next = removeProjectHistory(projects, projectRoot);
-      localStorage.setItem(PROJECT_HISTORY_STORAGE_KEY, JSON.stringify(next));
-      if (localStorage.getItem(LEGACY_ROOT_STORAGE_KEY) === projectRoot) {
-        if (next[0]) {
-          localStorage.setItem(LEGACY_ROOT_STORAGE_KEY, next[0].root);
-        } else {
-          localStorage.removeItem(LEGACY_ROOT_STORAGE_KEY);
-        }
+    const project = projectHistory.find((item) => item.root === projectRoot);
+    const next = removeProjectHistory(projectHistory, projectRoot);
+    setProjectHistory(next);
+    localStorage.setItem(PROJECT_HISTORY_STORAGE_KEY, JSON.stringify(next));
+    if (localStorage.getItem(LEGACY_ROOT_STORAGE_KEY) === projectRoot) {
+      if (next[0]) {
+        localStorage.setItem(LEGACY_ROOT_STORAGE_KEY, next[0].root);
+      } else {
+        localStorage.removeItem(LEGACY_ROOT_STORAGE_KEY);
       }
-      void updateProjectTasksData({
-        projects: next,
-        lastRoot: next[0]?.root ?? "",
+    }
+    if (project?.projectId) {
+      await invoke("remove_project_profile", { projectId: project.projectId }).catch((error) => {
+        setStatus(`移除项目档案失败：${String(error)}`);
       });
-      return next;
+    }
+    await updateProjectTasksData({
+      projects: next,
+      lastRoot: next[0]?.root ?? "",
     });
     if (root === projectRoot || discovery?.root === projectRoot) {
       setDiscovery(null);
@@ -481,8 +536,10 @@ export function ProjectTasksApp() {
     }
     setBusy(true);
     try {
-      const command = await invoke<string>("runme_task_command", {
-        root: discovery.root,
+      const command = await invoke<string>("project_task_command", {
+        projectId: discovery.projectId,
+        provider: selectedTask.provider,
+        sourceKey: selectedTask.sourceKey,
         file: selectedTask.file,
         name: selectedTask.name,
       });
@@ -537,21 +594,18 @@ export function ProjectTasksApp() {
     setWorkflowImportBusy(true);
     setWorkflowImportError("");
     try {
-      const command = await invoke<string>("runme_task_command", {
-        root: workflowImport.source.root,
+      const action: ProjectTaskAction = {
+        type: "project_task",
+        name: `${workflowImport.task.providerLabel} · ${workflowImport.task.name}`,
+        projectId: workflowImport.source.projectId,
+        provider: workflowImport.task.provider,
+        sourceKey: workflowImport.task.sourceKey,
         file: workflowImport.task.file,
-        name: workflowImport.task.name,
-      });
-      const action: ScriptAction = {
-        type: "script",
-        name: `Runme · ${workflowImport.task.name}`,
-        shell: "terminal",
-        content: command,
+        taskName: workflowImport.task.name,
       };
       const config = await loadConfig();
       const result = importTaskIntoWorkflow(config, action, {
         projectName: workflowImport.source.projectName,
-        root: workflowImport.source.root,
         file: workflowImport.task.file,
         line: workflowImport.task.line,
       }, target);
@@ -573,13 +627,15 @@ export function ProjectTasksApp() {
   const copyCommand = async () => {
     if (!discovery || !selectedTask) return;
     try {
-      const command = await invoke<string>("runme_task_command", {
-        root: discovery.root,
+      const command = await invoke<string>("project_task_command", {
+        projectId: discovery.projectId,
+        provider: selectedTask.provider,
+        sourceKey: selectedTask.sourceKey,
         file: selectedTask.file,
         name: selectedTask.name,
       });
       await copyText(command);
-      setStatus("Runme 命令已复制");
+      setStatus("任务命令已复制");
     } catch (error) {
       setStatus(String(error));
     }
@@ -616,9 +672,15 @@ export function ProjectTasksApp() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <BuiltinIcon feature="projecttasks" size={22} />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800 }}>{activeView === "tasks" ? "项目任务" : "项目配置"}</div>
+            <div style={{ fontSize: 13, fontWeight: 800 }}>
+              {activeView === "tasks" ? "项目任务" : activeView === "configs" ? "项目配置" : "运行中心"}
+            </div>
             <div style={{ marginTop: 2, fontSize: 10, color: "rgba(220,226,244,0.5)" }}>
-              {activeView === "tasks" ? "Runme Markdown 任务发现器" : "多环境配置发现、预览与编辑"}
+              {activeView === "tasks"
+                ? "项目任务发现与安全执行"
+                : activeView === "configs"
+                  ? "多环境配置发现、预览与编辑"
+                  : "项目工作流状态、耗时与历史"}
             </div>
           </div>
         </div>
@@ -626,6 +688,7 @@ export function ProjectTasksApp() {
           <div className="projecttasks-view-switch" role="tablist" aria-label="项目工具">
             <button type="button" role="tab" aria-selected={activeView === "tasks"} data-active={activeView === "tasks"} onClick={() => setActiveView("tasks")}>任务</button>
             <button type="button" role="tab" aria-selected={activeView === "configs"} data-active={activeView === "configs"} onClick={() => setActiveView("configs")}>配置</button>
+            <button type="button" role="tab" aria-selected={activeView === "runs"} data-active={activeView === "runs"} onClick={() => setActiveView("runs")}>运行</button>
           </div>
           <MacWindowControls
             showPin={IS_TAURI_RUNTIME}
@@ -682,8 +745,14 @@ export function ProjectTasksApp() {
                   <button
                     className="projecttasks-project-main"
                     type="button"
-                    title={`切换到 ${project.root}`}
-                    onClick={() => selectScannedProject(project.root)}
+                    title={project.status === "missing" ? `重新定位 ${project.name}` : `切换到 ${project.root}`}
+                    onClick={() => {
+                      if (project.status === "missing") {
+                        void relocateProject(project);
+                      } else {
+                        selectScannedProject(project.root);
+                      }
+                    }}
                     disabled={busy}
                   >
                     <span className="projecttasks-project-icon">
@@ -692,7 +761,11 @@ export function ProjectTasksApp() {
                     <div className="projecttasks-project-copy">
                       <div className="projecttasks-project-name">{project.name}</div>
                       <div className="projecttasks-project-meta">
-                        {scanning ? "正在扫描…" : `${project.taskCount} 个任务 · ${formatScannedTime(project.lastScannedAt)}`}
+                        {scanning
+                          ? "正在扫描…"
+                          : project.status === "missing"
+                            ? "目录已移动 · 点击重新定位"
+                            : `${project.taskCount} 个任务 · ${formatScannedTime(project.lastScannedAt)}`}
                       </div>
                       <div className="projecttasks-project-path" title={project.root}>
                         {project.root}
@@ -704,7 +777,7 @@ export function ProjectTasksApp() {
                     type="button"
                     title={`移除 ${project.name}`}
                     aria-label={`从扫描历史移除 ${project.name}`}
-                    onClick={() => removeScannedProject(project.root)}
+                    onClick={() => void removeScannedProject(project.root)}
                     disabled={busy || scanning}
                   >
                     <DeleteIcon size={14} decorative style={{ color: "currentColor", display: "block" }} />
@@ -847,6 +920,7 @@ export function ProjectTasksApp() {
                           </span>
                         </div>
                         <div style={{ marginTop: 5, display: "flex", gap: 7, color: "rgba(220,226,244,0.46)", fontSize: 9 }}>
+                          <span>{task.providerLabel}</span>
                           <span>{task.file}:{task.line}</span>
                         </div>
                       </button>
@@ -865,8 +939,8 @@ export function ProjectTasksApp() {
                 })}
               </section>
             ))}
-            {!discovery && <div style={{ padding: "28px 12px", color: "rgba(220,226,244,0.42)", fontSize: 11, lineHeight: 1.6 }}>选择项目后，这里会列出 README 或其他 Markdown 文件中的命名代码块。</div>}
-            {discovery && discovery.tasks.length === 0 && <div style={{ padding: "28px 12px", color: "rgba(220,226,244,0.42)", fontSize: 11, lineHeight: 1.6 }}>没有找到显式命名的 Runme 任务。右侧可复制 AI 提示词整理项目文档。</div>}
+            {!discovery && <div style={{ padding: "28px 12px", color: "rgba(220,226,244,0.42)", fontSize: 11, lineHeight: 1.6 }}>选择项目后，这里会列出 Runme 和 package scripts 等声明式任务。</div>}
+            {discovery && discovery.tasks.length === 0 && <div style={{ padding: "28px 12px", color: "rgba(220,226,244,0.42)", fontSize: 11, lineHeight: 1.6 }}>没有找到命名 Runme 任务或 package scripts。右侧可复制 AI 提示词整理项目文档。</div>}
           </div>
         </aside>
 
@@ -901,7 +975,7 @@ export function ProjectTasksApp() {
                   复制
                 </button>
                 <button type="button" className="projecttasks-button" style={BUTTON} onClick={() => void openWorkflowImportDialog()} disabled={busy || !selectedTask.runnable}>保存为工作流</button>
-                <button type="button" className="projecttasks-button" style={{ ...BUTTON, borderColor: "rgba(45,212,191,0.52)", background: "rgba(20,184,166,0.18)", color: "#9ff8e8" }} onClick={() => void runSelectedTask()} disabled={busy || !discovery?.runmeAvailable || !selectedTask.runnable}>
+                <button type="button" className="projecttasks-button" style={{ ...BUTTON, borderColor: "rgba(45,212,191,0.52)", background: "rgba(20,184,166,0.18)", color: "#9ff8e8" }} onClick={() => void runSelectedTask()} disabled={busy || !selectedTask.runnable}>
                   执行任务
                 </button>
               </div>
@@ -919,7 +993,7 @@ export function ProjectTasksApp() {
           <section style={{ marginTop: 13, padding: 14, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, background: "rgba(8,10,18,0.22)" }}>
             <div style={{ fontSize: 11, fontWeight: 800 }}>运行说明</div>
             <div style={{ marginTop: 8, color: "rgba(220,226,244,0.54)", fontSize: 10.5, lineHeight: 1.65 }}>
-              执行会在下方项目终端中调用 <code>runme run</code>。保存为工作流后，任务会成为普通脚本步骤，可继续配置条件、完成规则和键位绑定。
+              执行前会由 Rust 后端按项目档案和任务来源重新验证，再将命令发送到下方项目终端。保存为工作流后会保留可重新解析的任务引用，可继续配置条件、完成规则和键位绑定。
             </div>
           </section>
 
@@ -938,7 +1012,7 @@ export function ProjectTasksApp() {
                   <div style={{ marginTop: 5, color: "rgba(220,226,244,0.54)", fontSize: 10.5, lineHeight: 1.55 }}>
                     {discovery.tasks.length === 0
                       ? "当前项目没有显式命名任务。复制提示词，让 AI 核对现有脚本并整理 README 或 TASKS.md。"
-                      : "扫描结果不准确、遗漏任务或混入说明内容时，可让 AI 按统一 Runme 规则整理项目文档。"}
+                      : "扫描结果不准确、遗漏任务或混入说明内容时，可让 AI 按统一项目任务规则整理文档。"}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 7, flexShrink: 0 }}>
@@ -963,8 +1037,10 @@ export function ProjectTasksApp() {
           <ProjectTerminal ref={terminalRef} cwd={discovery?.root ?? ""} />
         </main>
       </div>
-      ) : (
+      ) : activeView === "configs" ? (
         <ProjectConfigsPanel initialRoot={root} onRootChange={setRoot} />
+      ) : (
+        <RunHistoryPanel projectId={discovery?.projectId ?? projectHistory.find((project) => project.root === root)?.projectId} tauriRuntime={IS_TAURI_RUNTIME} />
       )}
       {feedback && (
         <div className="projecttasks-feedback" role="status" aria-live="polite">

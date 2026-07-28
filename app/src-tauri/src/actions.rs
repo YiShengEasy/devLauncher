@@ -528,6 +528,9 @@ pub(crate) fn execute_action_value(
                 _ => {}
             }
         }
+        "project_task" => {
+            return Err("项目任务引用只能通过工作流引擎重新验证后执行".into());
+        }
         "system" => {
             let cmd = action["command"].as_str().unwrap_or("");
             let spec = system_command_spec(current_platform(), cmd)?;

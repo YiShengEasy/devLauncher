@@ -115,6 +115,7 @@ export const ACTION_ICON_COMPONENTS = {
   url: UrlIcon,
   ssh: ServerTerminalIcon,
   script: ScriptIcon,
+  project_task: ScriptIcon,
   system: SystemIcon,
   builtin: BuiltinToolIcon,
   plugin: PluginIcon,

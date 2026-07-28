@@ -36,7 +36,7 @@ function id(prefix) {
 }
 
 function defaultCompletion(action = {}) {
-  if (action.type === "script") {
+  if (action.type === "script" || action.type === "project_task") {
     return { type: "process_exit", successCodes: [0], timeoutMs: 120000 };
   }
   if (action.type === "app") {
@@ -263,6 +263,46 @@ const tools = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: "devlauncher_list_projects",
+    description: "List local DevLauncher project profiles without exposing absolute filesystem paths.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_list_project_tasks",
+    description: "Rescan and list declared tasks for one project profile. Returns stable references, not executable commands.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_preview_project_task",
+    description: "Check that a saved project-task reference still resolves without executing it or returning its command.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        provider: { type: "string", enum: ["runme", "package"] },
+        sourceKey: { type: "string" },
+        file: { type: "string" },
+        taskName: { type: "string" },
+      },
+      required: ["projectId", "provider", "sourceKey", "file", "taskName"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_list_run_history",
+    description: "List sanitized workflow run history. Command output, terminal sessions, and project paths are not included.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: "devlauncher_preview_workflow",
     description: "Normalize and validate a workflow draft without saving or executing it.",
     inputSchema: {
@@ -349,6 +389,14 @@ function handleToolCall(params = {}) {
     result = ctlInvocation("list");
   } else if (name === "devlauncher_get_workflow") {
     result = ctlInvocation("get", undefined, args.identifier);
+  } else if (name === "devlauncher_list_projects") {
+    result = ctlInvocation("projects");
+  } else if (name === "devlauncher_list_project_tasks") {
+    result = ctlInvocation("project-tasks", undefined, args.projectId);
+  } else if (name === "devlauncher_preview_project_task") {
+    result = ctlInvocation("project-task-preview", args);
+  } else if (name === "devlauncher_list_run_history") {
+    result = ctlInvocation("run-history");
   } else if (name === "devlauncher_preview_workflow") {
     const workflow = normalizeWorkflow(args.workflow);
     result = ctlInvocation("preview", workflow);

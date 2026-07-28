@@ -751,6 +751,285 @@
   line-height: 1.45;
 }
 
+.projectruns-layout {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.projectruns-list {
+  width: 460px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 10, 18, 0.18);
+}
+
+.projectruns-toolbar {
+  height: 56px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.projectruns-filter {
+  height: 28px;
+  min-width: 84px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  color: rgba(225, 231, 246, 0.56);
+  font-size: 9px;
+  outline: none;
+}
+
+.projectruns-scope {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.projectruns-scope button,
+.projectruns-clear,
+.projectruns-detail header button {
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(225, 231, 246, 0.54);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.projectruns-scope button {
+  height: 26px;
+  padding: 0 9px;
+}
+
+.projectruns-scope button[data-active="true"] {
+  background: rgba(45, 212, 191, 0.15);
+  color: #99f6e4;
+}
+
+.projectruns-scope button:disabled,
+.projectruns-clear:disabled {
+  cursor: default;
+  opacity: 0.36;
+}
+
+.projectruns-clear {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.projectruns-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 9px;
+}
+
+.projectruns-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 5px;
+  padding: 11px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.projectruns-row[data-active="true"] {
+  border-color: rgba(45, 212, 191, 0.28);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.projectruns-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.projectruns-row[data-status="succeeded"] .projectruns-status-dot { background: #34d399; }
+.projectruns-row[data-status="failed"] .projectruns-status-dot { background: #fb7185; }
+.projectruns-row[data-status="cancelled"] .projectruns-status-dot,
+.projectruns-row[data-status="interrupted"] .projectruns-status-dot { background: #fbbf24; }
+.projectruns-row[data-status="running"] .projectruns-status-dot,
+.projectruns-row[data-status="waiting"] .projectruns-status-dot { background: #60a5fa; }
+
+.projectruns-row-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.projectruns-row-copy strong {
+  overflow: hidden;
+  color: rgba(245, 248, 255, 0.88);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.projectruns-row-copy small,
+.projectruns-status {
+  color: rgba(220, 226, 244, 0.42);
+  font-size: 9px;
+}
+
+.projectruns-status {
+  white-space: nowrap;
+}
+
+.projectruns-detail {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 24px;
+}
+
+.projectruns-detail header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.projectruns-detail h2 {
+  margin: 0;
+  color: rgba(248, 250, 255, 0.94);
+  font-size: 18px;
+}
+
+.projectruns-detail header p {
+  margin: 7px 0 0;
+  color: rgba(220, 226, 244, 0.46);
+  font-size: 10px;
+}
+
+.projectruns-detail header button {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.projectruns-detail header button[data-danger="true"] {
+  border-color: rgba(251, 113, 133, 0.28);
+  background: rgba(251, 113, 133, 0.08);
+  color: #fda4af;
+}
+
+.projectruns-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.projectruns-summary {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.projectruns-summary span {
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(226, 232, 246, 0.58);
+  font-size: 9.5px;
+}
+
+.projectruns-steps {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+}
+
+.projectruns-step {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.projectruns-step > span {
+  color: rgba(148, 163, 184, 0.55);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+}
+
+.projectruns-step div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.projectruns-step strong {
+  color: rgba(240, 244, 252, 0.84);
+  font-size: 10.5px;
+}
+
+.projectruns-step small {
+  color: rgba(220, 226, 244, 0.42);
+  font-size: 9px;
+}
+
+.projectruns-privacy,
+.projectruns-empty,
+.projectruns-detail-empty {
+  color: rgba(220, 226, 244, 0.42);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.projectruns-privacy {
+  margin-top: 18px;
+}
+
+.projectruns-empty {
+  padding: 30px 14px;
+}
+
+.projectruns-detail-empty {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+}
+
+.projectruns-error {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  max-width: 420px;
+  padding: 9px 11px;
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  border-radius: 8px;
+  background: rgba(80, 20, 30, 0.92);
+  color: #fecdd3;
+  font-size: 10px;
+}
+
 .projecttasks-sidebar-title {
   color: rgba(245, 247, 252, 0.86);
   font-size: 11px;

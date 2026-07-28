@@ -37,6 +37,7 @@ fn action_name(action: &Action) -> &str {
         | Action::Url { name, .. }
         | Action::Ssh { name, .. }
         | Action::Script { name, .. }
+        | Action::ProjectTask { name, .. }
         | Action::System { name, .. }
         | Action::Builtin { name, .. }
         | Action::Plugin { name, .. }
@@ -67,6 +68,7 @@ fn action_appearance(action: &Action) -> (&'static str, &'static str) {
         Action::Url { .. } => ("globe", "#34D399"),
         Action::Ssh { .. } => ("network", "#C084FC"),
         Action::Script { .. } => ("terminal.fill", "#F87171"),
+        Action::ProjectTask { .. } => ("checklist", "#22D3EE"),
         Action::System { .. } => ("gearshape.fill", "#94A3B8"),
         Action::Builtin { feature, .. } => (builtin_symbol(feature), "#38BDF8"),
         Action::Plugin { .. } => ("puzzlepiece.extension.fill", "#6EE7B7"),

@@ -124,6 +124,20 @@ pub enum Action {
         #[serde(skip_serializing_if = "Option::is_none")]
         file: Option<String>,
     },
+    #[serde(rename = "project_task")]
+    ProjectTask {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+        #[serde(rename = "projectId", alias = "project_id")]
+        project_id: String,
+        provider: String,
+        #[serde(rename = "sourceKey", alias = "source_key")]
+        source_key: String,
+        file: String,
+        #[serde(rename = "taskName", alias = "task_name")]
+        task_name: String,
+    },
     System {
         name: String,
         command: String,

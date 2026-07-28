@@ -8,7 +8,8 @@ use crate::types::{
 use chrono::{Days, Local, LocalResult, TimeZone};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -21,6 +22,8 @@ const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 120_000;
 const MIN_SCHEDULE_INTERVAL_MINUTES: u64 = 1;
 const MAX_SCHEDULE_INTERVAL_MINUTES: u64 = 7 * 24 * 60;
+const MAX_RUN_HISTORY: usize = 500;
+const RUN_HISTORY_SCHEMA_VERSION: u32 = 1;
 const CANCELLED: &str = "__workflow_cancelled__";
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -40,6 +43,7 @@ pub enum WorkflowRunStatus {
     Succeeded,
     Failed,
     Cancelled,
+    Interrupted,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -75,6 +79,10 @@ pub struct WorkflowRun {
     pub workflow_id: String,
     pub workflow_name: String,
     pub started_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
     pub trigger: WorkflowRunTrigger,
     pub status: WorkflowRunStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,6 +90,28 @@ pub struct WorkflowRun {
     pub steps: Vec<WorkflowStepRun>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunHistory {
+    #[serde(default = "default_run_history_schema_version")]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub records: Vec<WorkflowRun>,
+}
+
+impl Default for WorkflowRunHistory {
+    fn default() -> Self {
+        Self {
+            schema_version: RUN_HISTORY_SCHEMA_VERSION,
+            records: Vec::new(),
+        }
+    }
+}
+
+fn default_run_history_schema_version() -> u32 {
+    RUN_HISTORY_SCHEMA_VERSION
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -137,8 +167,13 @@ fn validate_completion(step: &WorkflowStep, errors: &mut Vec<String>, warnings: 
             if success_codes.is_empty() {
                 errors.push("process_exit requires at least one success code".into());
             }
-            if !matches!(step.action, Action::Script { .. }) {
-                errors.push("process_exit is only supported for script actions".into());
+            if !matches!(
+                step.action,
+                Action::Script { .. } | Action::ProjectTask { .. }
+            ) {
+                errors.push(
+                    "process_exit is only supported for script or project task actions".into(),
+                );
             }
         }
         CompletionRule::PortReady {
@@ -195,6 +230,23 @@ fn validate_action(action: &Action, errors: &mut Vec<String>) {
         }
         Action::Workflow { .. } => {
             errors.push("nested workflow actions are not supported".into());
+        }
+        Action::ProjectTask {
+            project_id,
+            provider,
+            source_key,
+            file,
+            task_name,
+            ..
+        } => {
+            if project_id.trim().is_empty()
+                || provider.trim().is_empty()
+                || source_key.trim().is_empty()
+                || file.trim().is_empty()
+                || task_name.trim().is_empty()
+            {
+                errors.push("project task reference is incomplete".into());
+            }
         }
         _ => {}
     }
@@ -335,6 +387,148 @@ pub fn set_binding_workspace_mode(app: AppHandle, enabled: bool) -> Result<(), S
     set_workspace_window_size(app, enabled, 980.0, 680.0, binding_workspace_size)
 }
 
+pub fn workflow_run_history_path(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("workflow_run_history.json")
+}
+
+pub fn read_workflow_run_history_from_path(path: &Path) -> Result<WorkflowRunHistory, String> {
+    if !path.exists() {
+        return Ok(WorkflowRunHistory::default());
+    }
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&content).map_err(|error| error.to_string())
+}
+
+fn persisted_run(run: &WorkflowRun) -> WorkflowRun {
+    let mut safe = run.clone();
+    safe.current_step_id = None;
+    safe.message = Some(
+        match safe.status {
+            WorkflowRunStatus::Pending => "workflow queued",
+            WorkflowRunStatus::Running => "workflow running",
+            WorkflowRunStatus::Waiting => "workflow waiting",
+            WorkflowRunStatus::Succeeded => "workflow completed",
+            WorkflowRunStatus::Failed => "workflow failed",
+            WorkflowRunStatus::Cancelled => "workflow cancelled",
+            WorkflowRunStatus::Interrupted => "workflow interrupted by application restart",
+        }
+        .into(),
+    );
+    for step in &mut safe.steps {
+        step.output = None;
+        step.terminal_session_id = None;
+        step.message = Some(
+            match step.status {
+                WorkflowStepRunStatus::Pending => "not started",
+                WorkflowStepRunStatus::Running => "interrupted",
+                WorkflowStepRunStatus::Waiting => "interrupted while waiting",
+                WorkflowStepRunStatus::Succeeded => "completed",
+                WorkflowStepRunStatus::Failed => "failed",
+                WorkflowStepRunStatus::Skipped => "skipped",
+                WorkflowStepRunStatus::Cancelled => "cancelled",
+            }
+            .into(),
+        );
+    }
+    safe
+}
+
+pub fn write_workflow_run_history_to_path(
+    path: &Path,
+    history: &WorkflowRunHistory,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let content = serde_json::to_vec_pretty(history).map_err(|error| error.to_string())?;
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, content).map_err(|error| error.to_string())?;
+    if fs::rename(&temp_path, path).is_ok() {
+        return Ok(());
+    }
+    let backup_path = path.with_extension("json.bak");
+    if path.exists() {
+        fs::rename(path, &backup_path).map_err(|error| {
+            let _ = fs::remove_file(&temp_path);
+            error.to_string()
+        })?;
+    }
+    match fs::rename(&temp_path, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&backup_path);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::rename(&backup_path, path);
+            let _ = fs::remove_file(&temp_path);
+            Err(error.to_string())
+        }
+    }
+}
+
+fn persist_run(app: &AppHandle, run: &WorkflowRun) -> Result<(), String> {
+    let path = workflow_run_history_path(app);
+    let mut history = read_workflow_run_history_from_path(&path).unwrap_or_default();
+    let safe = persisted_run(run);
+    history.records.retain(|record| record.id != safe.id);
+    history.records.push(safe);
+    history
+        .records
+        .sort_by(|left, right| left.started_at.cmp(&right.started_at));
+    while history.records.len() > MAX_RUN_HISTORY {
+        let removable = history.records.iter().position(|record| {
+            matches!(
+                record.status,
+                WorkflowRunStatus::Succeeded
+                    | WorkflowRunStatus::Failed
+                    | WorkflowRunStatus::Cancelled
+                    | WorkflowRunStatus::Interrupted
+            )
+        });
+        let Some(index) = removable else {
+            break;
+        };
+        history.records.remove(index);
+    }
+    history.schema_version = RUN_HISTORY_SCHEMA_VERSION;
+    write_workflow_run_history_to_path(&path, &history)
+}
+
+pub fn setup_run_history(app: &AppHandle) {
+    let path = workflow_run_history_path(app);
+    let Ok(mut history) = read_workflow_run_history_from_path(&path) else {
+        return;
+    };
+    let now = unix_time_millis();
+    let mut changed = false;
+    for run in &mut history.records {
+        if matches!(
+            run.status,
+            WorkflowRunStatus::Pending | WorkflowRunStatus::Running | WorkflowRunStatus::Waiting
+        ) {
+            run.status = WorkflowRunStatus::Interrupted;
+            run.finished_at = Some(now);
+            run.message = Some("workflow interrupted by application restart".into());
+            for step in &mut run.steps {
+                if matches!(
+                    step.status,
+                    WorkflowStepRunStatus::Running | WorkflowStepRunStatus::Waiting
+                ) {
+                    step.status = WorkflowStepRunStatus::Cancelled;
+                    step.message = Some("interrupted by application restart".into());
+                }
+            }
+            changed = true;
+        }
+    }
+    if changed {
+        let _ = write_workflow_run_history_to_path(&path, &history);
+    }
+}
+
 fn emit_run(app: &AppHandle, inner: &WorkflowEngineInner, run_id: &str) {
     let snapshot = inner
         .runs
@@ -342,6 +536,22 @@ fn emit_run(app: &AppHandle, inner: &WorkflowEngineInner, run_id: &str) {
         .ok()
         .and_then(|runs| runs.get(run_id).cloned());
     if let Some(snapshot) = snapshot {
+        if let Err(error) = persist_run(app, &snapshot) {
+            eprintln!("failed to persist workflow run: {error}");
+            let _ = app.emit(
+                "workflow-run-history-error",
+                "运行状态已更新，但本地历史写入失败",
+            );
+        }
+        let _ = app.emit(
+            "project-run-summary",
+            serde_json::json!({
+                "runId": snapshot.id,
+                "projectId": snapshot.project_id,
+                "name": snapshot.workflow_name,
+                "status": snapshot.status,
+            }),
+        );
         let _ = app.emit("workflow-run-status", snapshot);
     }
 }
@@ -517,6 +727,16 @@ where
     if let Ok(mut runs) = inner.runs.lock() {
         if let Some(run) = runs.get_mut(run_id) {
             update(run);
+            if matches!(
+                run.status,
+                WorkflowRunStatus::Succeeded
+                    | WorkflowRunStatus::Failed
+                    | WorkflowRunStatus::Cancelled
+                    | WorkflowRunStatus::Interrupted
+            ) && run.finished_at.is_none()
+            {
+                run.finished_at = Some(unix_time_millis());
+            }
         }
     }
     emit_run(app, inner, run_id);
@@ -1451,10 +1671,59 @@ async fn execute_workflow(
     }
 }
 
+fn resolve_project_task_actions(
+    app: &AppHandle,
+    workflow: &mut WorkflowDefinition,
+) -> Result<Option<String>, String> {
+    let data_path = crate::builtins::projecttasks::projecttasks_data_path(app);
+    let project_ids = workflow
+        .steps
+        .iter()
+        .filter_map(|step| match &step.action {
+            Action::ProjectTask { project_id, .. } => Some(project_id.clone()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+
+    for step in &mut workflow.steps {
+        let Action::ProjectTask {
+            name,
+            icon,
+            project_id,
+            provider,
+            source_key,
+            file,
+            task_name,
+        } = step.action.clone()
+        else {
+            continue;
+        };
+        let command = crate::builtins::projecttasks::resolve_project_task_command(
+            &data_path,
+            &project_id,
+            &provider,
+            &source_key,
+            &file,
+            &task_name,
+        )?;
+        step.action = Action::Script {
+            name,
+            icon,
+            shell: "terminal".into(),
+            content: Some(command),
+            file: None,
+        };
+    }
+
+    Ok((project_ids.len() == 1)
+        .then(|| project_ids.into_iter().next())
+        .flatten())
+}
+
 fn start_workflow_definition(
     app: AppHandle,
     inner: Arc<WorkflowEngineInner>,
-    workflow: WorkflowDefinition,
+    mut workflow: WorkflowDefinition,
     trigger: WorkflowRunTrigger,
 ) -> Result<WorkflowRun, String> {
     if !workflow.enabled {
@@ -1464,6 +1733,7 @@ fn start_workflow_definition(
     if !report.valid {
         return Err(report.errors.join("; "));
     }
+    let project_id = resolve_project_task_actions(&app, &mut workflow)?;
 
     let already_running = inner
         .runs
@@ -1488,6 +1758,8 @@ fn start_workflow_definition(
         workflow_id: workflow.id.clone(),
         workflow_name: workflow.name.clone(),
         started_at: unix_time_millis(),
+        finished_at: None,
+        project_id,
         trigger,
         status: WorkflowRunStatus::Pending,
         current_step_id: None,
@@ -1584,33 +1856,80 @@ pub async fn run_workflow_step(
 
 #[tauri::command]
 pub fn get_workflow_run(
+    app: AppHandle,
     run_id: String,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<WorkflowRun, String> {
-    state
+    if let Some(run) = state
         .inner
         .runs
         .lock()
         .map_err(|_| "workflow state lock poisoned".to_string())?
         .get(&run_id)
         .cloned()
+    {
+        return Ok(run);
+    }
+    read_workflow_run_history_from_path(&workflow_run_history_path(&app))?
+        .records
+        .into_iter()
+        .find(|run| run.id == run_id)
         .ok_or_else(|| "workflow run not found".to_string())
 }
 
 #[tauri::command]
 pub fn list_workflow_runs(
+    app: AppHandle,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<Vec<WorkflowRun>, String> {
-    let mut runs = state
+    let mut by_id = read_workflow_run_history_from_path(&workflow_run_history_path(&app))?
+        .records
+        .into_iter()
+        .map(|run| (run.id.clone(), run))
+        .collect::<HashMap<_, _>>();
+    for run in state
         .inner
         .runs
         .lock()
         .map_err(|_| "workflow state lock poisoned".to_string())?
         .values()
         .cloned()
-        .collect::<Vec<_>>();
+    {
+        by_id.insert(run.id.clone(), run);
+    }
+    let mut runs = by_id.into_values().collect::<Vec<_>>();
     runs.sort_by(|left, right| left.started_at.cmp(&right.started_at));
     Ok(runs)
+}
+
+#[tauri::command]
+pub fn clear_workflow_run_history(
+    app: AppHandle,
+    state: tauri::State<'_, WorkflowEngineState>,
+) -> Result<(), String> {
+    let active = state
+        .inner
+        .runs
+        .lock()
+        .map_err(|_| "workflow state lock poisoned".to_string())?
+        .values()
+        .filter(|run| {
+            matches!(
+                run.status,
+                WorkflowRunStatus::Pending
+                    | WorkflowRunStatus::Running
+                    | WorkflowRunStatus::Waiting
+            )
+        })
+        .map(persisted_run)
+        .collect::<Vec<_>>();
+    write_workflow_run_history_to_path(
+        &workflow_run_history_path(&app),
+        &WorkflowRunHistory {
+            schema_version: RUN_HISTORY_SCHEMA_VERSION,
+            records: active,
+        },
+    )
 }
 
 #[tauri::command]
@@ -1655,10 +1974,12 @@ pub fn confirm_workflow_step(
 mod tests {
     use super::{
         binding_workspace_size, daily_schedule_due, evaluate_condition, next_daily_run_at,
-        parse_daily_time, process_output_tail, schedule_due, script_command_spec,
-        standalone_step_workflow, unix_time_millis, uses_managed_script_process,
-        validate_workflow_definition, workflow_workspace_size, WorkflowScheduleRuntime,
-        WorkflowStepRunStatus, MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
+        parse_daily_time, persisted_run, process_output_tail, read_workflow_run_history_from_path,
+        schedule_due, script_command_spec, standalone_step_workflow, unix_time_millis,
+        uses_managed_script_process, validate_workflow_definition, workflow_workspace_size,
+        write_workflow_run_history_to_path, WorkflowRun, WorkflowRunHistory, WorkflowRunStatus,
+        WorkflowRunTrigger, WorkflowScheduleRuntime, WorkflowStepRun, WorkflowStepRunStatus,
+        MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
     };
     use crate::types::{
         Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowSchedule, WorkflowStep,
@@ -1701,6 +2022,68 @@ mod tests {
             timeout_ms: 5_000,
         });
         assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn validates_project_task_process_exit() {
+        let mut workflow = script_workflow(CompletionRule::ProcessExit {
+            success_codes: vec![0],
+            timeout_ms: 5_000,
+        });
+        workflow.steps[0].action = Action::ProjectTask {
+            name: "Test".into(),
+            icon: None,
+            project_id: "project-1".into(),
+            provider: "package".into(),
+            source_key: "test".into(),
+            file: "package.json".into(),
+            task_name: "test".into(),
+        };
+        assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn run_history_persistence_removes_output_and_terminal_details() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("history.json");
+        let run = WorkflowRun {
+            id: "run-1".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_name: "Test".into(),
+            started_at: 100,
+            finished_at: Some(200),
+            project_id: Some("project-1".into()),
+            trigger: WorkflowRunTrigger::Manual,
+            status: WorkflowRunStatus::Failed,
+            current_step_id: Some("step-1".into()),
+            steps: vec![WorkflowStepRun {
+                step_id: "step-1".into(),
+                name: "Test".into(),
+                status: WorkflowStepRunStatus::Failed,
+                message: Some("/private/project failed".into()),
+                output: Some("secret output".into()),
+                terminal_session_id: Some("terminal-1".into()),
+            }],
+            message: Some("/private/project failed".into()),
+        };
+        write_workflow_run_history_to_path(
+            &path,
+            &WorkflowRunHistory {
+                schema_version: 1,
+                records: vec![persisted_run(&run)],
+            },
+        )
+        .expect("write history");
+        let saved = read_workflow_run_history_from_path(&path)
+            .expect("read history")
+            .records
+            .pop()
+            .expect("saved run");
+        assert_eq!(saved.message.as_deref(), Some("workflow failed"));
+        assert!(saved.current_step_id.is_none());
+        assert!(saved.steps[0].output.is_none());
+        assert!(saved.steps[0].terminal_session_id.is_none());
+        assert_eq!(saved.steps[0].message.as_deref(), Some("failed"));
     }
 
     #[test]

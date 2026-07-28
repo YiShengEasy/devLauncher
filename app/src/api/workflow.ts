@@ -21,7 +21,7 @@ export function workflowId(prefix: "workflow" | "step" = "workflow"): string {
 }
 
 export function defaultCompletionForAction(action: Action): CompletionRule {
-  if (action.type === "script") {
+  if (action.type === "script" || action.type === "project_task") {
     return { type: "process_exit", successCodes: [0], timeoutMs: 120_000 };
   }
   if (action.type === "app") {
@@ -95,6 +95,10 @@ export function runWorkflowStep(workflowId: string, stepId: string): Promise<Wor
 
 export function listWorkflowRuns(): Promise<WorkflowRun[]> {
   return invoke("list_workflow_runs");
+}
+
+export function clearWorkflowRunHistory(): Promise<void> {
+  return invoke("clear_workflow_run_history");
 }
 
 export function getWorkflowRun(runId: string): Promise<WorkflowRun> {

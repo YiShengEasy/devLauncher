@@ -1,6 +1,6 @@
 # 项目工作台（Project Workbench）
 
-状态：规划中
+状态：核心功能已实现
 
 开始：2026-07-28
 
@@ -24,6 +24,7 @@
 
 - [需求说明](01-requirements.md)
 - [实施计划](07-implementation-plan.md)
+- [实施报告](08-implementation-report.md)
 
 ## 范围边界
 

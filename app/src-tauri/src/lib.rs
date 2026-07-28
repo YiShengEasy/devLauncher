@@ -1,5 +1,5 @@
 mod actions;
-mod builtins;
+pub mod builtins;
 mod cloud_sync;
 pub mod config;
 mod entries;
@@ -191,6 +191,7 @@ pub fn run() {
             workflow::run_workflow_step,
             workflow::get_workflow_run,
             workflow::list_workflow_runs,
+            workflow::clear_workflow_run_history,
             workflow::cancel_workflow_run,
             workflow::confirm_workflow_step,
             workflow_window::show_workflow_window,
@@ -255,10 +256,15 @@ pub fn run() {
             builtins::quickmemory::save_quickmemory_data,
             builtins::quickmemory::toggle_quickmemory_window,
             builtins::projecttasks::discover_runme_tasks,
+            builtins::projecttasks::discover_project_tasks,
             builtins::projecttasks::runme_task_command,
+            builtins::projecttasks::project_task_command,
             builtins::projecttasks::toggle_projecttasks_window,
             builtins::projecttasks::load_projecttasks_data,
             builtins::projecttasks::save_projecttasks_data,
+            builtins::projecttasks::list_project_profiles,
+            builtins::projecttasks::relocate_project_profile,
+            builtins::projecttasks::remove_project_profile,
             builtins::projectconfigs::discover_project_configs,
             builtins::projectconfigs::read_project_config,
             builtins::projectconfigs::validate_project_config,
@@ -292,6 +298,7 @@ pub fn run() {
             builtins::clipboard::setup(app);
             video_tools::setup(app);
             keyboard_control_tap::setup(app.handle());
+            workflow::setup_run_history(app.handle());
             workflow::setup_scheduler(app.handle().clone());
             window_pinning::apply_all_startup_pin_states(app.handle());
             if let Ok(config) = config::load_config(app.handle().clone()) {

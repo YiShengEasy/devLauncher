@@ -1,11 +1,15 @@
+use app_lib::builtins::projecttasks::{
+    discover_project_tasks_blocking, read_projecttasks_data_from_path, resolve_project_task_command,
+};
 use app_lib::config::{read_config_from_path, write_config_to_path};
 use app_lib::types::{Action, KeyboardConfig, WorkflowDefinition};
-use app_lib::workflow::validate_workflow_definition;
+use app_lib::workflow::{read_workflow_run_history_from_path, validate_workflow_definition};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::fs::{self, OpenOptions};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +46,16 @@ struct UnbindInput {
     page_name: Option<String>,
     page_index: Option<usize>,
     key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProjectTaskPreviewInput {
+    project_id: String,
+    provider: String,
+    source_key: String,
+    file: String,
+    task_name: String,
 }
 
 struct ConfigLock {
@@ -167,7 +181,7 @@ fn capabilities() -> Value {
         "ok": true,
         "data": {
             "schemaVersion": 2,
-            "actions": ["app", "folder", "file", "url", "ssh", "script", "system", "builtin", "plugin"],
+            "actions": ["app", "folder", "file", "url", "ssh", "script", "project_task", "system", "builtin", "plugin"],
             "conditions": ["always", "previous_success", "previous_failed", "platform", "path_exists", "env_equals"],
             "completions": ["action_resolved", "process_started", "process_exit", "port_ready", "timer", "manual"],
             "schedules": ["interval", "daily"],
@@ -181,6 +195,149 @@ fn capabilities() -> Value {
             }
         }
     })
+}
+
+fn app_data_file(config_path: &Path, name: &str) -> PathBuf {
+    config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(name)
+}
+
+fn list_projects(config_path: &Path) -> Result<Value, String> {
+    let data =
+        read_projecttasks_data_from_path(&app_data_file(config_path, "projecttasks_data.json"))?;
+    Ok(json!({
+        "ok": true,
+        "data": data.project_profiles.into_iter().map(|profile| json!({
+            "id": profile.id,
+            "name": profile.name,
+            "status": profile.status,
+            "repositoryHint": profile.repository_hint,
+            "lastVisitedAt": profile.last_visited_at,
+        })).collect::<Vec<_>>(),
+    }))
+}
+
+fn list_project_tasks(config_path: &Path, project_id: &str) -> Result<Value, String> {
+    let data =
+        read_projecttasks_data_from_path(&app_data_file(config_path, "projecttasks_data.json"))?;
+    let profile = data
+        .project_profiles
+        .iter()
+        .find(|profile| profile.id == project_id)
+        .ok_or_else(|| "project profile not found".to_string())?;
+    if profile.status != "ready" {
+        return Ok(json!({
+            "ok": false,
+            "code": "PROJECT_RELOCATION_REQUIRED",
+            "message": "project profile must be relocated before scanning",
+        }));
+    }
+    let discovery = discover_project_tasks_blocking(&profile.root)?;
+    Ok(json!({
+        "ok": true,
+        "data": {
+            "projectId": profile.id,
+            "projectName": profile.name,
+            "providers": discovery.providers,
+            "gitBranch": discovery.git_branch,
+            "repositoryHint": discovery.repository_hint,
+            "tasks": discovery.tasks.into_iter().map(|task| json!({
+                "id": task.id,
+                "provider": task.provider,
+                "providerLabel": task.provider_label,
+                "sourceKey": task.source_key,
+                "name": task.name,
+                "file": task.file,
+                "line": task.line,
+                "language": task.language,
+                "category": task.category,
+                "risk": task.risk,
+                "runnable": task.runnable,
+            })).collect::<Vec<_>>(),
+            "warnings": discovery.warnings,
+        },
+    }))
+}
+
+fn preview_project_task(config_path: &Path) -> Result<Value, String> {
+    let input: ProjectTaskPreviewInput = read_stdin()?;
+    let data_path = app_data_file(config_path, "projecttasks_data.json");
+    resolve_project_task_command(
+        &data_path,
+        &input.project_id,
+        &input.provider,
+        &input.source_key,
+        &input.file,
+        &input.task_name,
+    )?;
+    Ok(json!({
+        "ok": true,
+        "data": {
+            "projectId": input.project_id,
+            "provider": input.provider,
+            "sourceKey": input.source_key,
+            "file": input.file,
+            "taskName": input.task_name,
+            "resolvable": true,
+        },
+    }))
+}
+
+fn list_run_history(config_path: &Path) -> Result<Value, String> {
+    let history = read_workflow_run_history_from_path(&app_data_file(
+        config_path,
+        "workflow_run_history.json",
+    ))?;
+    Ok(json!({
+        "ok": true,
+        "data": history.records,
+    }))
+}
+
+fn append_read_audit(
+    config_path: &Path,
+    tool: &str,
+    project_id: Option<&str>,
+    result: &Result<Value, String>,
+) {
+    let path = app_data_file(config_path, "automation_audit.jsonl");
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let resolved_project_id = project_id.or_else(|| {
+        result
+            .as_ref()
+            .ok()
+            .and_then(|value| value.pointer("/data/projectId"))
+            .and_then(Value::as_str)
+    });
+    let (result_code, ok) = match result {
+        Ok(value) => (
+            value.get("code").and_then(Value::as_str).unwrap_or("OK"),
+            value.get("ok").and_then(Value::as_bool).unwrap_or(true),
+        ),
+        Err(_) => ("VALIDATION_ERROR", false),
+    };
+    let record = json!({
+        "timestamp": timestamp,
+        "tool": tool,
+        "projectId": resolved_project_id,
+        "risk": "read_only",
+        "resultCode": result_code,
+        "ok": ok,
+    });
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+        let _ = writeln!(file, "{record}");
+    }
 }
 
 fn list_workflows(config_path: &PathBuf) -> Result<Value, String> {
@@ -440,7 +597,8 @@ fn run() -> Result<Value, String> {
     let mut args = std::env::args().skip(1);
     let command = args.next().unwrap_or_else(|| "capabilities".into());
     let config_path = default_config_path();
-    match command.as_str() {
+    let mut audit: Option<(&str, Option<String>)> = None;
+    let result = match command.as_str() {
         "capabilities" => Ok(capabilities()),
         "list" => list_workflows(&config_path),
         "get" => get_workflow(
@@ -454,8 +612,31 @@ fn run() -> Result<Value, String> {
         "delete" => delete_workflow(&config_path),
         "bind" => bind_workflow(&config_path),
         "unbind" => unbind_key(&config_path),
+        "projects" => {
+            audit = Some(("devlauncher_list_projects", None));
+            list_projects(&config_path)
+        }
+        "project-tasks" => {
+            let project_id = args
+                .next()
+                .ok_or_else(|| "project ID is required".to_string())?;
+            audit = Some(("devlauncher_list_project_tasks", Some(project_id.clone())));
+            list_project_tasks(&config_path, &project_id)
+        }
+        "project-task-preview" => {
+            audit = Some(("devlauncher_preview_project_task", None));
+            preview_project_task(&config_path)
+        }
+        "run-history" => {
+            audit = Some(("devlauncher_list_run_history", None));
+            list_run_history(&config_path)
+        }
         _ => Err(format!("unknown command: {command}")),
+    };
+    if let Some((tool, project_id)) = audit {
+        append_read_audit(&config_path, tool, project_id.as_deref(), &result);
     }
+    result
 }
 
 fn main() {

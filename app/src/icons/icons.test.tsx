@@ -50,6 +50,7 @@ describe("icon categories", () => {
       "url",
       "ssh",
       "script",
+      "project_task",
       "system",
       "builtin",
       "plugin",
