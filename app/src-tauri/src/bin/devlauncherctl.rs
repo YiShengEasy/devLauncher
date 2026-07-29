@@ -177,13 +177,15 @@ fn workflow_summary(workflow: &WorkflowDefinition) -> Value {
 }
 
 fn capabilities() -> Value {
+    let workflow_capabilities = app_lib::workflow_capabilities::descriptors();
     json!({
         "ok": true,
         "data": {
-            "schemaVersion": 2,
-            "actions": ["app", "folder", "file", "url", "ssh", "script", "project_task", "system", "builtin", "plugin"],
+            "schemaVersion": 3,
+            "actions": ["app", "folder", "file", "url", "ssh", "script", "project_task", "system", "builtin", "plugin", "capability"],
             "conditions": ["always", "previous_success", "previous_failed", "platform", "path_exists", "env_equals"],
-            "completions": ["action_resolved", "process_started", "process_exit", "port_ready", "timer", "manual"],
+            "completions": ["action_resolved", "capability_completed", "process_started", "process_exit", "port_ready", "timer", "manual"],
+            "workflowCapabilities": workflow_capabilities,
             "schedules": ["interval", "daily"],
             "platforms": ["macos", "windows", "linux"],
             "limits": {

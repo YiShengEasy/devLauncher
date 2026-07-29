@@ -94,6 +94,8 @@ try {
     "devlauncher_list_project_tasks",
     "devlauncher_preview_project_task",
     "devlauncher_list_run_history",
+    "devlauncher_list_capabilities",
+    "devlauncher_get_capability",
   ];
   if (requiredTools.some((name) => !names.includes(name))) {
     throw new Error("Required workflow tools are missing");
@@ -113,6 +115,37 @@ try {
   });
   if (previewed.result?.structuredContent?.ok !== true) {
     throw new Error("Workflow preview failed");
+  }
+
+  const capabilities = await send(9, "tools/call", {
+    name: "devlauncher_list_capabilities",
+    arguments: {},
+  });
+  const capabilityIds = capabilities.result?.structuredContent?.data?.map((item) => item.id) ?? [];
+  if (!capabilityIds.includes("clipboard.read_text") || !capabilityIds.includes("text.replace")) {
+    throw new Error("Workflow capability discovery failed");
+  }
+
+  const capabilityPreview = await send(10, "tools/call", {
+    name: "devlauncher_preview_workflow",
+    arguments: {
+      workflow: {
+        name: "Capability protocol test",
+        steps: [{
+          id: "read-step",
+          name: "Read clipboard",
+          action: {
+            type: "capability",
+            name: "Read clipboard",
+            capabilityId: "clipboard.read_text",
+            inputs: {},
+          },
+        }],
+      },
+    },
+  });
+  if (capabilityPreview.result?.structuredContent?.ok !== true) {
+    throw new Error("Capability workflow preview failed");
   }
 
   const projects = await send(4, "tools/call", {

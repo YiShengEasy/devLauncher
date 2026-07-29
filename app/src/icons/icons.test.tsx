@@ -55,6 +55,7 @@ describe("icon categories", () => {
       "builtin",
       "plugin",
       "workflow",
+      "capability",
     ]);
   });
 

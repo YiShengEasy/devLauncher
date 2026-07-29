@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -162,6 +163,15 @@ pub enum Action {
         #[serde(rename = "workflowId", alias = "workflow_id")]
         workflow_id: String,
     },
+    Capability {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
+        capability_id: String,
+        #[serde(default)]
+        inputs: Map<String, Value>,
+    },
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -193,6 +203,7 @@ impl Default for StepCondition {
 )]
 pub enum CompletionRule {
     ActionResolved,
+    CapabilityCompleted,
     ProcessStarted {
         stabilization_ms: u64,
         timeout_ms: u64,

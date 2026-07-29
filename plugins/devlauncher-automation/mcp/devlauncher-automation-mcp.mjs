@@ -36,6 +36,9 @@ function id(prefix) {
 }
 
 function defaultCompletion(action = {}) {
+  if (action.type === "capability") {
+    return { type: "capability_completed" };
+  }
   if (action.type === "script" || action.type === "project_task") {
     return { type: "process_exit", successCodes: [0], timeoutMs: 120000 };
   }
@@ -246,6 +249,23 @@ const tools = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: "devlauncher_list_capabilities",
+    description: "List stable workflow capability IDs, schemas, permissions, and platform support before generating a workflow.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_get_capability",
+    description: "Get the complete schema for one stable workflow capability ID.",
+    inputSchema: {
+      type: "object",
+      properties: { capabilityId: { type: "string" } },
+      required: ["capabilityId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: "devlauncher_list_workflows",
     description: "List saved DevLauncher workflows and return the current configuration revision.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -385,6 +405,24 @@ function handleToolCall(params = {}) {
 
   if (name === "devlauncher_get_capabilities") {
     result = ctlInvocation("capabilities");
+  } else if (name === "devlauncher_list_capabilities") {
+    const response = ctlInvocation("capabilities");
+    result = {
+      ...response,
+      data: response?.data?.workflowCapabilities ?? [],
+    };
+  } else if (name === "devlauncher_get_capability") {
+    const response = ctlInvocation("capabilities");
+    const capability = response?.data?.workflowCapabilities?.find(
+      (entry) => entry.id === args.capabilityId,
+    );
+    result = capability
+      ? { ok: true, data: capability }
+      : {
+          ok: false,
+          code: "CAPABILITY_NOT_FOUND",
+          message: `Unknown workflow capability: ${args.capabilityId}`,
+        };
   } else if (name === "devlauncher_list_workflows") {
     result = ctlInvocation("list");
   } else if (name === "devlauncher_get_workflow") {

@@ -18,6 +18,7 @@ import {
   runWorkflowStep,
   validateWorkflow,
 } from "@/api/workflow";
+import { listWorkflowCapabilities } from "@/api/workflowCapabilities";
 import {
   createWorkflowFromTemplate,
   listWorkflowTemplates,
@@ -53,6 +54,7 @@ import type {
   ScriptAction,
   StepCondition,
   WorkflowDefinition,
+  WorkflowCapabilityDescriptor,
   WorkflowRun,
   WorkflowStep,
 } from "@/types/actions";
@@ -153,6 +155,8 @@ function defaultCondition(type: StepCondition["type"]): StepCondition {
 
 function defaultCompletion(type: CompletionRule["type"]): CompletionRule {
   switch (type) {
+    case "capability_completed":
+      return { type };
     case "process_started":
       return { type, stabilizationMs: 800, timeoutMs: 15_000 };
     case "process_exit":
@@ -256,6 +260,7 @@ function formatRunLog(run: WorkflowRun): string {
       `${String(index + 1).padStart(2, "0")} [${stepStatusLabel(step.status)}] ${step.name}`
       + (step.message ? `\n${step.message}` : "")
       + (step.output ? `\n${step.output}` : "")
+      + (step.outputs ? `\n输出：${JSON.stringify(step.outputs, null, 2)}` : "")
     )),
   ];
   return cleanTerminalText(lines.join("\n"));
@@ -549,6 +554,7 @@ export function WorkflowPanel({
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [monitorOpen, setMonitorOpen] = useState(false);
   const [stepClipboard, setStepClipboard] = useState<WorkflowStepClipboard | null>(null);
+  const [capabilities, setCapabilities] = useState<WorkflowCapabilityDescriptor[]>([]);
   const [dirty, setDirty] = useState(false);
   const workflowTemplates = useMemo(() => listWorkflowTemplates(), []);
 
@@ -575,6 +581,23 @@ export function WorkflowPanel({
     const text = `${item.name} ${item.description}`.toLocaleLowerCase();
     return text.includes("监控") || text.includes("monitor") || text.includes("health");
   }), [customWorkflows]);
+  const capabilityReferences = useMemo(() => {
+    if (!workflow || !editingStep) return [];
+    const editingIndex = editingStep === "new"
+      ? workflow.steps.length
+      : workflow.steps.findIndex((item) => item.id === editingStep.id);
+    return workflow.steps
+      .slice(0, Math.max(0, editingIndex))
+      .flatMap((item) => {
+        if (item.action.type !== "capability") return [];
+        const capabilityId = item.action.capabilityId;
+        const descriptor = capabilities.find((entry) => entry.id === capabilityId);
+        return (descriptor?.outputs ?? []).map((output) => ({
+          label: `${item.name} / ${output.title}`,
+          value: `\${steps.${item.id}.outputs.${output.key}}`,
+        }));
+      });
+  }, [capabilities, editingStep, workflow]);
   const completedRunSteps = run?.steps.filter((item) => (
     item.status === "succeeded"
     || item.status === "failed"
@@ -591,6 +614,12 @@ export function WorkflowPanel({
       nextRun,
     ].sort((left, right) => left.startedAt - right.startedAt);
   };
+
+  useEffect(() => {
+    listWorkflowCapabilities()
+      .then(setCapabilities)
+      .catch(() => setCapabilities([]));
+  }, []);
 
   useEffect(() => {
     const nextWorkflows = structuredClone(config.workflows ?? []);
@@ -866,7 +895,11 @@ export function WorkflowPanel({
 
   const copyRunLog = async () => {
     if (!run) return;
-    const text = runTerminalRef.current?.getText() || formatRunLog(run);
+    const structuredLog = formatRunLog(run);
+    const terminalLog = runTerminalRef.current?.getText().trim() ?? "";
+    const text = terminalLog && terminalLog !== structuredLog
+      ? `${structuredLog}\n\n终端输出：\n${terminalLog}`
+      : structuredLog;
     try {
       const isTauriRuntime = Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
       if (isTauriRuntime) {
@@ -1514,6 +1547,27 @@ export function WorkflowPanel({
                       执行时会按项目 ID 和来源重新解析，不在工作流中保存绝对路径或命令快照。
                     </div>
                   </div>
+                ) : step.action.type === "capability" ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{
+                      padding: "9px",
+                      borderRadius: 7,
+                      border: "1px solid rgba(45,212,191,0.22)",
+                      background: "rgba(13,148,136,0.08)",
+                      color: "rgba(204,251,241,0.78)",
+                      fontSize: 10,
+                      lineHeight: 1.55,
+                      overflowWrap: "anywhere",
+                    }}>
+                      <strong>{step.action.capabilityId}</strong>
+                      {Object.entries(step.action.inputs).map(([key, value]) => (
+                        <span key={key} style={{ display: "block", marginTop: 4 }}>
+                          {key}: {Array.isArray(value) ? value.join(", ") : String(value)}
+                        </span>
+                      ))}
+                    </div>
+                    <button style={BUTTON} onClick={() => setEditingStep(step)}>编辑能力输入</button>
+                  </div>
                 ) : (
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{
@@ -1575,14 +1629,21 @@ export function WorkflowPanel({
                 <select
                   style={INPUT}
                   value={step.completion.type}
+                  disabled={step.action.type === "capability"}
                   onChange={(event) => updateStep({ completion: defaultCompletion(event.target.value as CompletionRule["type"]) })}
                 >
-                  <option value="action_resolved">动作返回</option>
-                  <option value="process_started">进程已启动</option>
-                  <option value="process_exit">进程退出且成功</option>
-                  <option value="port_ready">端口可用</option>
-                  <option value="timer">计时结束</option>
-                  <option value="manual">人工确认</option>
+                  {step.action.type === "capability" ? (
+                    <option value="capability_completed">能力执行完成</option>
+                  ) : (
+                    <>
+                      <option value="action_resolved">已触发</option>
+                      <option value="process_started">进程已启动</option>
+                      <option value="process_exit">进程退出且成功</option>
+                      <option value="port_ready">端口可用</option>
+                      <option value="timer">计时结束</option>
+                      <option value="manual">人工确认</option>
+                    </>
+                  )}
                 </select>
               </Field>
               {step.completion.type === "process_started" && (
@@ -1799,6 +1860,18 @@ export function WorkflowPanel({
                         <span style={{ color }}>{stepStatusLabel(runStep.status)}</span>
                         <span style={{ minWidth: 0, color: "rgba(226,232,244,0.62)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                           {runStep.name}{runStep.message ? ` · ${runStep.message}` : ""}
+                          {runStep.outputs && (
+                            <code style={{
+                              display: "block",
+                              marginTop: 3,
+                              color: "rgba(153,246,228,0.68)",
+                              fontSize: 9.5,
+                              whiteSpace: "pre-wrap",
+                              overflowWrap: "anywhere",
+                            }}>
+                              {JSON.stringify(runStep.outputs)}
+                            </code>
+                          )}
                         </span>
                       </div>
                     );
@@ -1820,6 +1893,8 @@ export function WorkflowPanel({
           keyId={editingStep === "new" ? "步骤" : editingStep.name}
           bindingLabel="工作流步骤"
           initialAction={editingStep === "new" ? null : editingStep.action}
+          capabilities={capabilities}
+          capabilityReferences={capabilityReferences}
           onClose={() => setEditingStep(null)}
           onSave={saveStepAction}
         />

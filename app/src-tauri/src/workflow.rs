@@ -5,8 +5,12 @@ use crate::platform::{current_platform, Platform};
 use crate::types::{
     generate_id, Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowStep,
 };
+use crate::workflow_capabilities::{
+    self, CapabilityExecutionResult, CapabilityReferenceContext, WorkflowCapabilityArtifact,
+};
 use chrono::{Days, Local, LocalResult, TimeZone};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -68,6 +72,10 @@ pub struct WorkflowStepRun {
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outputs: Option<Map<String, Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<WorkflowCapabilityArtifact>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_session_id: Option<String>,
 }
@@ -148,8 +156,17 @@ fn validate_timeout(value: u64, label: &str, errors: &mut Vec<String>) {
 }
 
 fn validate_completion(step: &WorkflowStep, errors: &mut Vec<String>, warnings: &mut Vec<String>) {
+    let is_capability = matches!(step.action, Action::Capability { .. });
+    let capability_completion = matches!(step.completion, CompletionRule::CapabilityCompleted);
+    if is_capability != capability_completion {
+        errors.push(
+            "capability actions must use capability_completed, and other actions cannot use it"
+                .into(),
+        );
+    }
     match &step.completion {
         CompletionRule::ActionResolved => {}
+        CompletionRule::CapabilityCompleted => {}
         CompletionRule::ProcessStarted {
             stabilization_ms,
             timeout_ms,
@@ -230,6 +247,13 @@ fn validate_action(action: &Action, errors: &mut Vec<String>) {
         }
         Action::Workflow { .. } => {
             errors.push("nested workflow actions are not supported".into());
+        }
+        Action::Capability {
+            capability_id,
+            inputs,
+            ..
+        } => {
+            workflow_capabilities::validate_action(capability_id, inputs, errors);
         }
         Action::ProjectTask {
             project_id,
@@ -419,6 +443,8 @@ fn persisted_run(run: &WorkflowRun) -> WorkflowRun {
     );
     for step in &mut safe.steps {
         step.output = None;
+        step.outputs = None;
+        step.artifacts = None;
         step.terminal_session_id = None;
         step.message = Some(
             match step.status {
@@ -834,6 +860,9 @@ fn evaluate_condition(
 }
 
 fn execute_action(app: &AppHandle, action: &Action) -> Result<(), String> {
+    if matches!(action, Action::Capability { .. }) {
+        return Err("capability actions can only run inside a workflow".into());
+    }
     if let Action::Builtin { feature, .. } = action {
         return match feature.as_str() {
             "clipboard" => crate::builtins::clipboard::show_clipboard_window(app.clone()),
@@ -1338,14 +1367,56 @@ async fn wait_for_manual(
     }
 }
 
+struct StepExecutionResult {
+    output: Option<String>,
+    outputs: Option<Map<String, Value>>,
+    artifacts: Option<Vec<WorkflowCapabilityArtifact>>,
+    message: Option<String>,
+}
+
+impl StepExecutionResult {
+    fn legacy(output: Option<String>) -> Self {
+        Self {
+            output,
+            outputs: None,
+            artifacts: None,
+            message: None,
+        }
+    }
+}
+
 async fn execute_step(
     app: &AppHandle,
     inner: &WorkflowEngineInner,
     run_id: &str,
     step: &WorkflowStep,
-) -> Result<Option<String>, String> {
+    context: &CapabilityReferenceContext,
+) -> Result<StepExecutionResult, String> {
+    if let Action::Capability {
+        capability_id,
+        inputs,
+        ..
+    } = &step.action
+    {
+        if !matches!(step.completion, CompletionRule::CapabilityCompleted) {
+            return Err("capability action requires capability_completed".into());
+        }
+        let resolved_inputs = workflow_capabilities::resolve_inputs(inputs, context)?;
+        let CapabilityExecutionResult {
+            message,
+            outputs,
+            artifacts,
+        } = workflow_capabilities::execute(capability_id, &resolved_inputs)?;
+        return Ok(StepExecutionResult {
+            output: None,
+            outputs: Some(outputs),
+            artifacts: (!artifacts.is_empty()).then_some(artifacts),
+            message: Some(message),
+        });
+    }
+
     if uses_managed_script_process(&step.action) {
-        return match &step.completion {
+        let output = match &step.completion {
             CompletionRule::ActionResolved => {
                 run_script_to_exit(
                     app,
@@ -1423,6 +1494,9 @@ async fn execute_step(
                 wait_for_manual(app, inner, run_id, step, *timeout_ms).await?;
                 Ok(output)
             }
+            CompletionRule::CapabilityCompleted => {
+                Err("capability_completed requires a capability action".into())
+            }
             CompletionRule::WindowReady { .. } => {
                 Err("window_ready adapter is not available".into())
             }
@@ -1430,11 +1504,15 @@ async fn execute_step(
             CompletionRule::ConnectionReady { .. } => {
                 Err("connection_ready adapter is not available".into())
             }
-        };
+        }?;
+        return Ok(StepExecutionResult::legacy(output));
     }
 
-    match &step.completion {
+    let output = match &step.completion {
         CompletionRule::ActionResolved => execute_action(app, &step.action).map(|_| None),
+        CompletionRule::CapabilityCompleted => {
+            Err("capability_completed requires a capability action".into())
+        }
         CompletionRule::ProcessStarted {
             stabilization_ms, ..
         } => {
@@ -1486,7 +1564,8 @@ async fn execute_step(
         CompletionRule::ConnectionReady { .. } => {
             Err("connection_ready adapter is not available".into())
         }
-    }
+    }?;
+    Ok(StepExecutionResult::legacy(output))
 }
 
 async fn execute_workflow(
@@ -1501,6 +1580,12 @@ async fn execute_workflow(
     });
 
     let mut previous_status: Option<WorkflowStepRunStatus> = None;
+    let mut capability_context = CapabilityReferenceContext {
+        run_id: run_id.clone(),
+        workflow_id: workflow.id.clone(),
+        workflow_name: workflow.name.clone(),
+        step_outputs: HashMap::new(),
+    };
     for step in &workflow.steps {
         if is_cancelled(&inner, &run_id) {
             break;
@@ -1578,17 +1663,41 @@ async fn execute_workflow(
             });
         }
 
-        match execute_step(&app, &inner, &run_id, step).await {
-            Ok(output) => {
+        match execute_step(&app, &inner, &run_id, step, &capability_context).await {
+            Ok(result) => {
                 update_step(
                     &app,
                     &inner,
                     &run_id,
                     &step.id,
                     WorkflowStepRunStatus::Succeeded,
-                    Some("step completed".into()),
+                    result
+                        .message
+                        .clone()
+                        .or_else(|| Some("step completed".into())),
                 );
-                if let Some(output) = output {
+                if let Some(outputs) = result.outputs {
+                    capability_context
+                        .step_outputs
+                        .insert(step.id.clone(), outputs.clone());
+                    update_run(&app, &inner, &run_id, |run| {
+                        if let Some(step_run) =
+                            run.steps.iter_mut().find(|entry| entry.step_id == step.id)
+                        {
+                            step_run.outputs = Some(outputs);
+                        }
+                    });
+                }
+                if let Some(artifacts) = result.artifacts {
+                    update_run(&app, &inner, &run_id, |run| {
+                        if let Some(step_run) =
+                            run.steps.iter_mut().find(|entry| entry.step_id == step.id)
+                        {
+                            step_run.artifacts = Some(artifacts);
+                        }
+                    });
+                }
+                if let Some(output) = result.output {
                     update_run(&app, &inner, &run_id, |run| {
                         if let Some(step_run) =
                             run.steps.iter_mut().find(|entry| entry.step_id == step.id)
@@ -1772,6 +1881,8 @@ fn start_workflow_definition(
                 status: WorkflowStepRunStatus::Pending,
                 message: None,
                 output: None,
+                outputs: None,
+                artifacts: None,
                 terminal_session_id: None,
             })
             .collect(),
@@ -1824,6 +1935,21 @@ fn standalone_step_workflow(
         .ok_or_else(|| "workflow step not found".to_string())?;
     if !step.enabled {
         return Err("workflow step is disabled".into());
+    }
+    if let Action::Capability { inputs, .. } = &step.action {
+        let depends_on_previous_output = inputs.values().any(|value| match value {
+            Value::String(value) => value.contains("${steps."),
+            Value::Array(values) => values
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|value| value.contains("${steps.")),
+            _ => false,
+        });
+        if depends_on_previous_output {
+            return Err(
+                "capability step depends on previous outputs; run the complete workflow".into(),
+            );
+        }
     }
 
     step.enabled = true;
@@ -1977,13 +2103,14 @@ mod tests {
         parse_daily_time, persisted_run, process_output_tail, read_workflow_run_history_from_path,
         schedule_due, script_command_spec, standalone_step_workflow, unix_time_millis,
         uses_managed_script_process, validate_workflow_definition, workflow_workspace_size,
-        write_workflow_run_history_to_path, WorkflowRun, WorkflowRunHistory, WorkflowRunStatus,
-        WorkflowRunTrigger, WorkflowScheduleRuntime, WorkflowStepRun, WorkflowStepRunStatus,
-        MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
+        write_workflow_run_history_to_path, WorkflowCapabilityArtifact, WorkflowRun,
+        WorkflowRunHistory, WorkflowRunStatus, WorkflowRunTrigger, WorkflowScheduleRuntime,
+        WorkflowStepRun, WorkflowStepRunStatus, MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
     };
     use crate::types::{
         Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowSchedule, WorkflowStep,
     };
+    use serde_json::{Map, Value};
     use std::collections::HashMap;
 
     fn script_workflow(completion: CompletionRule) -> WorkflowDefinition {
@@ -2062,6 +2189,16 @@ mod tests {
                 status: WorkflowStepRunStatus::Failed,
                 message: Some("/private/project failed".into()),
                 output: Some("secret output".into()),
+                outputs: Some(Map::from_iter([(
+                    "text".into(),
+                    Value::String("secret structured output".into()),
+                )])),
+                artifacts: Some(vec![WorkflowCapabilityArtifact {
+                    id: "artifact-1".into(),
+                    name: "secret artifact".into(),
+                    artifact_type: "file".into(),
+                    media_type: Some("text/plain".into()),
+                }]),
                 terminal_session_id: Some("terminal-1".into()),
             }],
             message: Some("/private/project failed".into()),
@@ -2082,6 +2219,8 @@ mod tests {
         assert_eq!(saved.message.as_deref(), Some("workflow failed"));
         assert!(saved.current_step_id.is_none());
         assert!(saved.steps[0].output.is_none());
+        assert!(saved.steps[0].outputs.is_none());
+        assert!(saved.steps[0].artifacts.is_none());
         assert!(saved.steps[0].terminal_session_id.is_none());
         assert_eq!(saved.steps[0].message.as_deref(), Some("failed"));
     }

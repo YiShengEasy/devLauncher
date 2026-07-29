@@ -21,6 +21,9 @@ export function workflowId(prefix: "workflow" | "step" = "workflow"): string {
 }
 
 export function defaultCompletionForAction(action: Action): CompletionRule {
+  if (action.type === "capability") {
+    return { type: "capability_completed" };
+  }
   if (action.type === "script" || action.type === "project_task") {
     return { type: "process_exit", successCodes: [0], timeoutMs: 120_000 };
   }
@@ -69,7 +72,8 @@ export function conditionLabel(condition: StepCondition): string {
 
 export function completionLabel(completion: CompletionRule): string {
   switch (completion.type) {
-    case "action_resolved": return "动作返回";
+    case "action_resolved": return "已触发";
+    case "capability_completed": return "能力执行完成";
     case "process_started": return "进程已启动";
     case "process_exit": return "进程退出且成功";
     case "port_ready": return `端口 ${completion.port} 可用`;

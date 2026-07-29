@@ -48,6 +48,8 @@ function actionIdentityKey(action: Action): string {
     }
     case "workflow":
       return `workflow:${action.workflowId}`;
+    case "capability":
+      return `capability:${action.capabilityId}`;
   }
 }
 

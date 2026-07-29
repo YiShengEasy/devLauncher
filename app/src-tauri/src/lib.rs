@@ -16,6 +16,7 @@ mod video_tools;
 mod widget_sync;
 mod window_pinning;
 pub mod workflow;
+pub mod workflow_capabilities;
 mod workflow_window;
 
 use tauri::{
@@ -194,6 +195,7 @@ pub fn run() {
             workflow::clear_workflow_run_history,
             workflow::cancel_workflow_run,
             workflow::confirm_workflow_step,
+            workflow_capabilities::list_workflow_capabilities,
             workflow_window::show_workflow_window,
             main_window_control::control_main_window,
             actions::save_ssh_password,

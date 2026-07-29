@@ -24,7 +24,7 @@ export const BUILTIN_FEATURES = Object.fromEntries(
   _BUILTIN_MANIFESTS.map(m => [m.id, m])
 ) as Record<BuiltinFeature, typeof _BUILTIN_MANIFESTS[number]>;
 
-export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin" | "plugin" | "workflow" | "project_task";
+export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin" | "plugin" | "workflow" | "project_task" | "capability";
 
 interface ActionBase {
   type: ActionType;
@@ -124,6 +124,45 @@ export interface ProjectTaskAction extends ActionBase {
   taskName: string;
 }
 
+export type CapabilityValue = string | number | boolean | string[];
+export type CapabilityFieldType = "string" | "number" | "boolean" | "string_array";
+
+export interface WorkflowCapabilityField {
+  key: string;
+  title: string;
+  description: string;
+  fieldType: CapabilityFieldType;
+  required: boolean;
+  secret: boolean;
+  defaultValue?: CapabilityValue;
+}
+
+export interface WorkflowCapabilityDescriptor {
+  id: string;
+  version: number;
+  title: string;
+  description: string;
+  category: "data" | "system" | "productivity" | "media" | "network";
+  executionMode: "sync" | "background" | "interactive";
+  platforms: WorkflowPlatform[];
+  inputs: WorkflowCapabilityField[];
+  outputs: WorkflowCapabilityField[];
+  permissions: string[];
+}
+
+export interface WorkflowCapabilityArtifact {
+  id: string;
+  name: string;
+  artifactType: string;
+  mediaType?: string;
+}
+
+export interface WorkflowCapabilityAction extends ActionBase {
+  type: "capability";
+  capabilityId: string;
+  inputs: Record<string, CapabilityValue>;
+}
+
 // -----------------------------------------------
 // Clipboard Entry (text + image)
 // -----------------------------------------------
@@ -154,7 +193,8 @@ export type Action =
   | BuiltinAction
   | PluginAction
   | WorkflowAction
-  | ProjectTaskAction;
+  | ProjectTaskAction
+  | WorkflowCapabilityAction;
 
 export type WorkflowFailurePolicy = "stop" | "continue";
 
@@ -170,6 +210,7 @@ export type StepCondition =
 
 export type CompletionRule =
   | { type: "action_resolved" }
+  | { type: "capability_completed" }
   | { type: "process_started"; stabilizationMs: number; timeoutMs: number }
   | { type: "process_exit"; successCodes: number[]; timeoutMs: number }
   | { type: "port_ready"; host: string; port: number; intervalMs: number; timeoutMs: number }
@@ -233,6 +274,8 @@ export interface WorkflowStepRun {
   status: WorkflowStepRunStatus;
   message?: string;
   output?: string;
+  outputs?: Record<string, CapabilityValue>;
+  artifacts?: WorkflowCapabilityArtifact[];
   terminalSessionId?: string;
 }
 
@@ -353,4 +396,5 @@ export const ACTION_TYPE_META: Record<ActionType, { label: string; color: string
   builtin: { label: "内置",    color: "#7dd3fc", bg: "rgba(18,22,45,0.90)" },
   plugin: { label: "插件",     color: "#a7f3d0", bg: "rgba(20,120,90,0.78)" },
   workflow: { label: "工作流", color: "#fb7185", bg: "rgba(159,18,57,0.75)" },
+  capability: { label: "能力", color: "#2dd4bf", bg: "rgba(13,148,136,0.75)" },
 };

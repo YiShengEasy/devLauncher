@@ -43,3 +43,7 @@ stable when a file exists.
 3. Keep implementation checkboxes synchronized with repository evidence.
 4. Never put passwords, tokens, private hostnames, or local user paths in examples.
 5. Link prototypes and implementation files from the feature `README.md`.
+
+## Active Features
+
+- [Workflow Capability Engine](workflow-capability-engine/README.md)

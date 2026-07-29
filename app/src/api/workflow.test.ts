@@ -22,6 +22,15 @@ describe("workflow helpers", () => {
     });
   });
 
+  it("uses real completion for capability actions", () => {
+    expect(defaultCompletionForAction({
+      type: "capability",
+      name: "Read clipboard",
+      capabilityId: "clipboard.read_text",
+      inputs: {},
+    })).toEqual({ type: "capability_completed" });
+  });
+
   it("creates stable workflow and step defaults", () => {
     const workflow = createWorkflow("Start project");
     const step = createWorkflowStep({
@@ -59,5 +68,20 @@ describe("workflow helpers", () => {
     expect(workflows.length).toBe(listWorkflowTemplates().length);
     expect(workflows.some((item) => item.name.includes("监控"))).toBe(true);
     expect(workflows.every((item) => item.id.startsWith("workflow-"))).toBe(true);
+  });
+
+  it("materializes capability output references with generated step IDs", () => {
+    const workflow = createWorkflowFromTemplate("clipboard-text-pipeline");
+    const [read, replace, template, write] = workflow.steps;
+
+    expect(read.action.type).toBe("capability");
+    expect(replace.action.type).toBe("capability");
+    if (replace.action.type !== "capability" || template.action.type !== "capability" || write.action.type !== "capability") {
+      throw new Error("Expected capability actions");
+    }
+    expect(replace.action.inputs.text).toBe(`\${steps.${read.id}.outputs.text}`);
+    expect(template.action.inputs.template).toBe(`整理结果：\n\${steps.${replace.id}.outputs.text}`);
+    expect(write.action.inputs.text).toBe(`\${steps.${template.id}.outputs.text}`);
+    expect(matchingOfficialTemplateId(workflow)).toBe("clipboard-text-pipeline");
   });
 });

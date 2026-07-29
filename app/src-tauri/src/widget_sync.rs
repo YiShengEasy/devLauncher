@@ -41,7 +41,8 @@ fn action_name(action: &Action) -> &str {
         | Action::System { name, .. }
         | Action::Builtin { name, .. }
         | Action::Plugin { name, .. }
-        | Action::Workflow { name, .. } => name,
+        | Action::Workflow { name, .. }
+        | Action::Capability { name, .. } => name,
     }
 }
 
@@ -73,6 +74,7 @@ fn action_appearance(action: &Action) -> (&'static str, &'static str) {
         Action::Builtin { feature, .. } => (builtin_symbol(feature), "#38BDF8"),
         Action::Plugin { .. } => ("puzzlepiece.extension.fill", "#6EE7B7"),
         Action::Workflow { .. } => ("point.3.connected.trianglepath.dotted", "#FB7185"),
+        Action::Capability { .. } => ("wand.and.stars", "#2DD4BF"),
     }
 }
 

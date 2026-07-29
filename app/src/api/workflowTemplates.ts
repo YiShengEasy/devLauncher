@@ -12,6 +12,7 @@ export interface WorkflowTemplateSummary {
 }
 
 export interface WorkflowTemplateStepDraft {
+  referenceKey?: string;
   name: string;
   action: Action;
   completion: CompletionRule;
@@ -52,7 +53,47 @@ function shellStep(name: string, content: string, completion: CompletionRule): W
   };
 }
 
+function capabilityStep(
+  referenceKey: string,
+  name: string,
+  capabilityId: string,
+  inputs: Record<string, string>,
+): WorkflowTemplateStepDraft {
+  return {
+    referenceKey,
+    name,
+    action: {
+      type: "capability",
+      name,
+      capabilityId,
+      inputs,
+    },
+    completion: { type: "capability_completed" },
+  };
+}
+
 const TEMPLATES: WorkflowTemplateDefinition[] = [
+  {
+    id: "clipboard-text-pipeline",
+    name: "剪贴板文本处理",
+    category: "dev",
+    description: "读取剪贴板，移除“[草稿]”标记，组合结果后写回剪贴板；无需脚本。",
+    failurePolicy: "stop",
+    steps: [
+      capabilityStep("read", "读取剪贴板", "clipboard.read_text", {}),
+      capabilityStep("replace", "移除草稿标记", "text.replace", {
+        text: "${steps.$read.outputs.text}",
+        find: "[草稿]",
+        replace: "",
+      }),
+      capabilityStep("template", "组合结果", "text.template", {
+        template: "整理结果：\n${steps.$replace.outputs.text}",
+      }),
+      capabilityStep("write", "写回剪贴板", "clipboard.write_text", {
+        text: "${steps.$template.outputs.text}",
+      }),
+    ],
+  },
   {
     id: "start-local-project",
     name: "启动本地项目",
@@ -197,6 +238,24 @@ function valuesMatch(left: unknown, right: unknown): boolean {
   return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
 }
 
+function materializeTemplateValue(value: unknown, stepIds: Map<string, string>): unknown {
+  if (typeof value === "string") {
+    return value.replace(
+      /\$\{steps\.\$([^.}]+)\.outputs\./g,
+      (_match, key: string) => `\${steps.${stepIds.get(key) ?? `$${key}`}.outputs.`,
+    );
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => materializeTemplateValue(entry, stepIds));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, materializeTemplateValue(entry, stepIds)]),
+    );
+  }
+  return value;
+}
+
 export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string | undefined {
   return TEMPLATES.find((template) => (
     workflow.name === template.name
@@ -206,6 +265,13 @@ export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string
     && workflow.steps.length === template.steps.length
     && workflow.steps.every((step, index) => {
       const templateStep = template.steps[index];
+      const templateStepIds = new Map(
+        template.steps
+          .map((entry, stepIndex) => entry.referenceKey
+            ? [entry.referenceKey, workflow.steps[stepIndex]?.id ?? ""] as const
+            : null)
+          .filter((entry): entry is readonly [string, string] => Boolean(entry)),
+      );
       return Boolean(
         templateStep
         && step.name === templateStep.name
@@ -213,7 +279,7 @@ export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string
         && step.condition.type === "always"
         && step.delayMs === (templateStep.delayMs ?? 0)
         && step.onFailure === templateStep.onFailure
-        && valuesMatch(step.action, templateStep.action)
+        && valuesMatch(step.action, materializeTemplateValue(templateStep.action, templateStepIds))
         && valuesMatch(step.completion, templateStep.completion)
       );
     })
@@ -223,17 +289,25 @@ export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string
 export function createWorkflowFromTemplateDefinition(template: WorkflowTemplateDefinition): WorkflowDefinition {
   if (!template.steps.length) throw new Error(`workflow template has no steps: ${template.id}`);
   const now = new Date().toISOString();
+  const generatedStepIds = template.steps.map(() => workflowId("step"));
+  const templateStepIds = new Map(
+    template.steps
+      .map((step, index) => step.referenceKey
+        ? [step.referenceKey, generatedStepIds[index]] as const
+        : null)
+      .filter((entry): entry is readonly [string, string] => Boolean(entry)),
+  );
   return {
     id: workflowId("workflow"),
     name: template.name,
     description: template.description,
     enabled: true,
     failurePolicy: template.failurePolicy,
-    steps: template.steps.map<WorkflowStep>((step) => ({
-      id: workflowId("step"),
+    steps: template.steps.map<WorkflowStep>((step, index) => ({
+      id: generatedStepIds[index],
       name: step.name,
       enabled: true,
-      action: { ...step.action },
+      action: materializeTemplateValue(step.action, templateStepIds) as Action,
       condition: { type: "always" },
       completion: { ...step.completion },
       delayMs: step.delayMs ?? 0,
