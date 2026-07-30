@@ -3,6 +3,7 @@ pub mod builtins;
 mod cloud_sync;
 pub mod config;
 mod entries;
+mod global_shortcuts;
 mod keyboard_control_tap;
 mod main_window_control;
 mod ocr;
@@ -36,6 +37,14 @@ const KEYBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+J";
 const PET_GLOBAL_SHORTCUT: &str = "Option+P";
 #[cfg(not(target_os = "macos"))]
 const PET_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+P";
+#[cfg(target_os = "macos")]
+const CLIPBOARD_GLOBAL_SHORTCUT: &str = "Option+V";
+#[cfg(not(target_os = "macos"))]
+const CLIPBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+V";
+#[cfg(target_os = "macos")]
+const SEARCH_GLOBAL_SHORTCUT: &str = "Option+K";
+#[cfg(not(target_os = "macos"))]
+const SEARCH_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+K";
 
 #[derive(Debug, PartialEq, Eq)]
 enum WidgetDeepLinkAction {
@@ -128,7 +137,12 @@ pub fn run() {
         ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_shortcuts([KEYBOARD_GLOBAL_SHORTCUT, PET_GLOBAL_SHORTCUT])
+                .with_shortcuts([
+                    KEYBOARD_GLOBAL_SHORTCUT,
+                    PET_GLOBAL_SHORTCUT,
+                    CLIPBOARD_GLOBAL_SHORTCUT,
+                    SEARCH_GLOBAL_SHORTCUT,
+                ])
                 .expect("failed to parse built-in global shortcuts")
                 .with_handler(|app, _shortcut, event| {
                     if event.state != ShortcutState::Pressed {
@@ -153,6 +167,26 @@ pub fn run() {
                         .unwrap_or(false)
                     {
                         let _ = entries::toggle_pet_window(app.clone());
+                        return;
+                    }
+
+                    let clipboard_shortcut = CLIPBOARD_GLOBAL_SHORTCUT.parse::<Shortcut>();
+                    if clipboard_shortcut
+                        .as_ref()
+                        .map(|shortcut| shortcut.id() == event.id)
+                        .unwrap_or(false)
+                    {
+                        let _ = builtins::clipboard::show_clipboard_window(app.clone());
+                        return;
+                    }
+
+                    let search_shortcut = SEARCH_GLOBAL_SHORTCUT.parse::<Shortcut>();
+                    if search_shortcut
+                        .as_ref()
+                        .map(|shortcut| shortcut.id() == event.id)
+                        .unwrap_or(false)
+                    {
+                        let _ = entries::show_search_window(app.clone());
                     }
                 })
                 .build(),
@@ -161,6 +195,7 @@ pub fn run() {
             config::load_config,
             config::save_config,
             config::get_config_path,
+            global_shortcuts::sync_global_binding_shortcuts,
             cloud_sync::sync_get_status,
             cloud_sync::sync_get_local_status,
             cloud_sync::sync_generate_key,
@@ -300,6 +335,7 @@ pub fn run() {
             builtins::clipboard::setup(app);
             video_tools::setup(app);
             keyboard_control_tap::setup(app.handle());
+            global_shortcuts::setup(app.handle());
             workflow::setup_run_history(app.handle());
             workflow::setup_scheduler(app.handle().clone());
             window_pinning::apply_all_startup_pin_states(app.handle());

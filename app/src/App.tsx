@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { register as registerShortcut, unregister as unregisterShortcut } from "@tauri-apps/plugin-global-shortcut";
 import gsap from "gsap";
 import { useKeyboardStore } from "@/store/useKeyboardStore";
 import { loadConfig, saveConfig } from "@/api/config";
@@ -20,7 +19,7 @@ import { animateDialogEnter, animatePanelEnter } from "@/motion/presets";
 import { motionDuration, motionEase } from "@/motion/tokens";
 import { useGsapContext } from "@/motion/useGsapContext";
 import { useReducedMotion } from "@/motion/useReducedMotion";
-import { getGlobalShortcuts, isMacPlatform, keyIdToShortcut } from "@/platform/shortcuts";
+import { isMacPlatform } from "@/platform/shortcuts";
 import {
   dismissPermissionFeatureForSession,
   getPermissionHealthIssue,
@@ -35,7 +34,6 @@ import "./index.css";
 
 const KEYBOARD_RETURN_ANIMATION_KEY = "devlauncher:keyboard-return-animation";
 const PET_ACTION_STATE_KEY = "devlauncher:pet-action-state";
-const GLOBAL_SHORTCUTS = getGlobalShortcuts();
 
 function setPetActionState(action: "cozy" | "keyboardJump") {
   window.localStorage.setItem(PET_ACTION_STATE_KEY, action);
@@ -97,17 +95,6 @@ function getUrlOrigin(value: string): string | null {
   }
 }
 
-// Debounce guard: ignore repeated triggers within 400ms
-function makeDebounced<T extends unknown[]>(fn: (...args: T) => void, ms = 400) {
-  let last = 0;
-  return (...args: T) => {
-    const now = Date.now();
-    if (now - last < ms) return;
-    last = now;
-    fn(...args);
-  };
-}
-
 export default function App() {
   const {
     config, activePageIndex,
@@ -137,7 +124,6 @@ export default function App() {
   const workflowDialogRef = useRef<HTMLDivElement>(null);
   const petModeButtonRef = useRef<HTMLButtonElement>(null);
   const reducedMotion = useReducedMotion();
-  const registeredFrontendShortcutsRef = useRef<string[]>([]);
   const noticeTimerRef = useRef<number | null>(null);
 
   const showNotice = useCallback((message: string, tone: "error" | "success" = "error") => {
@@ -554,99 +540,24 @@ export default function App() {
 
   useEffect(() => {
     if (!config) return;
-    const page = config.pages[activePageIndex];
     let cancelled = false;
 
     const setup = async () => {
-      const unavailableShortcuts: string[] = [];
-      const previousShortcuts = registeredFrontendShortcutsRef.current;
-      registeredFrontendShortcutsRef.current = [];
-      if (previousShortcuts.length > 0) {
-        try { await unregisterShortcut(previousShortcuts); } catch {}
-      }
-      if (cancelled) return;
-
-      const entries = Object.entries(page?.keys ?? {});
-      for (const [keyId, binding] of entries) {
-        if (cancelled) break;
-        const action = (binding as { action: Action | null }).action;
-        if (!action) continue;
-        const shortcut = keyIdToShortcut(keyId);
-        // Capture action value for the callback closure
-        const capturedAction = action;
-        const handler = makeDebounced(async () => {
-          if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
-            markPermissionFeatureUsed("screenshot");
-          }
-          const execution = capturedAction.type === "builtin" && capturedAction.feature === "screenshot"
-            ? invoke("show_screenshot_window")
-            : executeAction(capturedAction, { invoke });
-          execution.catch((e) => {
-            console.error("shortcut action failed:", e);
-            if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
-              void refreshPermissionIssue();
-              showNotice(`截图失败：${String(e)}`);
-            } else {
-              showNotice(`执行失败：${String(e)}`);
-            }
-          });
-          if (capturedAction.type === "builtin" && capturedAction.feature === "screenshot") {
-            void refreshPermissionIssue();
-          }
-        });
-        try {
-          await registerShortcut(shortcut, handler);
-          registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, shortcut];
-        } catch (err) {
-          console.warn(`Global shortcut ${shortcut} unavailable:`, err);
-          unavailableShortcuts.push(`${keyId} (${shortcut})`);
-        }
-      }
-
-      if (!cancelled) {
-        try {
-          await registerShortcut(
-            GLOBAL_SHORTCUTS.clipboard,
-            makeDebounced(async () => {
-              invoke("show_clipboard_window").catch(console.error);
-            })
-          );
-          registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, GLOBAL_SHORTCUTS.clipboard];
-        } catch (err) {
-          console.warn(`${GLOBAL_SHORTCUTS.clipboard} shortcut unavailable:`, err);
-          unavailableShortcuts.push(`剪贴板 (${GLOBAL_SHORTCUTS.clipboard})`);
-        }
-      }
-
-      if (!cancelled) {
-        try {
-          await registerShortcut(
-            GLOBAL_SHORTCUTS.search,
-            makeDebounced(async () => {
-              invoke("show_search_window").catch(console.error);
-            })
-          );
-          registeredFrontendShortcutsRef.current = [...registeredFrontendShortcutsRef.current, GLOBAL_SHORTCUTS.search];
-        } catch (err) {
-          console.warn(`${GLOBAL_SHORTCUTS.search} search shortcut unavailable:`, err);
-          unavailableShortcuts.push(`搜索 (${GLOBAL_SHORTCUTS.search})`);
-        }
-      }
-
+      const unavailableShortcuts = await invoke<string[]>("sync_global_binding_shortcuts", {
+        pageIndex: activePageIndex,
+      });
       if (!cancelled && unavailableShortcuts.length > 0) {
         showNotice(`快捷键被系统或其他应用占用：${unavailableShortcuts.join("、")}`);
       }
-
     };
 
-    setup();
+    setup().catch((error) => {
+      if (!cancelled) showNotice(`快捷键注册失败：${String(error)}`);
+    });
     return () => {
       cancelled = true;
-      const shortcuts = registeredFrontendShortcutsRef.current;
-      registeredFrontendShortcutsRef.current = [];
-      if (shortcuts.length > 0) unregisterShortcut(shortcuts).catch(() => {});
     };
-  }, [config, activePageIndex, refreshPermissionIssue, showNotice]);
+  }, [config, activePageIndex, showNotice]);
 
   // Persist config helper
   const persistConfig = useCallback(() => {
