@@ -1,6 +1,6 @@
 # Workflow Capability Engine
 
-Status: first implementation slice complete
+Status: fourth implementation slice complete; native/manual checks pending
 Started: 2026-07-29
 Feature slug: `workflow-capability-engine`
 
@@ -33,6 +33,12 @@ This is an additive v2 layer over the existing workflow engine:
 - [Test Plan](09-test-plan.md)
 - [Decision Log](10-decision-log.md)
 - [Implementation Report](11-implementation-report.md)
+- [Interactive Screenshot Requirements](12-interactive-screenshot-requirements.md)
+- [Interactive Screenshot Plan](13-interactive-screenshot-plan.md)
+- [OCR And Translation Requirements](14-ocr-translation-requirements.md)
+- [OCR And Translation Plan](15-ocr-translation-plan.md)
+- [Step Retry Requirements](16-step-retry-requirements.md)
+- [Step Retry Plan](17-step-retry-plan.md)
 
 ## Implementation Sources
 

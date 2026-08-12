@@ -62,8 +62,6 @@ Observed results:
 These items stay in the later-phase backlog because they require additional
 native or plugin completion contracts:
 
-- Interactive screenshot completion and artifact files.
-- OCR and translation capabilities.
 - Retry and resume controls.
 - Plugin manifest capability hosting.
 - Nested workflows, branching, and parallel groups.
@@ -75,3 +73,86 @@ the clipboard, save the generated workflow, and run the complete workflow. The
 result should remove all `[草稿]` markers, prefix `整理结果：`, and replace the
 clipboard text. Run the complete workflow instead of a dependent step by
 itself.
+
+## Second Slice: Interactive Screenshot
+
+Implemented on 2026-07-30:
+
+- Added the interactive `screenshot.capture` capability with descriptor-driven
+  clipboard and timeout inputs.
+- Added one workflow-owned screenshot request bridge with busy, completion,
+  user cancellation, workflow cancellation, and timeout handling.
+- Added managed PNG artifacts below the application data directory; image bytes
+  are not stored in workflow configuration, outputs, or run history.
+- Added artifact path display and log export in the workflow run detail.
+- Added the official `交互式截图` workflow template.
+- Added explicit user-cancelled workflow handling instead of reporting Esc as a
+  failed or successful step.
+
+Verification:
+
+- Rust: 91 tests passed.
+- Frontend: 30 test files and 132 tests passed.
+- TypeScript and Vite production build passed.
+- Automation MCP protocol smoke passed.
+- Two isolated Debug apps loaded and invoked the test workflow. Their capture
+  attempts reached the screenshot overlay, but macOS denied image capture
+  because the temporary app bundles did not have Screen Recording permission.
+  The successful PNG path remains a manual gate in
+  `13-interactive-screenshot-plan.md`.
+
+## Third Slice: OCR And System Translation
+
+Implemented on 2026-07-30:
+
+- Reused the existing macOS Vision and Windows Media OCR engines through the
+  typed `ocr.recognize` capability.
+- Reused the existing macOS Translation helper through the typed
+  `translation.translate` capability; no external translation service or API
+  key was added.
+- Added bounded local image validation, stable capability errors, structured
+  OCR/translation outputs, and the shared output-size limit.
+- Changed screenshot “保存” so the selected path becomes the single workflow
+  artifact rather than creating a second application-data copy.
+- Added the official `截图 OCR 并翻译` pipeline, ending with the translated text
+  in the clipboard.
+- Added detailed requirements and implementation plan documents.
+
+Verification:
+
+- Rust: 94 tests passed.
+- Frontend: 30 test files and 133 tests passed.
+- TypeScript and Vite production build passed.
+- Cargo all-target check and format check passed.
+- Automation MCP protocol smoke passed and discovered the platform-appropriate
+  OCR and translation capabilities.
+- Strict UTF-8 decoding passed for 377 repository text files.
+- The existing Vite large-chunk advisory and local Xcode SDK cache warning
+  remain non-blocking.
+
+## Fourth Slice: Bounded Step Retry
+
+Implemented on 2026-07-30:
+
+- Added an optional, backward-compatible retry policy with one to five total
+  attempts and a bounded delay.
+- Added attempt state to live runs and safe run history.
+- Kept condition evaluation and pre-step delay outside the retry loop.
+- Made retry delay cancellable and excluded workflow or explicit interaction
+  cancellation from retry.
+- Assigned a distinct managed terminal session to each script attempt so live
+  output is not confused with an earlier process.
+- Preserved intermediate failure summaries for copied logs while keeping them
+  out of persisted history.
+- Added step-property controls and attempt indicators to the list, run details,
+  and embedded terminal.
+- Added retry support to official-template matching, step copy/paste, MCP
+  normalization, schema, and smoke coverage.
+
+Verification:
+
+- Rust: 99 tests passed.
+- Frontend: 30 test files and 133 tests passed.
+- Production frontend build and Cargo all-target check passed.
+- Automation MCP smoke, Cargo format check, Git diff check, and strict UTF-8
+  validation passed.

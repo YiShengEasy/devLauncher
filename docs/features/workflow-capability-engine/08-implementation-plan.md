@@ -61,9 +61,10 @@ runtime tests cover its construction and data-reference path.
 
 ## Later Phases
 
-- Interactive screenshot completion and artifact output.
-- OCR and translation capabilities.
-- Retry/resume controls.
-- Plugin capability host bridge.
-- Subworkflows with cycle detection.
-- Branching and parallel groups.
+- [x] Interactive screenshot completion and artifact output.
+- [x] OCR and translation capabilities.
+- [x] Bounded, cancellable step retry controls.
+- [ ] Resume failed or interrupted runs from an explicit boundary.
+- [ ] Plugin capability host bridge.
+- [ ] Subworkflows with cycle detection.
+- [ ] Branching and parallel groups.

@@ -9,6 +9,7 @@ use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tokio::sync::oneshot;
 
 #[cfg(not(target_os = "macos"))]
 use crate::utils::image::encode_image_jpeg;
@@ -16,6 +17,31 @@ use crate::utils::image::encode_image_jpeg;
 pub struct ScreenshotCaptureState {
     pub image_data: Arc<Mutex<Option<String>>>,
     pub pinned_images: Arc<Mutex<HashMap<String, PinnedScreenshotPayload>>>,
+    workflow_request: Arc<Mutex<Option<PendingWorkflowScreenshot>>>,
+}
+
+const MAX_WORKFLOW_SCREENSHOT_BYTES: usize = 50 * 1024 * 1024;
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScreenshotWorkflowRequest {
+    pub request_id: String,
+    pub copy_to_clipboard: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct ScreenshotWorkflowCompletion {
+    pub path: String,
+    pub width: u32,
+    pub height: u32,
+    pub copied_to_clipboard: bool,
+}
+
+struct PendingWorkflowScreenshot {
+    request: ScreenshotWorkflowRequest,
+    run_id: String,
+    step_id: String,
+    sender: oneshot::Sender<Result<ScreenshotWorkflowCompletion, String>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -305,7 +331,160 @@ pub fn setup(app: &mut tauri::App) {
     app.manage(ScreenshotCaptureState {
         image_data: Arc::new(Mutex::new(None)),
         pinned_images: Arc::new(Mutex::new(HashMap::new())),
+        workflow_request: Arc::new(Mutex::new(None)),
     });
+}
+
+fn safe_artifact_component(value: &str) -> String {
+    let value = value
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>();
+    if value.is_empty() {
+        "unknown".into()
+    } else {
+        value
+    }
+}
+
+fn workflow_artifact_path(
+    app: &tauri::AppHandle,
+    run_id: &str,
+    step_id: &str,
+    request_id: &str,
+) -> Result<std::path::PathBuf, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| format!("SCREENSHOT_ARTIFACT_WRITE_FAILED: {error}"))?
+        .join("workflow-artifacts")
+        .join(safe_artifact_component(run_id));
+    fs::create_dir_all(&directory)
+        .map_err(|error| format!("SCREENSHOT_ARTIFACT_WRITE_FAILED: {error}"))?;
+    Ok(directory.join(format!(
+        "{}-{}.png",
+        safe_artifact_component(step_id),
+        safe_artifact_component(request_id)
+    )))
+}
+
+fn hide_screenshot_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("screenshot") {
+        let _ = window.hide();
+    }
+}
+
+fn fail_workflow_request(state: &ScreenshotCaptureState, request_id: &str, error: String) -> bool {
+    let pending = {
+        let mut slot = state.workflow_request.lock().unwrap();
+        if slot
+            .as_ref()
+            .map(|pending| pending.request.request_id.as_str())
+            != Some(request_id)
+        {
+            return false;
+        }
+        slot.take()
+    };
+    if let Some(pending) = pending {
+        let _ = pending.sender.send(Err(error));
+        true
+    } else {
+        false
+    }
+}
+
+pub async fn capture_for_workflow(
+    app: &tauri::AppHandle,
+    run_id: &str,
+    step_id: &str,
+    copy_to_clipboard: bool,
+    timeout_seconds: u64,
+) -> Result<ScreenshotWorkflowCompletion, String> {
+    let window = app
+        .get_webview_window("screenshot")
+        .ok_or_else(|| "SCREENSHOT_CAPTURE_FAILED: screenshot window not found".to_string())?;
+    if window.is_visible().unwrap_or(false) {
+        return Err("SCREENSHOT_BUSY: screenshot overlay is already open".into());
+    }
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| format!("SCREENSHOT_CAPTURE_FAILED: {error}"))?
+        .as_millis();
+    let request_id = format!("workflow-screenshot-{stamp}");
+    let (sender, receiver) = oneshot::channel();
+    {
+        let state = app.state::<ScreenshotCaptureState>();
+        let mut slot = state.workflow_request.lock().unwrap();
+        if slot.is_some() {
+            return Err("SCREENSHOT_BUSY: another workflow capture is active".into());
+        }
+        *slot = Some(PendingWorkflowScreenshot {
+            request: ScreenshotWorkflowRequest {
+                request_id: request_id.clone(),
+                copy_to_clipboard,
+            },
+            run_id: run_id.into(),
+            step_id: step_id.into(),
+            sender,
+        });
+    }
+
+    if let Err(error) = show_screenshot_window(app.clone()) {
+        let state = app.state::<ScreenshotCaptureState>();
+        fail_workflow_request(
+            &state,
+            &request_id,
+            format!("SCREENSHOT_CAPTURE_FAILED: {error}"),
+        );
+    }
+
+    let timeout_seconds = timeout_seconds.clamp(1, 3_600);
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_seconds), receiver).await {
+        Ok(Ok(result)) => result,
+        Ok(Err(_)) => Err("SCREENSHOT_CANCELLED: screenshot request was released".into()),
+        Err(_) => {
+            let state = app.state::<ScreenshotCaptureState>();
+            fail_workflow_request(
+                &state,
+                &request_id,
+                "SCREENSHOT_TIMEOUT: screenshot interaction timed out".into(),
+            );
+            hide_screenshot_window(app);
+            Err("SCREENSHOT_TIMEOUT: screenshot interaction timed out".into())
+        }
+    }
+}
+
+pub fn cancel_workflow_capture(app: &tauri::AppHandle, run_id: &str, step_id: &str) -> bool {
+    let state = app.state::<ScreenshotCaptureState>();
+    let pending = {
+        let mut slot = state.workflow_request.lock().unwrap();
+        if !slot
+            .as_ref()
+            .map(|pending| pending.run_id == run_id && pending.step_id == step_id)
+            .unwrap_or(false)
+        {
+            return false;
+        }
+        slot.take()
+    };
+    if let Some(pending) = pending {
+        let _ = pending
+            .sender
+            .send(Err("SCREENSHOT_CANCELLED: workflow was cancelled".into()));
+        hide_screenshot_window(app);
+        true
+    } else {
+        false
+    }
 }
 
 fn capture_and_show_screenshot(
@@ -432,7 +611,7 @@ fn capture_and_show_screenshot(
 
 #[cfg(test)]
 mod tests {
-    use super::{select_capture_display_id, CaptureDisplayBounds};
+    use super::{safe_artifact_component, select_capture_display_id, CaptureDisplayBounds};
 
     fn displays() -> Vec<CaptureDisplayBounds> {
         vec![
@@ -482,6 +661,13 @@ mod tests {
             select_capture_display_id(&displays(), Some((9000.0, 9000.0))),
             Some(1)
         );
+    }
+
+    #[test]
+    fn sanitizes_workflow_artifact_path_components() {
+        assert_eq!(safe_artifact_component("run-1"), "run-1");
+        assert_eq!(safe_artifact_component("../../private"), "______private");
+        assert_eq!(safe_artifact_component(""), "unknown");
     }
 
     #[cfg(target_os = "macos")]
@@ -578,6 +764,119 @@ pub fn get_pending_screenshot(state: tauri::State<'_, ScreenshotCaptureState>) -
 pub fn screenshot_write_file(path: String, data: String) -> Result<(), String> {
     let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
     fs::write(&path, &bytes).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_active_screenshot_workflow_request(
+    state: tauri::State<'_, ScreenshotCaptureState>,
+) -> Option<ScreenshotWorkflowRequest> {
+    state
+        .workflow_request
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|pending| pending.request.clone())
+}
+
+#[tauri::command]
+pub fn complete_screenshot_workflow_capture(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ScreenshotCaptureState>,
+    request_id: String,
+    data: String,
+    width: u32,
+    height: u32,
+    copied_to_clipboard: bool,
+    destination_path: Option<String>,
+) -> Result<String, String> {
+    if width == 0 || height == 0 {
+        return Err("SCREENSHOT_CAPTURE_FAILED: image dimensions are empty".into());
+    }
+    let bytes = BASE64
+        .decode(&data)
+        .map_err(|error| format!("SCREENSHOT_CAPTURE_FAILED: {error}"))?;
+    if bytes.is_empty() || bytes.len() > MAX_WORKFLOW_SCREENSHOT_BYTES {
+        return Err(format!(
+            "SCREENSHOT_CAPTURE_FAILED: image size must be between 1 and {MAX_WORKFLOW_SCREENSHOT_BYTES} bytes"
+        ));
+    }
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("SCREENSHOT_CAPTURE_FAILED: result is not a PNG image".into());
+    }
+
+    let (run_id, step_id) = {
+        let slot = state.workflow_request.lock().unwrap();
+        let pending = slot
+            .as_ref()
+            .ok_or_else(|| "SCREENSHOT_CANCELLED: no active workflow capture".to_string())?;
+        if pending.request.request_id != request_id {
+            return Err("SCREENSHOT_CANCELLED: screenshot request no longer matches".into());
+        }
+        (pending.run_id.clone(), pending.step_id.clone())
+    };
+
+    let user_selected_path = destination_path
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from);
+    let uses_managed_path = user_selected_path.is_none();
+    let path = match user_selected_path {
+        Some(path) => {
+            fs::write(&path, &bytes)
+                .map_err(|error| format!("SCREENSHOT_ARTIFACT_WRITE_FAILED: {error}"))?;
+            path
+        }
+        None => {
+            let path = workflow_artifact_path(&app, &run_id, &step_id, &request_id)?;
+            let temporary_path = path.with_extension("png.tmp");
+            fs::write(&temporary_path, &bytes)
+                .map_err(|error| format!("SCREENSHOT_ARTIFACT_WRITE_FAILED: {error}"))?;
+            fs::rename(&temporary_path, &path)
+                .map_err(|error| format!("SCREENSHOT_ARTIFACT_WRITE_FAILED: {error}"))?;
+            path
+        }
+    };
+
+    let pending = {
+        let mut slot = state.workflow_request.lock().unwrap();
+        if slot
+            .as_ref()
+            .map(|pending| pending.request.request_id.as_str())
+            != Some(request_id.as_str())
+        {
+            if uses_managed_path {
+                let _ = fs::remove_file(&path);
+            }
+            return Err("SCREENSHOT_CANCELLED: screenshot request no longer matches".into());
+        }
+        slot.take()
+    };
+    let completion = ScreenshotWorkflowCompletion {
+        path: path.to_string_lossy().into_owned(),
+        width,
+        height,
+        copied_to_clipboard,
+    };
+    if let Some(pending) = pending {
+        let _ = pending.sender.send(Ok(completion.clone()));
+    }
+    Ok(completion.path)
+}
+
+#[tauri::command]
+pub fn cancel_screenshot_workflow_capture(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ScreenshotCaptureState>,
+    request_id: String,
+) -> Result<(), String> {
+    if !fail_workflow_request(
+        &state,
+        &request_id,
+        "SCREENSHOT_CANCELLED: cancelled by user".into(),
+    ) {
+        return Ok(());
+    }
+    hide_screenshot_window(&app);
+    Ok(())
 }
 
 #[tauri::command]

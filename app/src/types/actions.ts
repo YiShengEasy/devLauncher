@@ -155,6 +155,7 @@ export interface WorkflowCapabilityArtifact {
   name: string;
   artifactType: string;
   mediaType?: string;
+  path?: string;
 }
 
 export interface WorkflowCapabilityAction extends ActionBase {
@@ -200,6 +201,11 @@ export type WorkflowFailurePolicy = "stop" | "continue";
 
 export type WorkflowPlatform = "macos" | "windows" | "linux";
 
+export interface WorkflowRetryPolicy {
+  maxAttempts: number;
+  delayMs: number;
+}
+
 export type StepCondition =
   | { type: "always" }
   | { type: "previous_success" }
@@ -228,6 +234,7 @@ export interface WorkflowStep {
   condition: StepCondition;
   completion: CompletionRule;
   delayMs: number;
+  retry?: WorkflowRetryPolicy;
   onFailure?: WorkflowFailurePolicy;
 }
 
@@ -272,6 +279,7 @@ export interface WorkflowStepRun {
   stepId: string;
   name: string;
   status: WorkflowStepRunStatus;
+  attempt?: number;
   message?: string;
   output?: string;
   outputs?: Record<string, CapabilityValue>;

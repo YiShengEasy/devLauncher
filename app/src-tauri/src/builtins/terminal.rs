@@ -190,19 +190,16 @@ fn spawn_pty_process_in_dir(
                     break;
                 }
                 Ok(n) => {
-                    let offset = if let Ok(mut output) = captured.lock() {
+                    let b64 = BASE64.encode(&buf[..n]);
+                    if let Ok(mut output) = captured.lock() {
                         let offset = output.len();
                         output.extend_from_slice(&buf[..n]);
-                        offset
-                    } else {
-                        0
-                    };
-                    let b64 = BASE64.encode(&buf[..n]);
-                    let _ = app.emit(&format!("terminal-data-{}", sid), b64.clone());
-                    let _ = app.emit(
-                        &format!("terminal-data-v2-{}", sid),
-                        TerminalDataChunk { offset, data: b64 },
-                    );
+                        let _ = app.emit(&format!("terminal-data-{}", sid), b64.clone());
+                        let _ = app.emit(
+                            &format!("terminal-data-v2-{}", sid),
+                            TerminalDataChunk { offset, data: b64 },
+                        );
+                    }
                 }
             }
         }
@@ -245,6 +242,47 @@ pub fn terminal_snapshot(
     })
 }
 
+fn find_terminal_output(
+    state: &TerminalState,
+    session_id: &str,
+) -> Result<Arc<Mutex<Vec<u8>>>, String> {
+    state
+        .outputs
+        .lock()
+        .map_err(|_| "terminal output lock poisoned".to_string())?
+        .get(session_id)
+        .cloned()
+        .ok_or_else(|| "terminal session output not found".to_string())
+}
+
+fn with_cleared_terminal_output<T>(
+    state: &TerminalState,
+    session_id: &str,
+    after_clear: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let output = find_terminal_output(state, session_id)?;
+    let mut bytes = output
+        .lock()
+        .map_err(|_| "terminal session output lock poisoned".to_string())?;
+    bytes.clear();
+    let result = after_clear();
+    drop(bytes);
+    result
+}
+
+/// Clear one terminal's retained output without stopping its PTY process.
+#[tauri::command]
+pub fn terminal_clear(
+    app: tauri::AppHandle,
+    session_id: String,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
+    with_cleared_terminal_output(&state, &session_id, || {
+        app.emit(&format!("terminal-clear-{session_id}"), ())
+            .map_err(|error| error.to_string())
+    })
+}
+
 /// Send raw bytes (base64-encoded) to the PTY's stdin.
 #[tauri::command]
 pub fn terminal_write(
@@ -253,10 +291,18 @@ pub fn terminal_write(
     state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
     let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
-    let mut sessions = state.sessions.lock().unwrap();
-    if let Some(s) = sessions.get_mut(&session_id) {
-        s.writer.write_all(&bytes).map_err(|e| e.to_string())?;
-    }
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "terminal session lock poisoned".to_string())?;
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| "terminal session not found".to_string())?;
+    session
+        .writer
+        .write_all(&bytes)
+        .map_err(|e| e.to_string())?;
+    session.writer.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -330,4 +376,41 @@ pub fn toggle_terminal_window(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_state() -> TerminalState {
+        TerminalState {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            outputs: Arc::new(Mutex::new(HashMap::new())),
+            pending_cmd: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[test]
+    fn clearing_terminal_output_only_changes_selected_session() {
+        let state = test_state();
+        let selected = Arc::new(Mutex::new(b"selected output".to_vec()));
+        let other = Arc::new(Mutex::new(b"other output".to_vec()));
+        {
+            let mut outputs = state.outputs.lock().unwrap();
+            outputs.insert("selected".to_string(), selected.clone());
+            outputs.insert("other".to_string(), other.clone());
+        }
+
+        with_cleared_terminal_output(&state, "selected", || Ok(())).unwrap();
+
+        assert!(selected.lock().unwrap().is_empty());
+        assert_eq!(other.lock().unwrap().as_slice(), b"other output");
+    }
+
+    #[test]
+    fn clearing_unknown_terminal_reports_an_error() {
+        let error = with_cleared_terminal_output(&test_state(), "missing", || Ok(())).unwrap_err();
+
+        assert_eq!(error, "terminal session output not found");
+    }
 }

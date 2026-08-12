@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,8 @@ use crate::window_pinning;
 const MAX_MARKDOWN_FILES: usize = 512;
 const MAX_MARKDOWN_BYTES: u64 = 1024 * 1024;
 const MAX_PROJECT_PROFILES: usize = 24;
-const PROJECTTASKS_SCHEMA_VERSION: u32 = 2;
+const MAX_TASK_ARGUMENT_PRESETS: usize = 200;
+const PROJECTTASKS_SCHEMA_VERSION: u32 = 3;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -30,6 +31,8 @@ pub struct ProjectTasksData {
     #[serde(default)]
     pub config_favorites: Vec<FavoriteConfigRef>,
     #[serde(default)]
+    pub task_argument_presets: Vec<TaskArgumentPreset>,
+    #[serde(default)]
     pub last_root: String,
 }
 
@@ -41,6 +44,7 @@ impl Default for ProjectTasksData {
             projects: Vec::new(),
             task_favorites: Vec::new(),
             config_favorites: Vec::new(),
+            task_argument_presets: Vec::new(),
             last_root: String::new(),
         }
     }
@@ -91,6 +95,16 @@ pub struct FavoriteTaskRef {
 pub struct FavoriteConfigRef {
     pub root: String,
     pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskArgumentPreset {
+    pub project_id: String,
+    pub provider: String,
+    pub source_key: String,
+    pub value: String,
+    pub last_used_at: u64,
 }
 
 pub fn projecttasks_data_path(app: &tauri::AppHandle) -> PathBuf {
@@ -207,6 +221,8 @@ pub fn remove_project_profile(app: tauri::AppHandle, project_id: String) -> Resu
         .retain(|favorite| !roots.iter().any(|root| root == &favorite.root));
     data.config_favorites
         .retain(|favorite| !roots.iter().any(|root| root == &favorite.root));
+    data.task_argument_presets
+        .retain(|preset| preset.project_id != project_id);
     if roots.iter().any(|root| root == &data.last_root) {
         data.last_root = data
             .project_profiles
@@ -344,6 +360,26 @@ fn migrate_projecttasks_data(mut data: ProjectTasksData) -> ProjectTasksData {
         .filter_map(|id| unique.remove(&id))
         .take(MAX_PROJECT_PROFILES)
         .collect();
+    data.task_argument_presets.retain(|preset| {
+        !preset.project_id.trim().is_empty()
+            && !preset.provider.trim().is_empty()
+            && !preset.source_key.trim().is_empty()
+            && !preset.value.trim().is_empty()
+            && preset.value.len() <= 512
+    });
+    data.task_argument_presets
+        .sort_by(|left, right| right.last_used_at.cmp(&left.last_used_at));
+    let mut seen_argument_presets = HashSet::new();
+    data.task_argument_presets.retain(|preset| {
+        seen_argument_presets.insert((
+            preset.project_id.clone(),
+            preset.provider.clone(),
+            preset.source_key.clone(),
+            preset.value.clone(),
+        ))
+    });
+    data.task_argument_presets
+        .truncate(MAX_TASK_ARGUMENT_PRESETS);
     data.schema_version = PROJECTTASKS_SCHEMA_VERSION;
     data
 }
@@ -578,14 +614,16 @@ pub fn project_task_command(
     source_key: String,
     file: String,
     name: String,
+    arguments: Option<Vec<String>>,
 ) -> Result<String, String> {
-    resolve_project_task_command(
+    resolve_project_task_command_with_arguments(
         &projecttasks_data_path(&app),
         &project_id,
         &provider,
         &source_key,
         &file,
         &name,
+        arguments.as_deref().unwrap_or_default(),
     )
 }
 
@@ -597,6 +635,27 @@ pub fn resolve_project_task_command(
     file: &str,
     name: &str,
 ) -> Result<String, String> {
+    resolve_project_task_command_with_arguments(
+        data_path,
+        project_id,
+        provider,
+        source_key,
+        file,
+        name,
+        &[],
+    )
+}
+
+pub fn resolve_project_task_command_with_arguments(
+    data_path: &Path,
+    project_id: &str,
+    provider: &str,
+    source_key: &str,
+    file: &str,
+    name: &str,
+    arguments: &[String],
+) -> Result<String, String> {
+    validate_task_arguments(arguments)?;
     let data = read_projecttasks_data_from_path(data_path)?;
     let profile = data
         .project_profiles
@@ -608,14 +667,42 @@ pub fn resolve_project_task_command(
     }
     let root = canonical_directory(&profile.root)?;
     match provider {
-        "runme" if source_key == name => runme_task_command_for_root(&root, file, name),
+        "runme" if source_key == name => {
+            runme_task_command_for_root_with_arguments(&root, file, name, arguments)
+        }
         "runme" => Err("Runme 任务引用无效".to_string()),
-        "package" => package_task_command_for_root(&root, source_key, file, name),
+        "package" => {
+            package_task_command_for_root_with_arguments(&root, source_key, file, name, arguments)
+        }
         _ => Err(format!("不支持的项目任务来源：{provider}")),
     }
 }
 
+fn validate_task_arguments(arguments: &[String]) -> Result<(), String> {
+    if arguments.len() > 64 {
+        return Err("单次执行最多支持 64 个参数".to_string());
+    }
+    if arguments.iter().any(|argument| {
+        argument.len() > 512
+            || argument
+                .chars()
+                .any(|character| character == '\0' || character == '\n' || character == '\r')
+    }) {
+        return Err("任务参数包含无效字符或长度超过限制".to_string());
+    }
+    Ok(())
+}
+
 fn runme_task_command_for_root(root_path: &Path, file: &str, name: &str) -> Result<String, String> {
+    runme_task_command_for_root_with_arguments(root_path, file, name, &[])
+}
+
+fn runme_task_command_for_root_with_arguments(
+    root_path: &Path,
+    file: &str,
+    name: &str,
+    arguments: &[String],
+) -> Result<String, String> {
     if name.trim().is_empty() || name.chars().any(|character| character.is_control()) {
         return Err("Runme 任务名称无效".to_string());
     }
@@ -637,31 +724,49 @@ fn runme_task_command_for_root(root_path: &Path, file: &str, name: &str) -> Resu
 
     let relative = display_relative_path(&root_path, &canonical_file);
     let source = fs::read_to_string(&canonical_file).map_err(|error| error.to_string())?;
-    let parsed_task_exists = parse_markdown_tasks(&relative, &source)
+    let blocks = parse_markdown_blocks(&source);
+    let named_block = blocks
         .iter()
-        .any(|task| task.name == name);
-    let cli_task_exists = runme_list_tasks(&root_path).ok().is_some_and(|cli_tasks| {
-        cli_tasks.iter().any(|task| {
-            task.name == name
-                && normalize_cli_file(&root_path, &task.file).as_deref() == Some(relative.as_str())
-        })
-    });
-    let task_exists = parsed_task_exists || cli_task_exists;
-    if !task_exists {
+        .find(|block| block.name.as_deref() == Some(name));
+    let cli_task = named_block
+        .is_none()
+        .then(|| runme_list_tasks(&root_path))
+        .and_then(Result::ok)
+        .and_then(|cli_tasks| {
+            cli_tasks.into_iter().find(|task| {
+                task.name == name
+                    && normalize_cli_file(&root_path, &task.file).as_deref()
+                        == Some(relative.as_str())
+            })
+        });
+    if named_block.is_none() && cli_task.is_none() {
         return Err("任务名称已不存在，建议重新扫描项目".to_string());
     }
 
-    let runme = resolve_runme_executable()
-        .map(|path| shell_quote(&path.to_string_lossy()))
-        .unwrap_or_else(|| "runme".to_string());
-    Ok(format!(
-        "cd {} && {} run {} --project {} --filename {}",
-        shell_quote(&root_path.to_string_lossy()),
-        runme,
-        shell_quote(&name),
-        shell_quote(&root_path.to_string_lossy()),
-        shell_quote(&relative),
-    ))
+    let block = named_block.or_else(|| {
+        cli_task.as_ref().and_then(|task| {
+            blocks
+                .iter()
+                .find(|block| first_command_matches(block, &task.first_command))
+        })
+    });
+    let block = block.ok_or_else(|| "无法定位 Runme 任务代码块，请重新扫描项目".to_string())?;
+    if !is_supported_language(&block.language) {
+        return Err(format!("暂不支持执行 {} 任务", block.language));
+    }
+
+    let mut command = block.command.trim().to_string();
+    if !arguments.is_empty() {
+        command.push(' ');
+        command.push_str(
+            &arguments
+                .iter()
+                .map(|argument| shell_quote(argument))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+    }
+    Ok(command)
 }
 
 #[tauri::command]
@@ -823,11 +928,22 @@ fn package_script_line(source: &str, name: &str) -> usize {
         .unwrap_or(1)
 }
 
+#[cfg(test)]
 fn package_task_command_for_root(
     root: &Path,
     source_key: &str,
     file: &str,
     name: &str,
+) -> Result<String, String> {
+    package_task_command_for_root_with_arguments(root, source_key, file, name, &[])
+}
+
+fn package_task_command_for_root_with_arguments(
+    root: &Path,
+    source_key: &str,
+    file: &str,
+    name: &str,
+    arguments: &[String],
 ) -> Result<String, String> {
     if file != "package.json" {
         return Err("Package 任务必须来自项目根目录的 package.json".to_string());
@@ -850,12 +966,23 @@ fn package_task_command_for_root(
     if !exists {
         return Err("Package 任务已不存在，请重新扫描项目".to_string());
     }
-    Ok(format!(
+    let mut command = format!(
         "cd {} && {} run {}",
         shell_quote(&root.to_string_lossy()),
         package_manager(root),
         shell_quote(source_key),
-    ))
+    );
+    if !arguments.is_empty() {
+        command.push_str(" -- ");
+        command.push_str(
+            &arguments
+                .iter()
+                .map(|argument| shell_quote(argument))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+    }
+    Ok(command)
 }
 
 fn runme_cli_info(root: &Path) -> (bool, Option<String>) {
@@ -1299,12 +1426,14 @@ fn shell_quote(value: &str) -> String {
 mod tests {
     use super::{
         attribute_value, build_tasks_from_cli, classify_category, discover_package_scripts,
-        package_task_command_for_root, parse_markdown_blocks, parse_markdown_tasks,
+        migrate_projecttasks_data, package_task_command_for_root,
+        package_task_command_for_root_with_arguments, parse_markdown_blocks, parse_markdown_tasks,
         parse_runme_list_json, read_projecttasks_data_from_path, runme_task_command,
-        write_projecttasks_data_to_path, FavoriteTaskRef, ProjectTasksData, RunmeCliTask,
-        ScannedProject,
+        runme_task_command_for_root_with_arguments, write_projecttasks_data_to_path,
+        FavoriteTaskRef, ProjectTasksData, RunmeCliTask, ScannedProject, TaskArgumentPreset,
     };
     use std::fs;
+    use std::process::Command;
     use tempfile::tempdir;
 
     #[test]
@@ -1337,9 +1466,85 @@ mod tests {
         assert_eq!(loaded.projects[0].task_count, 3);
         assert_eq!(loaded.task_favorites[0].name, "test");
         assert_eq!(loaded.last_root, "/projects/demo");
-        assert_eq!(loaded.schema_version, 2);
+        assert_eq!(loaded.schema_version, 3);
         assert_eq!(loaded.project_profiles.len(), 1);
         assert_eq!(loaded.projects[0].project_id, loaded.project_profiles[0].id);
+    }
+
+    #[test]
+    fn migrates_and_deduplicates_task_argument_presets() {
+        let data = ProjectTasksData {
+            task_argument_presets: vec![
+                TaskArgumentPreset {
+                    project_id: "project-demo".into(),
+                    provider: "package".into(),
+                    source_key: "test".into(),
+                    value: "--check".into(),
+                    last_used_at: 2,
+                },
+                TaskArgumentPreset {
+                    project_id: "project-demo".into(),
+                    provider: "package".into(),
+                    source_key: "test".into(),
+                    value: "--check".into(),
+                    last_used_at: 1,
+                },
+            ],
+            ..ProjectTasksData::default()
+        };
+        let migrated = migrate_projecttasks_data(data);
+        assert_eq!(migrated.schema_version, 3);
+        assert_eq!(migrated.task_argument_presets.len(), 1);
+        assert_eq!(migrated.task_argument_presets[0].last_used_at, 2);
+    }
+
+    #[test]
+    fn appends_quoted_arguments_to_package_tasks() {
+        let directory = tempdir().expect("temporary project directory");
+        fs::write(
+            directory.path().join("package.json"),
+            r#"{"scripts":{"test":"vitest"}}"#,
+        )
+        .expect("write package json");
+        let arguments = vec!["--check".to_string(), "hello world".to_string()];
+        let command = package_task_command_for_root_with_arguments(
+            directory.path(),
+            "test",
+            "package.json",
+            "test",
+            &arguments,
+        )
+        .expect("resolve package command");
+        assert!(command.ends_with("run 'test' -- '--check' 'hello world'"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn passes_arguments_to_revalidated_markdown_blocks() {
+        let directory = tempdir().expect("temporary project directory");
+        fs::write(
+            directory.path().join("TASKS.md"),
+            "```sh { name=args }\nprintf '<%s>\\n'\n```\n",
+        )
+        .expect("write tasks markdown");
+        let arguments = vec!["--check".to_string(), "hello world".to_string()];
+        let root = directory
+            .path()
+            .canonicalize()
+            .expect("canonical project root");
+        let command =
+            runme_task_command_for_root_with_arguments(&root, "TASKS.md", "args", &arguments)
+                .expect("resolve markdown command");
+        assert_eq!(command, "printf '<%s>\\n' '--check' 'hello world'");
+        let output = Command::new("/bin/zsh")
+            .args(["-lc", &command])
+            .output()
+            .expect("execute generated markdown command");
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "<--check>\n<hello world>\n"
+        );
     }
 
     #[test]
@@ -1458,7 +1663,7 @@ mod tests {
     }
 
     #[test]
-    fn validates_task_file_and_quotes_command_arguments() {
+    fn validates_task_file_and_returns_declared_command() {
         let directory = tempdir().expect("temporary project directory");
         let markdown = "```bash {name=\"task ' one\"}\nprintf 'ok\\n'\n```\n";
         fs::write(directory.path().join("README.md"), markdown).expect("write markdown");
@@ -1469,7 +1674,7 @@ mod tests {
             "task ' one".to_string(),
         )
         .expect("valid task command");
-        assert!(command.contains("'task '\\'' one'"));
+        assert_eq!(command, "printf 'ok\\n'");
         assert!(runme_task_command(
             directory.path().to_string_lossy().into_owned(),
             "../README.md".to_string(),

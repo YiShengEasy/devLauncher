@@ -252,6 +252,19 @@ fn default_failure_policy() -> String {
     "stop".to_string()
 }
 
+fn default_retry_max_attempts() -> u32 {
+    1
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRetryPolicy {
+    #[serde(default = "default_retry_max_attempts")]
+    pub max_attempts: u32,
+    #[serde(default)]
+    pub delay_ms: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowStep {
@@ -266,6 +279,8 @@ pub struct WorkflowStep {
     pub completion: CompletionRule,
     #[serde(default)]
     pub delay_ms: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<WorkflowRetryPolicy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_failure: Option<String>,
 }
@@ -501,5 +516,49 @@ pages:
         assert!(saved.contains("type: plugin"));
         assert!(saved.contains("pluginId: devlauncher.examples.hello"));
         assert!(saved.contains("actionId: open"));
+    }
+
+    #[test]
+    fn loads_legacy_workflows_and_preserves_retry_policy() {
+        let yaml = r#"
+pages: []
+workflows:
+  - id: workflow-legacy
+    name: Legacy
+    steps:
+      - id: step-legacy
+        name: Legacy step
+        action:
+          type: script
+          name: Legacy step
+          shell: terminal
+          content: exit 0
+  - id: workflow-retry
+    name: Retry
+    steps:
+      - id: step-retry
+        name: Retry step
+        action:
+          type: script
+          name: Retry step
+          shell: terminal
+          content: exit 1
+        retry:
+          maxAttempts: 3
+          delayMs: 1500
+"#;
+
+        let config: KeyboardConfig = serde_yaml::from_str(yaml).expect("workflow config");
+        assert!(config.workflows[0].steps[0].retry.is_none());
+        let retry = config.workflows[1].steps[0]
+            .retry
+            .as_ref()
+            .expect("retry policy");
+        assert_eq!(retry.max_attempts, 3);
+        assert_eq!(retry.delay_ms, 1500);
+
+        let saved = serde_yaml::to_string(&config).expect("workflow config should save");
+        assert!(saved.contains("maxAttempts: 3"));
+        assert!(saved.contains("delayMs: 1500"));
     }
 }

@@ -468,6 +468,153 @@
   background: rgba(4, 7, 12, 0.9);
 }
 
+.projecttasks-arguments {
+  display: grid;
+  gap: 8px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.projecttasks-arguments-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.projecttasks-arguments-heading > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.projecttasks-arguments-heading strong {
+  color: rgba(242, 246, 252, 0.78);
+  font-size: 10px;
+}
+
+.projecttasks-arguments-heading span {
+  color: rgba(220, 226, 244, 0.38);
+  font-size: 9px;
+}
+
+.projecttasks-arguments-heading button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(220, 226, 244, 0.42);
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.projecttasks-arguments-heading button:hover {
+  color: rgba(245, 248, 255, 0.82);
+}
+
+.projecttasks-arguments-editor {
+  display: flex;
+  gap: 7px;
+}
+
+.projecttasks-arguments-editor input {
+  min-width: 0;
+  height: 32px;
+  flex: 1;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 7px;
+  outline: none;
+  background: rgba(0, 0, 0, 0.24);
+  color: rgba(245, 248, 255, 0.9);
+  font: 10px "SFMono-Regular", Consolas, monospace;
+}
+
+.projecttasks-arguments-editor input:focus {
+  border-color: rgba(45, 212, 191, 0.52);
+}
+
+.projecttasks-arguments-editor button {
+  height: 32px;
+  flex: 0 0 auto;
+  padding: 0 11px;
+  border: 1px solid rgba(45, 212, 191, 0.26);
+  border-radius: 7px;
+  background: rgba(20, 184, 166, 0.1);
+  color: #9ff8e8;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.projecttasks-arguments-editor button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.projecttasks-arguments-error {
+  color: #fda4af;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.projecttasks-argument-history {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.projecttasks-argument-preset {
+  max-width: min(320px, 100%);
+  height: 27px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(225, 231, 242, 0.6);
+}
+
+.projecttasks-argument-preset[data-active="true"] {
+  border-color: rgba(45, 212, 191, 0.32);
+  background: rgba(20, 184, 166, 0.1);
+  color: rgba(223, 255, 248, 0.88);
+}
+
+.projecttasks-argument-preset-value {
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  padding: 0 7px 0 9px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: 9px "SFMono-Regular", Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.projecttasks-argument-preset-delete {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(225, 231, 242, 0.3);
+  cursor: pointer;
+}
+
+.projecttasks-argument-preset-delete:hover {
+  color: #fda4af;
+}
+
 .projecttasks-terminal-header {
   min-height: 32px;
   flex: 0 0 32px;
@@ -537,6 +684,107 @@
 .projecttasks-terminal-clear:disabled {
   cursor: default;
   opacity: 0.4;
+}
+
+.projecttasks-terminal-icon-button {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(225, 231, 242, 0.48);
+  cursor: pointer;
+}
+
+.projecttasks-terminal-icon-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(245, 247, 252, 0.82);
+}
+
+.projecttasks-terminal-icon-button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.projecttasks-terminal-tabs {
+  min-height: 30px;
+  flex: 0 0 30px;
+  display: flex;
+  align-items: end;
+  gap: 3px;
+  padding: 3px 8px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  scrollbar-width: none;
+}
+
+.projecttasks-terminal-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.projecttasks-terminal-tab {
+  min-width: 92px;
+  max-width: 180px;
+  height: 26px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(225, 231, 242, 0.46);
+}
+
+.projecttasks-terminal-tab[data-active="true"] {
+  border-color: rgba(94, 234, 212, 0.18);
+  background: rgba(94, 234, 212, 0.09);
+  color: rgba(238, 248, 247, 0.86);
+}
+
+.projecttasks-terminal-tab-main {
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  overflow: hidden;
+  padding: 0 5px 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 9px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.projecttasks-terminal-tab-close {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(225, 231, 242, 0.34);
+  cursor: pointer;
+}
+
+.projecttasks-terminal-tab-close:hover {
+  background: rgba(251, 113, 133, 0.12);
+  color: #fda4af;
+}
+
+.projecttasks-terminal-tabs-empty {
+  align-self: center;
+  color: rgba(225, 231, 242, 0.32);
+  font-size: 9px;
 }
 
 .projecttasks-terminal-body {

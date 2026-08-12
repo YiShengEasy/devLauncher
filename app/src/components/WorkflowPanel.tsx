@@ -258,9 +258,13 @@ function formatRunLog(run: WorkflowRun): string {
     "",
     ...run.steps.map((step, index) => (
       `${String(index + 1).padStart(2, "0")} [${stepStatusLabel(step.status)}] ${step.name}`
+      + (step.attempt ? ` · 第 ${step.attempt} 次尝试` : "")
       + (step.message ? `\n${step.message}` : "")
       + (step.output ? `\n${step.output}` : "")
       + (step.outputs ? `\n输出：${JSON.stringify(step.outputs, null, 2)}` : "")
+      + (step.artifacts?.length
+        ? `\n产物：${step.artifacts.map((artifact) => artifact.path ?? artifact.name).join("\n")}`
+        : "")
     )),
   ];
   return cleanTerminalText(lines.join("\n"));
@@ -321,6 +325,7 @@ function WorkflowRunTerminal({ run }, ref) {
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const seenStepIdsRef = useRef(new Set<string>());
+  const seenAttemptsRef = useRef(new Map<string, number>());
   const seenExitSessionsRef = useRef(new Set<string>());
   const sessionOffsetsRef = useRef(new Map<string, number>());
   const sessionId = workflowTerminalSession(run);
@@ -364,6 +369,7 @@ function WorkflowRunTerminal({ run }, ref) {
     termRef.current = term;
     fitRef.current = fitAddon;
     seenStepIdsRef.current.clear();
+    seenAttemptsRef.current.clear();
     seenExitSessionsRef.current.clear();
     sessionOffsetsRef.current.clear();
     if (run) {
@@ -407,6 +413,16 @@ function WorkflowRunTerminal({ run }, ref) {
     if (!current) return;
     seenStepIdsRef.current.add(current.stepId);
     term.write(`\r\n\x1b[90m$ step ${String(index + 1).padStart(2, "0")} · ${current.name}\x1b[0m\r\n`);
+  }, [run?.currentStepId, run?.id, run?.steps]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term || !run?.currentStepId) return;
+    const current = run.steps.find((step) => step.stepId === run.currentStepId);
+    const attempt = current?.attempt ?? 0;
+    if (!current || attempt <= (seenAttemptsRef.current.get(current.stepId) ?? 0)) return;
+    seenAttemptsRef.current.set(current.stepId, attempt);
+    term.write(`\x1b[90m[第 ${attempt} 次尝试]\x1b[0m\r\n`);
   }, [run?.currentStepId, run?.id, run?.steps]);
 
   useEffect(() => {
@@ -1395,7 +1411,7 @@ export function WorkflowPanel({
                     <span style={{ display: "block", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.4)", fontSize: 9 }}>
                       {stepRun
                         ? `${stepStatusLabel(stepRun.status)}${stepRun.message ? ` · ${stepRun.message}` : ""}`
-                        : `${conditionLabel(item.condition)} · 完成：${completionLabel(item.completion)}`}
+                        : `${conditionLabel(item.condition)} · 完成：${completionLabel(item.completion)}${item.retry && item.retry.maxAttempts > 1 ? ` · 最多 ${item.retry.maxAttempts} 次` : ""}`}
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 3 }}>
@@ -1700,6 +1716,43 @@ export function WorkflowPanel({
               <Field label="执行前延迟（毫秒）">
                 <input style={INPUT} type="number" min={0} value={step.delayMs} onChange={(event) => updateStep({ delayMs: Number(event.target.value) })} />
               </Field>
+              <Field label="失败后最多尝试">
+                <select
+                  style={INPUT}
+                  value={step.retry?.maxAttempts ?? 1}
+                  onChange={(event) => {
+                    const maxAttempts = Number(event.target.value);
+                    updateStep({
+                      retry: maxAttempts > 1
+                        ? { maxAttempts, delayMs: step.retry?.delayMs ?? 1000 }
+                        : undefined,
+                    });
+                  }}
+                >
+                  <option value={1}>1 次</option>
+                  <option value={2}>2 次</option>
+                  <option value={3}>3 次</option>
+                  <option value={4}>4 次</option>
+                  <option value={5}>5 次</option>
+                </select>
+              </Field>
+              {(step.retry?.maxAttempts ?? 1) > 1 && (
+                <Field label="重试间隔（毫秒）">
+                  <input
+                    style={INPUT}
+                    type="number"
+                    min={0}
+                    max={300_000}
+                    value={step.retry?.delayMs ?? 1000}
+                    onChange={(event) => updateStep({
+                      retry: {
+                        maxAttempts: step.retry?.maxAttempts ?? 2,
+                        delayMs: Number(event.target.value),
+                      },
+                    })}
+                  />
+                </Field>
+              )}
               <div style={{ paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.09)" }}>
                 {step.action.type === "script" || step.action.type === "project_task" ? (
                   <div style={{ display: "flex", alignItems: "center", color: "rgba(255,255,255,0.34)", fontSize: 10 }}>
@@ -1859,7 +1912,9 @@ export function WorkflowPanel({
                         </span>
                         <span style={{ color }}>{stepStatusLabel(runStep.status)}</span>
                         <span style={{ minWidth: 0, color: "rgba(226,232,244,0.62)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                          {runStep.name}{runStep.message ? ` · ${runStep.message}` : ""}
+                          {runStep.name}
+                          {runStep.attempt ? ` · 第 ${runStep.attempt} 次尝试` : ""}
+                          {runStep.message ? ` · ${runStep.message}` : ""}
                           {runStep.outputs && (
                             <code style={{
                               display: "block",
@@ -1872,6 +1927,21 @@ export function WorkflowPanel({
                               {JSON.stringify(runStep.outputs)}
                             </code>
                           )}
+                          {runStep.artifacts?.map((artifact) => (
+                            <code
+                              key={artifact.id}
+                              style={{
+                                display: "block",
+                                marginTop: 3,
+                                color: "rgba(147,197,253,0.7)",
+                                fontSize: 9.5,
+                                whiteSpace: "pre-wrap",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {`产物 · ${artifact.path ?? artifact.name}`}
+                            </code>
+                          ))}
                         </span>
                       </div>
                     );

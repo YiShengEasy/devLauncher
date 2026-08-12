@@ -44,6 +44,7 @@ describe("workflow helpers", () => {
     expect(step.id).toMatch(/^step-/);
     expect(step.condition).toEqual({ type: "always" });
     expect(step.completion).toEqual({ type: "action_resolved" });
+    expect(step.retry).toBeUndefined();
   });
 
   it("creates editable workflows from official templates", () => {
@@ -83,5 +84,41 @@ describe("workflow helpers", () => {
     expect(template.action.inputs.template).toBe(`整理结果：\n\${steps.${replace.id}.outputs.text}`);
     expect(write.action.inputs.text).toBe(`\${steps.${template.id}.outputs.text}`);
     expect(matchingOfficialTemplateId(workflow)).toBe("clipboard-text-pipeline");
+  });
+
+  it("creates the interactive screenshot capability template", () => {
+    const workflow = createWorkflowFromTemplate("interactive-screenshot");
+    expect(workflow.steps).toHaveLength(1);
+    const [capture] = workflow.steps;
+    expect(capture.completion).toEqual({ type: "capability_completed" });
+    expect(capture.action).toMatchObject({
+      type: "capability",
+      capabilityId: "screenshot.capture",
+      inputs: {
+        copyToClipboard: true,
+        timeoutSeconds: 300,
+      },
+    });
+    expect(matchingOfficialTemplateId(workflow)).toBe("interactive-screenshot");
+
+    workflow.steps[0].retry = { maxAttempts: 2, delayMs: 1000 };
+    expect(matchingOfficialTemplateId(workflow)).toBeUndefined();
+  });
+
+  it("materializes the screenshot OCR translation pipeline", () => {
+    const workflow = createWorkflowFromTemplate("screenshot-ocr-translate");
+    const [capture, ocr, translate, copy] = workflow.steps;
+    if (
+      ocr.action.type !== "capability"
+      || translate.action.type !== "capability"
+      || copy.action.type !== "capability"
+    ) {
+      throw new Error("Expected capability actions");
+    }
+    expect(ocr.action.inputs.path).toBe(`\${steps.${capture.id}.outputs.path}`);
+    expect(translate.action.inputs.text).toBe(`\${steps.${ocr.id}.outputs.text}`);
+    expect(translate.action.inputs.targetLanguage).toBe("zh-Hans");
+    expect(copy.action.inputs.text).toBe(`\${steps.${translate.id}.outputs.targetText}`);
+    expect(matchingOfficialTemplateId(workflow)).toBe("screenshot-ocr-translate");
   });
 });

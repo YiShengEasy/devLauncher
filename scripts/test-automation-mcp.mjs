@@ -109,6 +109,7 @@ try {
         steps: [{
           name: "Wait",
           action: { type: "script", name: "Wait", shell: "terminal", content: "exit 0" },
+          retry: { maxAttempts: 3, delayMs: 10 },
         }],
       },
     },
@@ -122,7 +123,13 @@ try {
     arguments: {},
   });
   const capabilityIds = capabilities.result?.structuredContent?.data?.map((item) => item.id) ?? [];
-  if (!capabilityIds.includes("clipboard.read_text") || !capabilityIds.includes("text.replace")) {
+  const requiredCapabilityIds = ["clipboard.read_text", "text.replace"];
+  if (process.platform === "darwin") {
+    requiredCapabilityIds.push("ocr.recognize", "translation.translate");
+  } else if (process.platform === "win32") {
+    requiredCapabilityIds.push("ocr.recognize");
+  }
+  if (requiredCapabilityIds.some((id) => !capabilityIds.includes(id))) {
     throw new Error("Workflow capability discovery failed");
   }
 

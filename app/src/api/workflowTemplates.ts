@@ -1,4 +1,4 @@
-import type { Action, CompletionRule, WorkflowDefinition, WorkflowFailurePolicy, WorkflowStep } from "@/types/actions";
+import type { Action, CapabilityValue, CompletionRule, WorkflowDefinition, WorkflowFailurePolicy, WorkflowRetryPolicy, WorkflowStep } from "@/types/actions";
 import { workflowId } from "./workflow";
 
 export type WorkflowTemplateCategory = "dev" | "test" | "release" | "monitor";
@@ -17,6 +17,7 @@ export interface WorkflowTemplateStepDraft {
   action: Action;
   completion: CompletionRule;
   delayMs?: number;
+  retry?: WorkflowRetryPolicy;
   onFailure?: WorkflowFailurePolicy;
 }
 
@@ -57,7 +58,7 @@ function capabilityStep(
   referenceKey: string,
   name: string,
   capabilityId: string,
-  inputs: Record<string, string>,
+  inputs: Record<string, CapabilityValue>,
 ): WorkflowTemplateStepDraft {
   return {
     referenceKey,
@@ -73,6 +74,42 @@ function capabilityStep(
 }
 
 const TEMPLATES: WorkflowTemplateDefinition[] = [
+  {
+    id: "interactive-screenshot",
+    name: "交互式截图",
+    category: "dev",
+    description: "等待你选择并确认截图，再把 PNG 作为可供后续步骤引用的工作流产物。",
+    failurePolicy: "stop",
+    steps: [
+      capabilityStep("capture", "选择并确认截图", "screenshot.capture", {
+        copyToClipboard: true,
+        timeoutSeconds: 300,
+      }),
+    ],
+  },
+  {
+    id: "screenshot-ocr-translate",
+    name: "截图 OCR 并翻译",
+    category: "dev",
+    description: "确认截图后使用系统 OCR 识别文字，翻译成中文并把译文写入剪贴板。",
+    failurePolicy: "stop",
+    steps: [
+      capabilityStep("capture", "选择并确认截图", "screenshot.capture", {
+        copyToClipboard: false,
+        timeoutSeconds: 300,
+      }),
+      capabilityStep("ocr", "识别截图文字", "ocr.recognize", {
+        path: "${steps.$capture.outputs.path}",
+      }),
+      capabilityStep("translate", "翻译成中文", "translation.translate", {
+        text: "${steps.$ocr.outputs.text}",
+        targetLanguage: "zh-Hans",
+      }),
+      capabilityStep("copy", "复制译文", "clipboard.write_text", {
+        text: "${steps.$translate.outputs.targetText}",
+      }),
+    ],
+  },
   {
     id: "clipboard-text-pipeline",
     name: "剪贴板文本处理",
@@ -278,6 +315,7 @@ export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string
         && step.enabled
         && step.condition.type === "always"
         && step.delayMs === (templateStep.delayMs ?? 0)
+        && valuesMatch(step.retry, templateStep.retry)
         && step.onFailure === templateStep.onFailure
         && valuesMatch(step.action, materializeTemplateValue(templateStep.action, templateStepIds))
         && valuesMatch(step.completion, templateStep.completion)
@@ -311,6 +349,7 @@ export function createWorkflowFromTemplateDefinition(template: WorkflowTemplateD
       condition: { type: "always" },
       completion: { ...step.completion },
       delayMs: step.delayMs ?? 0,
+      retry: step.retry ? { ...step.retry } : undefined,
       onFailure: step.onFailure,
     })),
     createdAt: now,

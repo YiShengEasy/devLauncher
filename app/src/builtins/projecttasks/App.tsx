@@ -7,7 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { loadConfig, saveConfig } from "@/api/config";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { MacWindowControls } from "@/components/MacWindowControls";
-import { AddIcon, CopyIcon, DeleteIcon, FavoriteIcon, FolderIcon, RetryIcon } from "@/icons";
+import { AddIcon, CloseIcon, CopyIcon, DeleteIcon, FavoriteIcon, FolderIcon, RetryIcon } from "@/icons";
 import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 import type { ProjectTaskAction } from "@/types/actions";
 import {
@@ -36,6 +36,14 @@ import {
   type WorkflowImportTarget,
 } from "./workflowImport";
 import { loadProjectTasksData, updateProjectTasksData, type ProjectProfile } from "./storage";
+import {
+  parseTaskArguments,
+  rememberTaskArgumentPreset,
+  removeTaskArgumentPreset,
+  taskArgumentPresetsFor,
+  type TaskArgumentPreset,
+  type TaskArgumentTarget,
+} from "./taskArguments";
 import "./projecttasks.css";
 
 interface RunmeTask {
@@ -233,6 +241,8 @@ export function ProjectTasksApp() {
   const [favorites, setFavorites] = useState<FavoriteTaskRef[]>(() =>
     parseTaskFavorites(localStorage.getItem(PROJECT_TASK_FAVORITES_STORAGE_KEY)),
   );
+  const [taskArgumentPresets, setTaskArgumentPresets] = useState<TaskArgumentPreset[]>([]);
+  const [taskArguments, setTaskArguments] = useState("");
   const [workflowImport, setWorkflowImport] = useState<{
     task: RunmeTask;
     source: RunmeDiscovery;
@@ -316,6 +326,34 @@ export function ProjectTasksApp() {
     && selectedTask
     && isTaskFavorite(favorites, taskFavoriteRef(discovery.root, selectedTask)),
   );
+  const selectedArgumentTarget = useMemo<TaskArgumentTarget | null>(() => (
+    discovery && selectedTask
+      ? {
+          projectId: discovery.projectId,
+          provider: selectedTask.provider,
+          sourceKey: selectedTask.sourceKey,
+        }
+      : null
+  ), [discovery, selectedTask]);
+  const selectedArgumentHistory = useMemo(
+    () => selectedArgumentTarget
+      ? taskArgumentPresetsFor(taskArgumentPresets, selectedArgumentTarget)
+      : [],
+    [selectedArgumentTarget, taskArgumentPresets],
+  );
+  const parsedArguments = useMemo(() => {
+    try {
+      return { values: parseTaskArguments(taskArguments), error: "" };
+    } catch (error) {
+      return { values: [] as string[], error: String(error).replace(/^Error:\s*/, "") };
+    }
+  }, [taskArguments]);
+  const commandPreview = useMemo(() => {
+    if (!selectedTask) return "选择一个任务后显示代码块内容";
+    const command = selectedTask.command.trimEnd();
+    const argumentsText = taskArguments.trim();
+    return argumentsText ? `${command} ${argumentsText}` : command;
+  }, [selectedTask, taskArguments]);
 
   useEffect(() => {
     if (IS_DESIGN_PREVIEW) return;
@@ -329,6 +367,7 @@ export function ProjectTasksApp() {
           status: project.projectId ? profiles.get(project.projectId)?.status : project.status,
         })));
         setFavorites(data.taskFavorites);
+        setTaskArgumentPresets(data.taskArgumentPresets);
         if (data.lastRoot) setRoot(data.lastRoot);
       })
       .catch((error) => setStatus(`读取任务记录失败：${String(error)}`))
@@ -339,6 +378,10 @@ export function ProjectTasksApp() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    setTaskArguments("");
+  }, [selectedTask?.id, discovery?.projectId]);
 
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current);
@@ -528,6 +571,10 @@ export function ProjectTasksApp() {
       setStatus(`暂不支持 ${selectedTask.language} 代码块；当前版本只执行 shell 类任务`);
       return;
     }
+    if (parsedArguments.error) {
+      setStatus(parsedArguments.error);
+      return;
+    }
     if (selectedTask.risk !== "safe") {
       const confirmed = window.confirm(
         `${RISK_LABELS[selectedTask.risk] ?? "请复核"}任务：${selectedTask.name}\n\n确认发送到终端执行吗？`,
@@ -542,9 +589,19 @@ export function ProjectTasksApp() {
         sourceKey: selectedTask.sourceKey,
         file: selectedTask.file,
         name: selectedTask.name,
+        arguments: parsedArguments.values,
       });
       if (!terminalRef.current) throw new Error("项目终端尚未初始化");
-      await terminalRef.current.run(command);
+      await terminalRef.current.run(command, selectedTask.name);
+      if (selectedArgumentTarget && taskArguments.trim()) {
+        const next = rememberTaskArgumentPreset(
+          taskArgumentPresets,
+          selectedArgumentTarget,
+          taskArguments,
+        );
+        setTaskArgumentPresets(next);
+        void updateProjectTasksData({ taskArgumentPresets: next });
+      }
       setStatus(`已在项目终端执行 ${selectedTask.name}`);
     } catch (error) {
       setStatus(String(error));
@@ -626,6 +683,10 @@ export function ProjectTasksApp() {
 
   const copyCommand = async () => {
     if (!discovery || !selectedTask) return;
+    if (parsedArguments.error) {
+      setStatus(parsedArguments.error);
+      return;
+    }
     try {
       const command = await invoke<string>("project_task_command", {
         projectId: discovery.projectId,
@@ -633,12 +694,39 @@ export function ProjectTasksApp() {
         sourceKey: selectedTask.sourceKey,
         file: selectedTask.file,
         name: selectedTask.name,
+        arguments: parsedArguments.values,
       });
       await copyText(command);
       setStatus("任务命令已复制");
     } catch (error) {
       setStatus(String(error));
     }
+  };
+
+  const saveTaskArguments = () => {
+    if (!selectedArgumentTarget || !taskArguments.trim()) return;
+    if (parsedArguments.error) {
+      setStatus(parsedArguments.error);
+      return;
+    }
+    const next = rememberTaskArgumentPreset(
+      taskArgumentPresets,
+      selectedArgumentTarget,
+      taskArguments,
+    );
+    setTaskArgumentPresets(next);
+    void updateProjectTasksData({ taskArgumentPresets: next })
+      .then(() => showFeedback("参数已保存"))
+      .catch((error) => setStatus(`保存参数失败：${String(error)}`));
+  };
+
+  const deleteTaskArgumentPreset = (value: string) => {
+    if (!selectedArgumentTarget) return;
+    const next = removeTaskArgumentPreset(taskArgumentPresets, selectedArgumentTarget, value);
+    setTaskArgumentPresets(next);
+    if (taskArguments.trim() === value) setTaskArguments("");
+    void updateProjectTasksData({ taskArgumentPresets: next })
+      .catch((error) => setStatus(`删除参数失败：${String(error)}`));
   };
 
   const copyAiRefactorPrompt = async () => {
@@ -975,7 +1063,7 @@ export function ProjectTasksApp() {
                   复制
                 </button>
                 <button type="button" className="projecttasks-button" style={BUTTON} onClick={() => void openWorkflowImportDialog()} disabled={busy || !selectedTask.runnable}>保存为工作流</button>
-                <button type="button" className="projecttasks-button" style={{ ...BUTTON, borderColor: "rgba(45,212,191,0.52)", background: "rgba(20,184,166,0.18)", color: "#9ff8e8" }} onClick={() => void runSelectedTask()} disabled={busy || !selectedTask.runnable}>
+                <button type="button" className="projecttasks-button" style={{ ...BUTTON, borderColor: "rgba(45,212,191,0.52)", background: "rgba(20,184,166,0.18)", color: "#9ff8e8" }} onClick={() => void runSelectedTask()} disabled={busy || !selectedTask.runnable || Boolean(parsedArguments.error)}>
                   执行任务
                 </button>
               </div>
@@ -987,7 +1075,76 @@ export function ProjectTasksApp() {
               <div style={{ fontSize: 11, fontWeight: 800 }}>命令预览</div>
               {selectedTask && <span style={{ color: riskColor(selectedTask.risk), fontSize: 10 }}>{RISK_LABELS[selectedTask.risk] ?? selectedTask.risk}</span>}
             </div>
-            <pre style={{ minHeight: 105, margin: "10px 0 0", padding: 12, overflow: "auto", borderRadius: 8, background: "rgba(0,0,0,0.3)", color: "#b7f7e9", fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 11, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{selectedTask?.command ?? "选择一个任务后显示代码块内容"}</pre>
+            <pre style={{ minHeight: 105, margin: "10px 0 0", padding: 12, overflow: "auto", borderRadius: 8, background: "rgba(0,0,0,0.3)", color: "#b7f7e9", fontFamily: "'SFMono-Regular', Consolas, monospace", fontSize: 11, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>{commandPreview}</pre>
+            {selectedTask && (
+              <div className="projecttasks-arguments">
+                <div className="projecttasks-arguments-heading">
+                  <div>
+                    <strong>执行参数</strong>
+                    <span>按空格分隔，带空格的值使用引号</span>
+                  </div>
+                  {taskArguments && (
+                    <button type="button" onClick={() => setTaskArguments("")}>清空</button>
+                  )}
+                </div>
+                <div className="projecttasks-arguments-editor">
+                  <input
+                    value={taskArguments}
+                    onChange={(event) => setTaskArguments(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+                        event.preventDefault();
+                        saveTaskArguments();
+                      }
+                    }}
+                    placeholder="例如：--check 或 --watch --port 3000"
+                    aria-label="任务执行参数"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    onClick={saveTaskArguments}
+                    disabled={!taskArguments.trim() || Boolean(parsedArguments.error)}
+                  >
+                    保存参数
+                  </button>
+                </div>
+                {parsedArguments.error && (
+                  <div className="projecttasks-arguments-error" role="alert">
+                    {parsedArguments.error}
+                  </div>
+                )}
+                {selectedArgumentHistory.length > 0 && (
+                  <div className="projecttasks-argument-history" aria-label="已保存参数">
+                    {selectedArgumentHistory.map((preset) => (
+                      <div
+                        key={preset.value}
+                        className="projecttasks-argument-preset"
+                        data-active={taskArguments.trim() === preset.value}
+                      >
+                        <button
+                          type="button"
+                          className="projecttasks-argument-preset-value"
+                          onClick={() => setTaskArguments(preset.value)}
+                          title={preset.value}
+                        >
+                          {preset.value}
+                        </button>
+                        <button
+                          type="button"
+                          className="projecttasks-argument-preset-delete"
+                          onClick={() => deleteTaskArgumentPreset(preset.value)}
+                          title={`删除参数 ${preset.value}`}
+                          aria-label={`删除参数 ${preset.value}`}
+                        >
+                          <CloseIcon size={9} decorative />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           <section style={{ marginTop: 13, padding: 14, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, background: "rgba(8,10,18,0.22)" }}>

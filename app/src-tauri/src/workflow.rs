@@ -24,11 +24,18 @@ const MAX_STEPS: usize = 64;
 const MAX_SCRIPT_BYTES: usize = 32 * 1024;
 const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 120_000;
+const MAX_RETRY_ATTEMPTS: u32 = 5;
+const MAX_RETRY_DELAY_MS: u64 = 5 * 60 * 1000;
 const MIN_SCHEDULE_INTERVAL_MINUTES: u64 = 1;
 const MAX_SCHEDULE_INTERVAL_MINUTES: u64 = 7 * 24 * 60;
 const MAX_RUN_HISTORY: usize = 500;
 const RUN_HISTORY_SCHEMA_VERSION: u32 = 1;
 const CANCELLED: &str = "__workflow_cancelled__";
+const INTERACTION_CANCELLED: &str = "__workflow_interaction_cancelled__";
+
+fn is_interaction_cancelled_error(error: &str) -> bool {
+    error.starts_with("SCREENSHOT_CANCELLED:")
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -68,6 +75,8 @@ pub struct WorkflowStepRun {
     pub step_id: String,
     pub name: String,
     pub status: WorkflowStepRunStatus,
+    #[serde(default)]
+    pub attempt: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -326,6 +335,20 @@ pub fn validate_workflow_definition(workflow: &WorkflowDefinition) -> WorkflowVa
         }
         if step.delay_ms > MAX_TIMEOUT_MS {
             errors.push(format!("step delay exceeds maximum: {}", step.id));
+        }
+        if let Some(retry) = &step.retry {
+            if !(1..=MAX_RETRY_ATTEMPTS).contains(&retry.max_attempts) {
+                errors.push(format!(
+                    "step retry maxAttempts must be between 1 and {MAX_RETRY_ATTEMPTS}: {}",
+                    step.id
+                ));
+            }
+            if retry.delay_ms > MAX_RETRY_DELAY_MS {
+                errors.push(format!(
+                    "step retry delay exceeds {MAX_RETRY_DELAY_MS} ms: {}",
+                    step.id
+                ));
+            }
         }
         validate_action(&step.action, &mut errors);
         validate_completion(step, &mut errors, &mut warnings);
@@ -799,12 +822,46 @@ fn attach_step_terminal(
     });
 }
 
+fn set_step_attempt(
+    app: &AppHandle,
+    inner: &WorkflowEngineInner,
+    run_id: &str,
+    step_id: &str,
+    attempt: u32,
+) {
+    update_run(app, inner, run_id, |run| {
+        if let Some(step) = run.steps.iter_mut().find(|step| step.step_id == step_id) {
+            step.attempt = attempt;
+        }
+    });
+}
+
 fn is_cancelled(inner: &WorkflowEngineInner, run_id: &str) -> bool {
     inner
         .cancelled
         .lock()
         .map(|cancelled| cancelled.contains(run_id))
         .unwrap_or(true)
+}
+
+fn retry_policy(step: &WorkflowStep) -> (u32, u64) {
+    step.retry
+        .as_ref()
+        .map(|retry| {
+            (
+                retry.max_attempts.clamp(1, MAX_RETRY_ATTEMPTS),
+                retry.delay_ms,
+            )
+        })
+        .unwrap_or((1, 0))
+}
+
+fn should_retry(error: &str, attempt: u32, max_attempts: u32) -> bool {
+    attempt < max_attempts && error != CANCELLED && error != INTERACTION_CANCELLED
+}
+
+fn workflow_terminal_session_id(run_id: &str, step_id: &str, attempt: u32) -> String {
+    format!("workflow-{run_id}-{step_id}-attempt-{attempt}")
 }
 
 async fn cancellable_sleep(
@@ -975,10 +1032,11 @@ async fn run_script_to_exit(
     action: &Action,
     success_codes: &[i32],
     timeout_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let session_id_for_cleanup = session_id.clone();
     let (mut child, captured_output, reader_done) = crate::builtins::terminal::spawn_pty_process(
@@ -1065,10 +1123,11 @@ async fn run_script_until_started(
     step_id: &str,
     action: &Action,
     stabilization_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let (mut child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
         app.clone(),
@@ -1116,10 +1175,11 @@ async fn run_script_until_port_ready(
     port: u16,
     interval_ms: u64,
     timeout_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let (child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
         app.clone(),
@@ -1178,10 +1238,11 @@ async fn run_script_for_duration(
     step_id: &str,
     action: &Action,
     duration_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let (child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
         app.clone(),
@@ -1391,6 +1452,7 @@ async fn execute_step(
     run_id: &str,
     step: &WorkflowStep,
     context: &CapabilityReferenceContext,
+    attempt: u32,
 ) -> Result<StepExecutionResult, String> {
     if let Action::Capability {
         capability_id,
@@ -1402,11 +1464,35 @@ async fn execute_step(
             return Err("capability action requires capability_completed".into());
         }
         let resolved_inputs = workflow_capabilities::resolve_inputs(inputs, context)?;
+        let execution =
+            workflow_capabilities::execute(app, capability_id, &resolved_inputs, run_id, &step.id);
+        tokio::pin!(execution);
+        let execution_result = loop {
+            tokio::select! {
+                result = &mut execution => break result,
+                _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                    if is_cancelled(inner, run_id) {
+                        crate::builtins::screenshot::cancel_workflow_capture(
+                            app,
+                            run_id,
+                            &step.id,
+                        );
+                        return Err(CANCELLED.into());
+                    }
+                }
+            }
+        };
+        let execution_result = match execution_result {
+            Err(error) if is_interaction_cancelled_error(&error) => {
+                return Err(INTERACTION_CANCELLED.into())
+            }
+            result => result?,
+        };
         let CapabilityExecutionResult {
             message,
             outputs,
             artifacts,
-        } = workflow_capabilities::execute(capability_id, &resolved_inputs)?;
+        } = execution_result;
         return Ok(StepExecutionResult {
             output: None,
             outputs: Some(outputs),
@@ -1426,6 +1512,7 @@ async fn execute_step(
                     &step.action,
                     &[0],
                     DEFAULT_SCRIPT_TIMEOUT_MS,
+                    attempt,
                 )
                 .await
             }
@@ -1439,6 +1526,7 @@ async fn execute_step(
                     &step.id,
                     &step.action,
                     *stabilization_ms,
+                    attempt,
                 )
                 .await
             }
@@ -1454,6 +1542,7 @@ async fn execute_step(
                     &step.action,
                     success_codes,
                     *timeout_ms,
+                    attempt,
                 )
                 .await
             }
@@ -1473,12 +1562,21 @@ async fn execute_step(
                     *port,
                     *interval_ms,
                     *timeout_ms,
+                    attempt,
                 )
                 .await
             }
             CompletionRule::Timer { duration_ms } => {
-                run_script_for_duration(app, inner, run_id, &step.id, &step.action, *duration_ms)
-                    .await
+                run_script_for_duration(
+                    app,
+                    inner,
+                    run_id,
+                    &step.id,
+                    &step.action,
+                    *duration_ms,
+                    attempt,
+                )
+                .await
             }
             CompletionRule::Manual { timeout_ms } => {
                 let output = run_script_to_exit(
@@ -1489,6 +1587,7 @@ async fn execute_step(
                     &step.action,
                     &[0],
                     timeout_ms.unwrap_or(DEFAULT_SCRIPT_TIMEOUT_MS),
+                    attempt,
                 )
                 .await?;
                 wait_for_manual(app, inner, run_id, step, *timeout_ms).await?;
@@ -1533,6 +1632,7 @@ async fn execute_step(
                 &step.action,
                 success_codes,
                 *timeout_ms,
+                attempt,
             )
             .await
         }
@@ -1644,37 +1744,106 @@ async fn execute_workflow(
                 | CompletionRule::Timer { .. }
                 | CompletionRule::Manual { .. }
                 | CompletionRule::ProcessExit { .. }
+        ) || matches!(
+            &step.action,
+            Action::Capability { capability_id, .. }
+                if workflow_capabilities::is_interactive(capability_id)
         );
-        update_step(
-            &app,
-            &inner,
-            &run_id,
-            &step.id,
-            if waiting {
-                WorkflowStepRunStatus::Waiting
-            } else {
-                WorkflowStepRunStatus::Running
-            },
-            Some("executing step".into()),
-        );
-        if waiting {
+        let (max_attempts, retry_delay_ms) = retry_policy(step);
+        let mut attempt = 1;
+        let mut retry_notes = Vec::new();
+        let execution_result = loop {
+            set_step_attempt(&app, &inner, &run_id, &step.id, attempt);
+            update_step(
+                &app,
+                &inner,
+                &run_id,
+                &step.id,
+                if waiting {
+                    WorkflowStepRunStatus::Waiting
+                } else {
+                    WorkflowStepRunStatus::Running
+                },
+                Some(if max_attempts > 1 {
+                    format!("executing step · attempt {attempt}/{max_attempts}")
+                } else {
+                    "executing step".into()
+                }),
+            );
             update_run(&app, &inner, &run_id, |run| {
-                run.status = WorkflowRunStatus::Waiting;
+                run.status = if waiting {
+                    WorkflowRunStatus::Waiting
+                } else {
+                    WorkflowRunStatus::Running
+                };
+                run.message = Some(if max_attempts > 1 {
+                    format!("{} · attempt {attempt}/{max_attempts}", step.name)
+                } else {
+                    format!("{} · executing", step.name)
+                });
             });
-        }
 
-        match execute_step(&app, &inner, &run_id, step, &capability_context).await {
-            Ok(result) => {
+            let result =
+                execute_step(&app, &inner, &run_id, step, &capability_context, attempt).await;
+            match result {
+                Err(error) if should_retry(&error, attempt, max_attempts) => {
+                    retry_notes.push(format!("第 {attempt}/{max_attempts} 次尝试失败：{error}"));
+                    update_step(
+                        &app,
+                        &inner,
+                        &run_id,
+                        &step.id,
+                        WorkflowStepRunStatus::Waiting,
+                        Some(format!(
+                            "attempt {attempt}/{max_attempts} failed · retrying in {retry_delay_ms} ms"
+                        )),
+                    );
+                    update_run(&app, &inner, &run_id, |run| {
+                        run.status = WorkflowRunStatus::Waiting;
+                        run.message = Some(format!(
+                            "{} · waiting to retry {}/{}",
+                            step.name,
+                            attempt + 1,
+                            max_attempts
+                        ));
+                    });
+                    if cancellable_sleep(&inner, &run_id, Duration::from_millis(retry_delay_ms))
+                        .await
+                        .is_err()
+                    {
+                        break Err(CANCELLED.into());
+                    }
+                    attempt += 1;
+                }
+                result => break result,
+            }
+        };
+
+        match execution_result {
+            Ok(mut result) => {
+                if !retry_notes.is_empty() {
+                    let retry_output = retry_notes.join("\n");
+                    let combined_output = match result.output {
+                        Some(output) => format!("{retry_output}\n{output}"),
+                        None => retry_output,
+                    };
+                    result.output = process_output_tail(combined_output.as_bytes());
+                }
+                let completed_message = result
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "step completed".into());
                 update_step(
                     &app,
                     &inner,
                     &run_id,
                     &step.id,
                     WorkflowStepRunStatus::Succeeded,
-                    result
-                        .message
-                        .clone()
-                        .or_else(|| Some("step completed".into())),
+                    Some(if max_attempts > 1 {
+                        format!("attempt {attempt}/{max_attempts} succeeded · {completed_message}")
+                    } else {
+                        completed_message
+                    }),
                 );
                 if let Some(outputs) = result.outputs {
                     capability_context
@@ -1722,7 +1891,38 @@ async fn execute_workflow(
                 );
                 break;
             }
+            Err(error) if error == INTERACTION_CANCELLED => {
+                update_step(
+                    &app,
+                    &inner,
+                    &run_id,
+                    &step.id,
+                    WorkflowStepRunStatus::Cancelled,
+                    Some("用户取消了交互".into()),
+                );
+                update_run(&app, &inner, &run_id, |run| {
+                    run.status = WorkflowRunStatus::Cancelled;
+                    run.message = Some(format!("{} · 用户取消", step.name));
+                });
+                return;
+            }
             Err(error) => {
+                if !retry_notes.is_empty() {
+                    let retry_output = retry_notes.join("\n");
+                    let output = process_output_tail(retry_output.as_bytes());
+                    update_run(&app, &inner, &run_id, |run| {
+                        if let Some(step_run) =
+                            run.steps.iter_mut().find(|entry| entry.step_id == step.id)
+                        {
+                            step_run.output = output;
+                        }
+                    });
+                }
+                let error = if max_attempts > 1 {
+                    format!("attempt {attempt}/{max_attempts} failed · {error}")
+                } else {
+                    error
+                };
                 update_step(
                     &app,
                     &inner,
@@ -1879,6 +2079,7 @@ fn start_workflow_definition(
                 step_id: step.id.clone(),
                 name: step.name.clone(),
                 status: WorkflowStepRunStatus::Pending,
+                attempt: 0,
                 message: None,
                 output: None,
                 outputs: None,
@@ -2099,19 +2300,24 @@ pub fn confirm_workflow_step(
 #[cfg(test)]
 mod tests {
     use super::{
-        binding_workspace_size, daily_schedule_due, evaluate_condition, next_daily_run_at,
-        parse_daily_time, persisted_run, process_output_tail, read_workflow_run_history_from_path,
-        schedule_due, script_command_spec, standalone_step_workflow, unix_time_millis,
-        uses_managed_script_process, validate_workflow_definition, workflow_workspace_size,
-        write_workflow_run_history_to_path, WorkflowCapabilityArtifact, WorkflowRun,
-        WorkflowRunHistory, WorkflowRunStatus, WorkflowRunTrigger, WorkflowScheduleRuntime,
-        WorkflowStepRun, WorkflowStepRunStatus, MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
+        binding_workspace_size, cancellable_sleep, daily_schedule_due, evaluate_condition,
+        is_interaction_cancelled_error, next_daily_run_at, parse_daily_time, persisted_run,
+        process_output_tail, read_workflow_run_history_from_path, schedule_due,
+        script_command_spec, should_retry, standalone_step_workflow, unix_time_millis,
+        uses_managed_script_process, validate_workflow_definition, workflow_terminal_session_id,
+        workflow_workspace_size, write_workflow_run_history_to_path, WorkflowCapabilityArtifact,
+        WorkflowEngineInner, WorkflowRun, WorkflowRunHistory, WorkflowRunStatus,
+        WorkflowRunTrigger, WorkflowScheduleRuntime, WorkflowStepRun, WorkflowStepRunStatus,
+        CANCELLED, INTERACTION_CANCELLED, MAX_PROCESS_OUTPUT_CHARS, MAX_RETRY_DELAY_MS,
+        PROCESS_OUTPUT_OMISSION,
     };
     use crate::types::{
-        Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowSchedule, WorkflowStep,
+        Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowRetryPolicy,
+        WorkflowSchedule, WorkflowStep,
     };
     use serde_json::{Map, Value};
     use std::collections::HashMap;
+    use std::time::Duration;
 
     fn script_workflow(completion: CompletionRule) -> WorkflowDefinition {
         WorkflowDefinition {
@@ -2135,11 +2341,22 @@ mod tests {
                 condition: StepCondition::Always,
                 completion,
                 delay_ms: 0,
+                retry: None,
                 on_failure: None,
             }],
             created_at: String::new(),
             updated_at: String::new(),
         }
+    }
+
+    #[test]
+    fn distinguishes_interaction_cancellation_from_capture_failures() {
+        assert!(is_interaction_cancelled_error(
+            "SCREENSHOT_CANCELLED: cancelled by user"
+        ));
+        assert!(!is_interaction_cancelled_error(
+            "SCREENSHOT_CAPTURE_FAILED: permission denied"
+        ));
     }
 
     #[test]
@@ -2187,6 +2404,7 @@ mod tests {
                 step_id: "step-1".into(),
                 name: "Test".into(),
                 status: WorkflowStepRunStatus::Failed,
+                attempt: 3,
                 message: Some("/private/project failed".into()),
                 output: Some("secret output".into()),
                 outputs: Some(Map::from_iter([(
@@ -2198,6 +2416,7 @@ mod tests {
                     name: "secret artifact".into(),
                     artifact_type: "file".into(),
                     media_type: Some("text/plain".into()),
+                    path: Some("/private/result.txt".into()),
                 }]),
                 terminal_session_id: Some("terminal-1".into()),
             }],
@@ -2222,6 +2441,7 @@ mod tests {
         assert!(saved.steps[0].outputs.is_none());
         assert!(saved.steps[0].artifacts.is_none());
         assert!(saved.steps[0].terminal_session_id.is_none());
+        assert_eq!(saved.steps[0].attempt, 3);
         assert_eq!(saved.steps[0].message.as_deref(), Some("failed"));
     }
 
@@ -2386,10 +2606,66 @@ mod tests {
             condition: StepCondition::PreviousSuccess,
             completion: CompletionRule::ActionResolved,
             delay_ms: 0,
+            retry: None,
             on_failure: None,
         });
 
         assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn validates_bounded_retry_policy() {
+        let mut workflow = script_workflow(CompletionRule::ActionResolved);
+        workflow.steps[0].retry = Some(WorkflowRetryPolicy {
+            max_attempts: 3,
+            delay_ms: 1_500,
+        });
+        assert!(validate_workflow_definition(&workflow).valid);
+
+        workflow.steps[0].retry = Some(WorkflowRetryPolicy {
+            max_attempts: 0,
+            delay_ms: MAX_RETRY_DELAY_MS + 1,
+        });
+        let report = validate_workflow_definition(&workflow);
+        assert!(!report.valid);
+        assert!(report
+            .errors
+            .iter()
+            .any(|error| error.contains("maxAttempts")));
+        assert!(report
+            .errors
+            .iter()
+            .any(|error| error.contains("retry delay")));
+    }
+
+    #[test]
+    fn retry_decision_excludes_cancellation_and_stops_at_limit() {
+        assert!(should_retry("temporary failure", 1, 3));
+        assert!(!should_retry("temporary failure", 3, 3));
+        assert!(!should_retry(CANCELLED, 1, 3));
+        assert!(!should_retry(INTERACTION_CANCELLED, 1, 3));
+    }
+
+    #[test]
+    fn retry_terminal_sessions_are_distinct() {
+        assert_ne!(
+            workflow_terminal_session_id("run", "step", 1),
+            workflow_terminal_session_id("run", "step", 2)
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_delay_observes_workflow_cancellation() {
+        let inner = WorkflowEngineInner::default();
+        inner
+            .cancelled
+            .lock()
+            .expect("cancelled lock")
+            .insert("run-cancelled".into());
+        assert_eq!(
+            cancellable_sleep(&inner, "run-cancelled", Duration::from_secs(5)).await,
+            Err(CANCELLED.into())
+        );
     }
 
     #[test]

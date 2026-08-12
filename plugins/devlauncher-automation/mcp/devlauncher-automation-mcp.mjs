@@ -91,6 +91,18 @@ function normalizeWorkflow(input) {
               ? step.completion
               : defaultCompletion(action),
             delayMs: Number.isFinite(step.delayMs) ? Math.max(0, Math.trunc(step.delayMs)) : 0,
+            ...(step.retry && typeof step.retry === "object"
+              ? {
+                  retry: {
+                    maxAttempts: Number.isFinite(step.retry.maxAttempts)
+                      ? Math.trunc(step.retry.maxAttempts)
+                      : 1,
+                    delayMs: Number.isFinite(step.retry.delayMs)
+                      ? Math.trunc(step.retry.delayMs)
+                      : 0,
+                  },
+                }
+              : {}),
             ...(step.onFailure === "continue" || step.onFailure === "stop"
               ? { onFailure: step.onFailure }
               : {}),
@@ -231,6 +243,15 @@ const workflowSchema = {
           condition: { type: "object" },
           completion: { type: "object" },
           delayMs: { type: "number" },
+          retry: {
+            type: "object",
+            properties: {
+              maxAttempts: { type: "integer", minimum: 1, maximum: 5 },
+              delayMs: { type: "integer", minimum: 0, maximum: 300000 },
+            },
+            required: ["maxAttempts", "delayMs"],
+            additionalProperties: false,
+          },
           onFailure: { type: "string", enum: ["stop", "continue"] },
         },
         required: ["action"],
