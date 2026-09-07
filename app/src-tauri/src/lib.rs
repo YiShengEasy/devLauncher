@@ -1,8 +1,9 @@
 mod actions;
-mod builtins;
+pub mod builtins;
 mod cloud_sync;
 pub mod config;
 mod entries;
+mod global_shortcuts;
 mod keyboard_control_tap;
 mod main_window_control;
 mod ocr;
@@ -16,6 +17,7 @@ mod video_tools;
 mod widget_sync;
 mod window_pinning;
 pub mod workflow;
+pub mod workflow_capabilities;
 mod workflow_window;
 
 use tauri::{
@@ -35,6 +37,14 @@ const KEYBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+J";
 const PET_GLOBAL_SHORTCUT: &str = "Option+P";
 #[cfg(not(target_os = "macos"))]
 const PET_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+P";
+#[cfg(target_os = "macos")]
+const CLIPBOARD_GLOBAL_SHORTCUT: &str = "Option+V";
+#[cfg(not(target_os = "macos"))]
+const CLIPBOARD_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+V";
+#[cfg(target_os = "macos")]
+const SEARCH_GLOBAL_SHORTCUT: &str = "Option+K";
+#[cfg(not(target_os = "macos"))]
+const SEARCH_GLOBAL_SHORTCUT: &str = "CommandOrControl+Option+K";
 
 #[derive(Debug, PartialEq, Eq)]
 enum WidgetDeepLinkAction {
@@ -127,7 +137,12 @@ pub fn run() {
         ))
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
-                .with_shortcuts([KEYBOARD_GLOBAL_SHORTCUT, PET_GLOBAL_SHORTCUT])
+                .with_shortcuts([
+                    KEYBOARD_GLOBAL_SHORTCUT,
+                    PET_GLOBAL_SHORTCUT,
+                    CLIPBOARD_GLOBAL_SHORTCUT,
+                    SEARCH_GLOBAL_SHORTCUT,
+                ])
                 .expect("failed to parse built-in global shortcuts")
                 .with_handler(|app, _shortcut, event| {
                     if event.state != ShortcutState::Pressed {
@@ -152,6 +167,26 @@ pub fn run() {
                         .unwrap_or(false)
                     {
                         let _ = entries::toggle_pet_window(app.clone());
+                        return;
+                    }
+
+                    let clipboard_shortcut = CLIPBOARD_GLOBAL_SHORTCUT.parse::<Shortcut>();
+                    if clipboard_shortcut
+                        .as_ref()
+                        .map(|shortcut| shortcut.id() == event.id)
+                        .unwrap_or(false)
+                    {
+                        let _ = builtins::clipboard::show_clipboard_window(app.clone());
+                        return;
+                    }
+
+                    let search_shortcut = SEARCH_GLOBAL_SHORTCUT.parse::<Shortcut>();
+                    if search_shortcut
+                        .as_ref()
+                        .map(|shortcut| shortcut.id() == event.id)
+                        .unwrap_or(false)
+                    {
+                        let _ = entries::show_search_window(app.clone());
                     }
                 })
                 .build(),
@@ -160,6 +195,7 @@ pub fn run() {
             config::load_config,
             config::save_config,
             config::get_config_path,
+            global_shortcuts::sync_global_binding_shortcuts,
             cloud_sync::sync_get_status,
             cloud_sync::sync_get_local_status,
             cloud_sync::sync_generate_key,
@@ -191,8 +227,10 @@ pub fn run() {
             workflow::run_workflow_step,
             workflow::get_workflow_run,
             workflow::list_workflow_runs,
+            workflow::clear_workflow_run_history,
             workflow::cancel_workflow_run,
             workflow::confirm_workflow_step,
+            workflow_capabilities::list_workflow_capabilities,
             workflow_window::show_workflow_window,
             main_window_control::control_main_window,
             actions::save_ssh_password,
@@ -210,6 +248,7 @@ pub fn run() {
             builtins::clipboard::add_favorite,
             builtins::clipboard::remove_favorite,
             builtins::clipboard::clear_favorites,
+            builtins::clipboard::save_clipboard_markdown,
             builtins::json::toggle_json_helper_window,
             builtins::totp::toggle_totp_window,
             builtins::totp::load_totp_tokens,
@@ -237,6 +276,7 @@ pub fn run() {
             builtins::remotedesk_rdp::get_rdp_host_status,
             builtins::terminal::terminal_spawn,
             builtins::terminal::terminal_snapshot,
+            builtins::terminal::terminal_clear,
             builtins::terminal::terminal_write,
             builtins::terminal::terminal_resize,
             builtins::terminal::terminal_kill,
@@ -248,6 +288,9 @@ pub fn run() {
             builtins::screenshot::show_screenshot_editor_window,
             builtins::screenshot::get_pending_screenshot,
             builtins::screenshot::screenshot_write_file,
+            builtins::screenshot::get_active_screenshot_workflow_request,
+            builtins::screenshot::complete_screenshot_workflow_capture,
+            builtins::screenshot::cancel_screenshot_workflow_capture,
             builtins::screenshot::create_pinned_screenshot_window,
             builtins::screenshot::get_pinned_screenshot,
             builtins::webaccounts::toggle_webaccounts_window,
@@ -255,10 +298,15 @@ pub fn run() {
             builtins::quickmemory::save_quickmemory_data,
             builtins::quickmemory::toggle_quickmemory_window,
             builtins::projecttasks::discover_runme_tasks,
+            builtins::projecttasks::discover_project_tasks,
             builtins::projecttasks::runme_task_command,
+            builtins::projecttasks::project_task_command,
             builtins::projecttasks::toggle_projecttasks_window,
             builtins::projecttasks::load_projecttasks_data,
             builtins::projecttasks::save_projecttasks_data,
+            builtins::projecttasks::list_project_profiles,
+            builtins::projecttasks::relocate_project_profile,
+            builtins::projecttasks::remove_project_profile,
             builtins::projectconfigs::discover_project_configs,
             builtins::projectconfigs::read_project_config,
             builtins::projectconfigs::validate_project_config,
@@ -292,6 +340,8 @@ pub fn run() {
             builtins::clipboard::setup(app);
             video_tools::setup(app);
             keyboard_control_tap::setup(app.handle());
+            global_shortcuts::setup(app.handle());
+            workflow::setup_run_history(app.handle());
             workflow::setup_scheduler(app.handle().clone());
             window_pinning::apply_all_startup_pin_states(app.handle());
             if let Ok(config) = config::load_config(app.handle().clone()) {

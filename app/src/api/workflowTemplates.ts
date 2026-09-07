@@ -1,4 +1,4 @@
-import type { Action, CompletionRule, WorkflowDefinition, WorkflowFailurePolicy, WorkflowStep } from "@/types/actions";
+import type { Action, CapabilityValue, CompletionRule, WorkflowDefinition, WorkflowFailurePolicy, WorkflowRetryPolicy, WorkflowStep } from "@/types/actions";
 import { workflowId } from "./workflow";
 
 export type WorkflowTemplateCategory = "dev" | "test" | "release" | "monitor";
@@ -12,10 +12,12 @@ export interface WorkflowTemplateSummary {
 }
 
 export interface WorkflowTemplateStepDraft {
+  referenceKey?: string;
   name: string;
   action: Action;
   completion: CompletionRule;
   delayMs?: number;
+  retry?: WorkflowRetryPolicy;
   onFailure?: WorkflowFailurePolicy;
 }
 
@@ -52,7 +54,83 @@ function shellStep(name: string, content: string, completion: CompletionRule): W
   };
 }
 
+function capabilityStep(
+  referenceKey: string,
+  name: string,
+  capabilityId: string,
+  inputs: Record<string, CapabilityValue>,
+): WorkflowTemplateStepDraft {
+  return {
+    referenceKey,
+    name,
+    action: {
+      type: "capability",
+      name,
+      capabilityId,
+      inputs,
+    },
+    completion: { type: "capability_completed" },
+  };
+}
+
 const TEMPLATES: WorkflowTemplateDefinition[] = [
+  {
+    id: "interactive-screenshot",
+    name: "交互式截图",
+    category: "dev",
+    description: "等待你选择并确认截图，再把 PNG 作为可供后续步骤引用的工作流产物。",
+    failurePolicy: "stop",
+    steps: [
+      capabilityStep("capture", "选择并确认截图", "screenshot.capture", {
+        copyToClipboard: true,
+        timeoutSeconds: 300,
+      }),
+    ],
+  },
+  {
+    id: "screenshot-ocr-translate",
+    name: "截图 OCR 并翻译",
+    category: "dev",
+    description: "确认截图后使用系统 OCR 识别文字，翻译成中文并把译文写入剪贴板。",
+    failurePolicy: "stop",
+    steps: [
+      capabilityStep("capture", "选择并确认截图", "screenshot.capture", {
+        copyToClipboard: false,
+        timeoutSeconds: 300,
+      }),
+      capabilityStep("ocr", "识别截图文字", "ocr.recognize", {
+        path: "${steps.$capture.outputs.path}",
+      }),
+      capabilityStep("translate", "翻译成中文", "translation.translate", {
+        text: "${steps.$ocr.outputs.text}",
+        targetLanguage: "zh-Hans",
+      }),
+      capabilityStep("copy", "复制译文", "clipboard.write_text", {
+        text: "${steps.$translate.outputs.targetText}",
+      }),
+    ],
+  },
+  {
+    id: "clipboard-text-pipeline",
+    name: "剪贴板文本处理",
+    category: "dev",
+    description: "读取剪贴板，移除“[草稿]”标记，组合结果后写回剪贴板；无需脚本。",
+    failurePolicy: "stop",
+    steps: [
+      capabilityStep("read", "读取剪贴板", "clipboard.read_text", {}),
+      capabilityStep("replace", "移除草稿标记", "text.replace", {
+        text: "${steps.$read.outputs.text}",
+        find: "[草稿]",
+        replace: "",
+      }),
+      capabilityStep("template", "组合结果", "text.template", {
+        template: "整理结果：\n${steps.$replace.outputs.text}",
+      }),
+      capabilityStep("write", "写回剪贴板", "clipboard.write_text", {
+        text: "${steps.$template.outputs.text}",
+      }),
+    ],
+  },
   {
     id: "start-local-project",
     name: "启动本地项目",
@@ -197,23 +275,51 @@ function valuesMatch(left: unknown, right: unknown): boolean {
   return JSON.stringify(stableValue(left)) === JSON.stringify(stableValue(right));
 }
 
+function materializeTemplateValue(value: unknown, stepIds: Map<string, string>): unknown {
+  if (typeof value === "string") {
+    return value.replace(
+      /\$\{steps\.\$([^.}]+)\.outputs\./g,
+      (_match, key: string) => `\${steps.${stepIds.get(key) ?? `$${key}`}.outputs.`,
+    );
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => materializeTemplateValue(entry, stepIds));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, entry]) => [key, materializeTemplateValue(entry, stepIds)]),
+    );
+  }
+  return value;
+}
+
 export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string | undefined {
   return TEMPLATES.find((template) => (
     workflow.name === template.name
     && workflow.description === template.description
     && workflow.enabled
     && workflow.failurePolicy === template.failurePolicy
+    && !(workflow.configFiles?.length)
+    && !workflow.defaultConfigId
     && workflow.steps.length === template.steps.length
     && workflow.steps.every((step, index) => {
       const templateStep = template.steps[index];
+      const templateStepIds = new Map(
+        template.steps
+          .map((entry, stepIndex) => entry.referenceKey
+            ? [entry.referenceKey, workflow.steps[stepIndex]?.id ?? ""] as const
+            : null)
+          .filter((entry): entry is readonly [string, string] => Boolean(entry)),
+      );
       return Boolean(
         templateStep
         && step.name === templateStep.name
         && step.enabled
         && step.condition.type === "always"
         && step.delayMs === (templateStep.delayMs ?? 0)
+        && valuesMatch(step.retry, templateStep.retry)
         && step.onFailure === templateStep.onFailure
-        && valuesMatch(step.action, templateStep.action)
+        && valuesMatch(step.action, materializeTemplateValue(templateStep.action, templateStepIds))
         && valuesMatch(step.completion, templateStep.completion)
       );
     })
@@ -223,20 +329,29 @@ export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string
 export function createWorkflowFromTemplateDefinition(template: WorkflowTemplateDefinition): WorkflowDefinition {
   if (!template.steps.length) throw new Error(`workflow template has no steps: ${template.id}`);
   const now = new Date().toISOString();
+  const generatedStepIds = template.steps.map(() => workflowId("step"));
+  const templateStepIds = new Map(
+    template.steps
+      .map((step, index) => step.referenceKey
+        ? [step.referenceKey, generatedStepIds[index]] as const
+        : null)
+      .filter((entry): entry is readonly [string, string] => Boolean(entry)),
+  );
   return {
     id: workflowId("workflow"),
     name: template.name,
     description: template.description,
     enabled: true,
     failurePolicy: template.failurePolicy,
-    steps: template.steps.map<WorkflowStep>((step) => ({
-      id: workflowId("step"),
+    steps: template.steps.map<WorkflowStep>((step, index) => ({
+      id: generatedStepIds[index],
       name: step.name,
       enabled: true,
-      action: { ...step.action },
+      action: materializeTemplateValue(step.action, templateStepIds) as Action,
       condition: { type: "always" },
       completion: { ...step.completion },
       delayMs: step.delayMs ?? 0,
+      retry: step.retry ? { ...step.retry } : undefined,
       onFailure: step.onFailure,
     })),
     createdAt: now,

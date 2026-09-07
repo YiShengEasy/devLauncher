@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import type {
   Action, ActionType,
-  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith, SystemCommand, PluginAction, WorkflowAction, WorkflowDefinition
+  AppAction, FolderAction, FileAction, UrlAction, SshAction, ScriptAction, SystemAction, BuiltinAction, BuiltinFeature, SshTerminal, FolderOpenWith, SystemCommand, PluginAction, WorkflowAction, WorkflowDefinition, WorkflowCapabilityAction, WorkflowCapabilityDescriptor, CapabilityValue
 } from "@/types/actions";
 import { ACTION_TYPE_META, SYSTEM_PRESETS, BUILTIN_FEATURES } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
@@ -23,6 +23,8 @@ interface BindingModalProps {
   bindingLabel?: string;
   initialAction?: Action | null;
   workflows?: WorkflowDefinition[];
+  capabilities?: WorkflowCapabilityDescriptor[];
+  capabilityReferences?: Array<{ label: string; value: string }>;
   onClose: () => void;
   onSave: (action: Action) => void;
   onClear?: () => void;
@@ -78,7 +80,17 @@ interface ConfirmRequest {
   onConfirm: () => void | Promise<void>;
 }
 
-export function BindingModal({ keyId, bindingLabel, initialAction, workflows, onClose, onSave, onClear }: BindingModalProps) {
+export function BindingModal({
+  keyId,
+  bindingLabel,
+  initialAction,
+  workflows,
+  capabilities,
+  capabilityReferences = [],
+  onClose,
+  onSave,
+  onClear,
+}: BindingModalProps) {
   const displayLabel = bindingLabel ?? keyId;
   const title = bindingLabel ? "绑定" : "绑定按键";
   const isMac = isMacPlatform();
@@ -89,15 +101,22 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
   const listRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
   const tabs = useMemo<ActionType[]>(
-    () => workflows
-      ? [...BASE_TABS, "workflow", "system", "plugin"]
-      : [...BASE_TABS, "system", "plugin"],
-    [workflows],
+    () => {
+      const items: ActionType[] = [...BASE_TABS];
+      if (capabilities?.length) items.push("capability");
+      if (workflows) items.push("workflow");
+      items.push("system", "plugin");
+      return items;
+    },
+    [capabilities, workflows],
   );
 
   // Form state for each type
   const [name, setName]       = useState(initialAction?.name ?? "");
   const [target, setTarget]   = useState((initialAction as AppAction | FolderAction | FileAction | UrlAction)?.target ?? "");
+  const [appArgsText, setAppArgsText] = useState(
+    initialAction?.type === "app" ? (initialAction.args ?? []).join("\n") : "",
+  );
   const initialUrlAction = initialAction?.type === "url" ? initialAction as UrlAction : null;
   const [webUsername, setWebUsername] = useState(initialUrlAction?.username ?? "");
   const [webPassword, setWebPassword] = useState("");
@@ -154,6 +173,19 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
     () => (workflows ?? []).filter((workflow) => !matchingOfficialTemplateId(workflow)),
     [workflows],
   );
+  const initialCapabilityAction = initialAction?.type === "capability"
+    ? initialAction as WorkflowCapabilityAction
+    : null;
+  const [capabilitySelection, setCapabilitySelection] = useState(
+    initialCapabilityAction?.capabilityId ?? capabilities?.[0]?.id ?? "",
+  );
+  const [capabilityInputs, setCapabilityInputs] = useState<Record<string, CapabilityValue>>(
+    initialCapabilityAction?.inputs ?? {},
+  );
+  const selectedCapability = useMemo(
+    () => capabilities?.find((capability) => capability.id === capabilitySelection) ?? null,
+    [capabilities, capabilitySelection],
+  );
 
   useEffect(() => {
     listInstalledPlugins()
@@ -177,6 +209,11 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
     const firstEnabled = workflowOptions.find((workflow) => workflow.enabled);
     setWorkflowSelection(firstEnabled?.id ?? workflowOptions[0]?.id ?? "");
   }, [workflowOptions, workflowSelection]);
+
+  useEffect(() => {
+    if (selectedCapability || !capabilities?.length) return;
+    setCapabilitySelection(capabilities[0].id);
+  }, [capabilities, selectedCapability]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -251,7 +288,18 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
           setSaveError("请选择或输入程序路径。");
           return;
         }
-        action = { type: "app", name: name || target.split(/[\\/]/).pop() || "App", target: target.trim() };
+        {
+          const args = appArgsText
+            .split("\n")
+            .map((value) => value.trim())
+            .filter(Boolean);
+          action = {
+            type: "app",
+            name: name || target.split(/[\\/]/).pop() || "App",
+            target: target.trim(),
+            ...(args.length ? { args } : {}),
+          };
+        }
         break;
       case "folder":
         if (!target.trim()) {
@@ -371,6 +419,32 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
           name: selected.name,
           workflowId: selected.id,
         } as WorkflowAction;
+        break;
+      }
+      case "capability": {
+        if (!selectedCapability) {
+          setSaveError("当前系统没有可用的工作流能力。");
+          return;
+        }
+        const inputs = Object.fromEntries(
+          selectedCapability.inputs
+            .map((field) => [field.key, capabilityInputs[field.key] ?? field.defaultValue])
+            .filter((entry): entry is [string, CapabilityValue] => entry[1] !== undefined),
+        );
+        const missing = selectedCapability.inputs.find((field) => (
+          field.required
+          && inputs[field.key] === undefined
+        ));
+        if (missing) {
+          setSaveError(`请填写“${missing.title}”。`);
+          return;
+        }
+        action = {
+          type: "capability",
+          name: name || selectedCapability.title,
+          capabilityId: selectedCapability.id,
+          inputs,
+        };
         break;
       }
     }
@@ -544,17 +618,28 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
 
           {/* App */}
           {(activeType === "app") && (
-            <Field label="程序路径 *">
-              <div style={{ display: "flex", gap: 6 }}>
-                <input
-                  style={{ ...INPUT_STYLE, flex: 1 }}
-                  placeholder={isMac ? "/Applications/App.app" : "C:\\Program Files\\...\\app.exe"}
-                  value={target}
-                  onChange={e => setTarget(e.target.value)}
+            <>
+              <Field label="程序路径 *">
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    style={{ ...INPUT_STYLE, flex: 1 }}
+                    placeholder={isMac ? "/Applications/App.app" : "C:\\Program Files\\...\\app.exe"}
+                    value={target}
+                    onChange={e => setTarget(e.target.value)}
+                  />
+                  <button style={BROWSE_BTN_STYLE} onClick={handleBrowseApp}>浏览</button>
+                </div>
+              </Field>
+              <Field label="启动参数（每行一个）">
+                <textarea
+                  style={{ ...INPUT_STYLE, minHeight: 76, resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+                  placeholder={"--config\n${config.path}"}
+                  value={appArgsText}
+                  onChange={(event) => setAppArgsText(event.target.value)}
+                  spellCheck={false}
                 />
-                <button style={BROWSE_BTN_STYLE} onClick={handleBrowseApp}>浏览</button>
-              </div>
-            </Field>
+              </Field>
+            </>
           )}
 
           {/* Folder / File */}
@@ -1018,6 +1103,109 @@ export function BindingModal({ keyId, bindingLabel, initialAction, workflows, on
                       )}
                     </span>
                   </button>
+                );
+              })}
+            </div>
+          )}
+
+          {activeType === "capability" && (
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                {(capabilities ?? []).map((capability) => {
+                  const selected = capability.id === capabilitySelection;
+                  return (
+                    <button
+                      key={capability.id}
+                      type="button"
+                      onClick={() => {
+                        setCapabilitySelection(capability.id);
+                        setName(capability.title);
+                        setCapabilityInputs(Object.fromEntries(
+                          capability.inputs
+                            .filter((field) => field.defaultValue !== undefined)
+                            .map((field) => [field.key, field.defaultValue as CapabilityValue]),
+                        ));
+                      }}
+                      style={{
+                        padding: "10px 11px",
+                        borderRadius: 8,
+                        border: selected
+                          ? "1px solid rgba(45,212,191,0.55)"
+                          : "1px solid rgba(255,255,255,0.08)",
+                        background: selected
+                          ? "rgba(13,148,136,0.15)"
+                          : "rgba(255,255,255,0.04)",
+                        color: "#e8eaf0",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <strong style={{ display: "block", fontSize: 12 }}>{capability.title}</strong>
+                      <span style={{ display: "block", marginTop: 4, fontSize: 10, lineHeight: 1.45, color: "rgba(255,255,255,0.42)" }}>
+                        {capability.description}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedCapability?.inputs.map((field) => {
+                const value = capabilityInputs[field.key] ?? field.defaultValue
+                  ?? (field.fieldType === "boolean" ? false : field.fieldType === "number" ? 0 : field.fieldType === "string_array" ? [] : "");
+                const setValue = (next: CapabilityValue) => {
+                  setCapabilityInputs((current) => ({ ...current, [field.key]: next }));
+                };
+                return (
+                  <Field key={field.key} label={`${field.title}${field.required ? " *" : ""}`}>
+                    {field.fieldType === "boolean" ? (
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.72)", fontSize: 12 }}>
+                        <input type="checkbox" checked={Boolean(value)} onChange={(event) => setValue(event.target.checked)} />
+                        启用
+                      </label>
+                    ) : field.fieldType === "number" ? (
+                      <input
+                        style={INPUT_STYLE}
+                        type="number"
+                        value={Number(value)}
+                        onChange={(event) => setValue(Number(event.target.value))}
+                      />
+                    ) : (
+                      <>
+                        <textarea
+                          style={{ ...INPUT_STYLE, minHeight: 62, resize: "vertical" }}
+                          value={Array.isArray(value) ? value.join("\n") : String(value)}
+                          onChange={(event) => setValue(
+                            field.fieldType === "string_array"
+                              ? event.target.value.split("\n").filter(Boolean)
+                              : event.target.value,
+                          )}
+                          placeholder={field.description}
+                        />
+                        {field.fieldType === "string" && capabilityReferences.length > 0 && (
+                          <select
+                            aria-label={`${field.title}引用`}
+                            style={{ ...INPUT_STYLE, marginTop: 6, cursor: "pointer" }}
+                            value=""
+                            onChange={(event) => {
+                              if (event.target.value) setValue(event.target.value);
+                            }}
+                          >
+                            <option value="">插入前面步骤的输出...</option>
+                            {capabilityReferences.map((reference) => (
+                              <option key={reference.value} value={reference.value}>
+                                {reference.label}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </>
+                    )}
+                    {field.description && (
+                      <span style={{ display: "block", marginTop: 4, color: "rgba(255,255,255,0.34)", fontSize: 10 }}>
+                        {field.description}
+                      </span>
+                    )}
+                  </Field>
                 );
               })}
             </div>

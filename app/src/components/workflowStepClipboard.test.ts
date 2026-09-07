@@ -15,6 +15,7 @@ const STEP: WorkflowStep = {
   condition: { type: "path_exists", path: "/tmp/project" },
   completion: { type: "port_ready", host: "127.0.0.1", port: 3000, intervalMs: 500, timeoutMs: 30_000 },
   delayMs: 250,
+  retry: { maxAttempts: 3, delayMs: 1500 },
   onFailure: "stop",
 };
 

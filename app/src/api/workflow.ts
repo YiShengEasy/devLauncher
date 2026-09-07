@@ -21,7 +21,10 @@ export function workflowId(prefix: "workflow" | "step" = "workflow"): string {
 }
 
 export function defaultCompletionForAction(action: Action): CompletionRule {
-  if (action.type === "script") {
+  if (action.type === "capability") {
+    return { type: "capability_completed" };
+  }
+  if (action.type === "script" || action.type === "project_task") {
     return { type: "process_exit", successCodes: [0], timeoutMs: 120_000 };
   }
   if (action.type === "app") {
@@ -69,7 +72,8 @@ export function conditionLabel(condition: StepCondition): string {
 
 export function completionLabel(completion: CompletionRule): string {
   switch (completion.type) {
-    case "action_resolved": return "动作返回";
+    case "action_resolved": return "已触发";
+    case "capability_completed": return "能力执行完成";
     case "process_started": return "进程已启动";
     case "process_exit": return "进程退出且成功";
     case "port_ready": return `端口 ${completion.port} 可用`;
@@ -85,16 +89,20 @@ export function validateWorkflow(workflow: WorkflowDefinition): Promise<Workflow
   return invoke("validate_workflow", { workflow });
 }
 
-export function runWorkflow(workflowId: string): Promise<WorkflowRun> {
-  return invoke("run_workflow", { workflowId });
+export function runWorkflow(workflowId: string, configId?: string): Promise<WorkflowRun> {
+  return invoke("run_workflow", { workflowId, configId });
 }
 
-export function runWorkflowStep(workflowId: string, stepId: string): Promise<WorkflowRun> {
-  return invoke("run_workflow_step", { workflowId, stepId });
+export function runWorkflowStep(workflowId: string, stepId: string, configId?: string): Promise<WorkflowRun> {
+  return invoke("run_workflow_step", { workflowId, stepId, configId });
 }
 
 export function listWorkflowRuns(): Promise<WorkflowRun[]> {
   return invoke("list_workflow_runs");
+}
+
+export function clearWorkflowRunHistory(): Promise<void> {
+  return invoke("clear_workflow_run_history");
 }
 
 export function getWorkflowRun(runId: string): Promise<WorkflowRun> {

@@ -31,6 +31,13 @@ Release boundary: Workflow Automation MVP
   terminal window.
 - Ordered terminal output supports live streaming, retained snapshots, late
   subscription replay, complete copyable logs, and bounded final summaries.
+- The embedded run terminal forwards keyboard input to its active PTY, so
+  interactive programs and standard `Ctrl+C` work normally.
+- The expanded terminal keeps workflow cancellation separate from terminal
+  process control. After workflow completion, a still-active detached process
+  exposes `关闭终端` in the fixed terminal toolbar.
+- PTY sessions retain a cloned child killer so closing a terminal terminates
+  its process instead of only dropping the visible session.
 - A dependency-free local MCP server and Codex plugin.
 - Shared `devlauncherctl` mutation boundary with validation, atomic writes, and
   optimistic revision checks.
@@ -59,6 +66,10 @@ Release boundary: Workflow Automation MVP
 - `scripts/test-automation-mcp.mjs`
 
 ## Verification Evidence
+
+- Current regression suite: 31 frontend files and 142 tests passed.
+- Current Rust suite: 105 tests passed.
+- Current frontend production build and Cargo all-target check passed.
 
 - Frontend unit tests: 85 passed.
 - Frontend production build: passed.

@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { CSSProperties, ReactNode } from "react";
@@ -17,7 +18,9 @@ import {
   runWorkflow,
   runWorkflowStep,
   validateWorkflow,
+  workflowId,
 } from "@/api/workflow";
+import { listWorkflowCapabilities } from "@/api/workflowCapabilities";
 import {
   createWorkflowFromTemplate,
   listWorkflowTemplates,
@@ -28,7 +31,7 @@ import { BindingModal } from "@/components/BindingModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ActionIcon } from "@/components/ActionIcon";
 import { MacWindowControls } from "@/components/MacWindowControls";
-import { planTerminalChunk } from "@/components/workflowTerminal";
+import { encodeTerminalInput, planTerminalChunk } from "@/components/workflowTerminal";
 import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 import {
   AddIcon,
@@ -49,9 +52,12 @@ import type {
   Action,
   CompletionRule,
   KeyboardConfig,
+  ProjectTaskAction,
   ScriptAction,
   StepCondition,
   WorkflowDefinition,
+  WorkflowConfigFile,
+  WorkflowCapabilityDescriptor,
   WorkflowRun,
   WorkflowStep,
 } from "@/types/actions";
@@ -152,6 +158,8 @@ function defaultCondition(type: StepCondition["type"]): StepCondition {
 
 function defaultCompletion(type: CompletionRule["type"]): CompletionRule {
   switch (type) {
+    case "capability_completed":
+      return { type };
     case "process_started":
       return { type, stabilizationMs: 800, timeoutMs: 15_000 };
     case "process_exit":
@@ -177,6 +185,7 @@ function statusColor(status?: WorkflowRun["status"]): string {
   if (status === "succeeded") return "#34d399";
   if (status === "failed") return "#f87171";
   if (status === "cancelled") return "#fbbf24";
+  if (status === "interrupted") return "#fb923c";
   if (status === "running" || status === "waiting") return "#60a5fa";
   return "rgba(255,255,255,0.38)";
 }
@@ -189,6 +198,7 @@ function runStatusLabel(status: WorkflowRun["status"]): string {
     case "succeeded": return "已完成";
     case "failed": return "失败";
     case "cancelled": return "已取消";
+    case "interrupted": return "已中断";
   }
 }
 
@@ -246,13 +256,19 @@ function formatRunLog(run: WorkflowRun): string {
   const lines = [
     `工作流：${run.workflowName}`,
     `启动方式：${runTriggerLabel(run.trigger)}`,
+    ...(run.configName ? [`启动配置：${run.configName}`] : []),
     `状态：${runStatusLabel(run.status)}`,
     ...(summaryDetail ? [`详情：${summaryDetail}`] : []),
     "",
     ...run.steps.map((step, index) => (
       `${String(index + 1).padStart(2, "0")} [${stepStatusLabel(step.status)}] ${step.name}`
+      + (step.attempt ? ` · 第 ${step.attempt} 次尝试` : "")
       + (step.message ? `\n${step.message}` : "")
       + (step.output ? `\n${step.output}` : "")
+      + (step.outputs ? `\n输出：${JSON.stringify(step.outputs, null, 2)}` : "")
+      + (step.artifacts?.length
+        ? `\n产物：${step.artifacts.map((artifact) => artifact.path ?? artifact.name).join("\n")}`
+        : "")
     )),
   ];
   return cleanTerminalText(lines.join("\n"));
@@ -307,15 +323,49 @@ function decodeTerminalBytes(data: string): Uint8Array {
   return Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
 }
 
-const WorkflowRunTerminal = forwardRef<WorkflowRunTerminalHandle, { run: WorkflowRun | null }>(
-function WorkflowRunTerminal({ run }, ref) {
+interface WorkflowRunTerminalProps {
+  onStopWorkflow: () => void;
+  run: WorkflowRun | null;
+  stoppingWorkflow: boolean;
+  workflowActive: boolean;
+}
+
+const WorkflowRunTerminal = forwardRef<WorkflowRunTerminalHandle, WorkflowRunTerminalProps>(
+function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowActive }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const sessionActiveRef = useRef(false);
   const seenStepIdsRef = useRef(new Set<string>());
+  const seenAttemptsRef = useRef(new Map<string, number>());
   const seenExitSessionsRef = useRef(new Set<string>());
   const sessionOffsetsRef = useRef(new Map<string, number>());
+  const [sessionActive, setSessionActive] = useState(false);
+  const [closingSession, setClosingSession] = useState(false);
   const sessionId = workflowTerminalSession(run);
+
+  sessionIdRef.current = sessionId;
+
+  const updateSessionActive = (active: boolean) => {
+    sessionActiveRef.current = active;
+    setSessionActive(active);
+    if (!active) setClosingSession(false);
+  };
+
+  const closeTerminalSession = async () => {
+    const activeSessionId = sessionIdRef.current;
+    if (!activeSessionId || !sessionActiveRef.current || closingSession) return;
+    setClosingSession(true);
+    try {
+      await invoke("terminal_kill", { sessionId: activeSessionId });
+      updateSessionActive(false);
+      termRef.current?.focus();
+    } catch (error) {
+      setClosingSession(false);
+      termRef.current?.write(`\r\n\x1b[31m[关闭终端失败] ${String(error)}\x1b[0m\r\n`);
+    }
+  };
 
   useImperativeHandle(ref, () => ({
     getText: () => termRef.current ? terminalBufferText(termRef.current) : "",
@@ -345,7 +395,7 @@ function WorkflowRunTerminal({ run }, ref) {
         brightWhite: "#ffffff",
       },
       cursorBlink: false,
-      disableStdin: true,
+      disableStdin: false,
       allowTransparency: true,
       scrollback: 5000,
     });
@@ -356,8 +406,20 @@ function WorkflowRunTerminal({ run }, ref) {
     termRef.current = term;
     fitRef.current = fitAddon;
     seenStepIdsRef.current.clear();
+    seenAttemptsRef.current.clear();
     seenExitSessionsRef.current.clear();
     sessionOffsetsRef.current.clear();
+    const inputSubscription = term.onData((data) => {
+      const activeSessionId = sessionIdRef.current;
+      if (!activeSessionId || !sessionActiveRef.current) return;
+      invoke("terminal_write", {
+        sessionId: activeSessionId,
+        data: encodeTerminalInput(data),
+      }).catch((error) => {
+        updateSessionActive(false);
+        term.write(`\r\n\x1b[31m[终端输入失败] ${String(error)}\x1b[0m\r\n`);
+      });
+    });
     if (run) {
       term.write(`\x1b[36m$ ${run.workflowName}\x1b[0m\r\n`);
       for (const [index, runStep] of run.steps.entries()) {
@@ -381,10 +443,13 @@ function WorkflowRunTerminal({ run }, ref) {
     };
     const ro = new ResizeObserver(resize);
     ro.observe(container);
-    window.setTimeout(resize, 0);
+    window.setTimeout(() => {
+      resize();
+    }, 0);
 
     return () => {
       ro.disconnect();
+      inputSubscription.dispose();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -403,6 +468,17 @@ function WorkflowRunTerminal({ run }, ref) {
 
   useEffect(() => {
     const term = termRef.current;
+    if (!term || !run?.currentStepId) return;
+    const current = run.steps.find((step) => step.stepId === run.currentStepId);
+    const attempt = current?.attempt ?? 0;
+    if (!current || attempt <= (seenAttemptsRef.current.get(current.stepId) ?? 0)) return;
+    seenAttemptsRef.current.set(current.stepId, attempt);
+    term.write(`\x1b[90m[第 ${attempt} 次尝试]\x1b[0m\r\n`);
+  }, [run?.currentStepId, run?.id, run?.steps]);
+
+  useEffect(() => {
+    const term = termRef.current;
+    updateSessionActive(false);
     if (!term || !sessionId) return undefined;
     let disposed = false;
     let initialized = false;
@@ -413,6 +489,7 @@ function WorkflowRunTerminal({ run }, ref) {
     const markExited = () => {
       if (seenExitSessionsRef.current.has(sessionId)) return;
       seenExitSessionsRef.current.add(sessionId);
+      updateSessionActive(false);
       term.write("\r\n\x1b[90m[步骤进程已退出]\x1b[0m\r\n");
     };
     const appendChunk = (chunk: TerminalDataChunk) => {
@@ -443,7 +520,9 @@ function WorkflowRunTerminal({ run }, ref) {
           sessionId,
           Math.max(sessionOffsetsRef.current.get(sessionId) ?? 0, snapshot.offset),
         );
-        if (!snapshot.active) markExited();
+        updateSessionActive(snapshot.active);
+        if (snapshot.active) term.focus();
+        else markExited();
       } catch {
         if (attempt < 5 && !disposed) {
           await new Promise((resolve) => window.setTimeout(resolve, 40));
@@ -492,19 +571,102 @@ function WorkflowRunTerminal({ run }, ref) {
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: "100%",
         height: "100%",
         minHeight: 0,
         boxSizing: "border-box",
-        padding: "7px 8px",
+        display: "flex",
+        flexDirection: "column",
         borderRadius: 7,
         border: "1px solid rgba(255,255,255,0.1)",
-        background: "rgba(0,0,0,0.2)",
+        background: "#100b12",
         overflow: "hidden",
       }}
-    />
+    >
+      <div
+        style={{
+          minHeight: 30,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          padding: "3px 7px 3px 10px",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.035)",
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(226,232,244,0.56)", fontSize: 10, fontWeight: 700 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: sessionActive ? "#60a5fa" : "rgba(255,255,255,0.25)",
+            }}
+          />
+          运行终端
+        </span>
+        {workflowActive ? (
+          <button
+            type="button"
+            onClick={onStopWorkflow}
+            disabled={stoppingWorkflow}
+            title="停止当前工作流"
+            style={{
+              height: 23,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "0 8px",
+              borderRadius: 5,
+              border: "1px solid rgba(248,113,113,0.35)",
+              background: "rgba(127,29,29,0.22)",
+              color: "rgba(254,202,202,0.92)",
+              fontSize: 9.5,
+              fontWeight: 750,
+              cursor: stoppingWorkflow ? "default" : "pointer",
+              opacity: stoppingWorkflow ? 0.62 : 1,
+            }}
+          >
+            {stoppingWorkflow ? "停止中" : "停止工作流"}
+          </button>
+        ) : sessionActive ? (
+          <button
+            type="button"
+            onClick={() => void closeTerminalSession()}
+            disabled={closingSession}
+            title="结束终端中仍在运行的程序并关闭此终端"
+            style={{
+              height: 23,
+              padding: "0 8px",
+              borderRadius: 5,
+              border: "1px solid rgba(248,113,113,0.35)",
+              background: "rgba(127,29,29,0.22)",
+              color: "rgba(254,202,202,0.92)",
+              fontSize: 9.5,
+              fontWeight: 750,
+              cursor: closingSession ? "default" : "pointer",
+              opacity: closingSession ? 0.62 : 1,
+            }}
+          >
+            {closingSession ? "关闭中" : "关闭终端"}
+          </button>
+        ) : null}
+      </div>
+      <div
+        ref={containerRef}
+        aria-label="工作流运行终端"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          boxSizing: "border-box",
+          padding: "7px 8px",
+          overflow: "hidden",
+        }}
+      />
+    </div>
   );
 });
 
@@ -513,6 +675,11 @@ interface ConfirmRequest {
   message: string;
   confirmLabel: string;
   onConfirm: () => void;
+}
+
+interface RunConfigRequest {
+  workflowId: string;
+  stepId?: string;
 }
 
 export function WorkflowPanel({
@@ -538,24 +705,43 @@ export function WorkflowPanel({
   const [run, setRun] = useState<WorkflowRun | null>(initialRun ?? null);
   const [runPanelOpen, setRunPanelOpen] = useState(Boolean(initialRun));
   const [runLogCopied, setRunLogCopied] = useState(false);
+  const [stoppingRunId, setStoppingRunId] = useState<string | null>(null);
   const runsRef = useRef<WorkflowRun[]>(initialRun ? [initialRun] : []);
   const runTerminalRef = useRef<WorkflowRunTerminalHandle>(null);
   const [manualRequest, setManualRequest] = useState<{ runId: string; stepId: string; stepName: string } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [runConfigRequest, setRunConfigRequest] = useState<RunConfigRequest | null>(null);
+  const [runConfigSelection, setRunConfigSelection] = useState("");
   const [workflowQuery, setWorkflowQuery] = useState("");
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [monitorOpen, setMonitorOpen] = useState(false);
   const [stepClipboard, setStepClipboard] = useState<WorkflowStepClipboard | null>(null);
+  const [capabilities, setCapabilities] = useState<WorkflowCapabilityDescriptor[]>([]);
   const [dirty, setDirty] = useState(false);
   const workflowTemplates = useMemo(() => listWorkflowTemplates(), []);
 
   useEscapeToClose(
     onClose,
-    !editingStep && !confirmRequest && !manualRequest,
+    !editingStep && !confirmRequest && !manualRequest && !runConfigRequest,
   );
+
+  useEffect(() => {
+    if (!runConfigRequest) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setRunConfigRequest(null);
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [runConfigRequest]);
 
   const workflow = workflows.find((item) => item.id === selectedWorkflowId) ?? null;
   const step = workflow?.steps.find((item) => item.id === selectedStepId) ?? null;
+  const runConfigWorkflow = runConfigRequest
+    ? workflows.find((item) => item.id === runConfigRequest.workflowId) ?? null
+    : null;
   const customWorkflows = useMemo(
     () => workflows.filter((item) => !matchingOfficialTemplateId(item)),
     [workflows],
@@ -572,6 +758,23 @@ export function WorkflowPanel({
     const text = `${item.name} ${item.description}`.toLocaleLowerCase();
     return text.includes("监控") || text.includes("monitor") || text.includes("health");
   }), [customWorkflows]);
+  const capabilityReferences = useMemo(() => {
+    if (!workflow || !editingStep) return [];
+    const editingIndex = editingStep === "new"
+      ? workflow.steps.length
+      : workflow.steps.findIndex((item) => item.id === editingStep.id);
+    return workflow.steps
+      .slice(0, Math.max(0, editingIndex))
+      .flatMap((item) => {
+        if (item.action.type !== "capability") return [];
+        const capabilityId = item.action.capabilityId;
+        const descriptor = capabilities.find((entry) => entry.id === capabilityId);
+        return (descriptor?.outputs ?? []).map((output) => ({
+          label: `${item.name} / ${output.title}`,
+          value: `\${steps.${item.id}.outputs.${output.key}}`,
+        }));
+      });
+  }, [capabilities, editingStep, workflow]);
   const completedRunSteps = run?.steps.filter((item) => (
     item.status === "succeeded"
     || item.status === "failed"
@@ -588,6 +791,12 @@ export function WorkflowPanel({
       nextRun,
     ].sort((left, right) => left.startedAt - right.startedAt);
   };
+
+  useEffect(() => {
+    listWorkflowCapabilities()
+      .then(setCapabilities)
+      .catch(() => setCapabilities([]));
+  }, []);
 
   useEffect(() => {
     const nextWorkflows = structuredClone(config.workflows ?? []);
@@ -660,6 +869,47 @@ export function WorkflowPanel({
 
   const updateStepAction = (action: Action) => {
     updateStep({ action, name: action.name });
+  };
+
+  const addWorkflowConfigFiles = async () => {
+    if (!workflow) return;
+    const selected = await dialogOpen({
+      multiple: true,
+      directory: false,
+      title: "选择工作流启动配置",
+    });
+    const paths = typeof selected === "string" ? [selected] : selected ?? [];
+    if (!paths.length) return;
+
+    const existingPaths = new Set((workflow.configFiles ?? []).map((item) => item.path));
+    const additions = paths
+      .filter((path) => !existingPaths.has(path))
+      .map<WorkflowConfigFile>((path) => ({
+        id: workflowId("step").replace("step-", "config-"),
+        name: path.split(/[\\/]/).pop() || "配置文件",
+        path,
+      }));
+    if (!additions.length) {
+      setStatus("选择的配置文件已经存在");
+      return;
+    }
+    const configFiles = [...(workflow.configFiles ?? []), ...additions];
+    updateWorkflow({
+      configFiles,
+      defaultConfigId: workflow.defaultConfigId ?? configFiles[0].id,
+    });
+    setStatus(`已加入 ${additions.length} 个启动配置`);
+  };
+
+  const removeWorkflowConfigFile = (configId: string) => {
+    if (!workflow) return;
+    const configFiles = (workflow.configFiles ?? []).filter((item) => item.id !== configId);
+    updateWorkflow({
+      configFiles,
+      defaultConfigId: workflow.defaultConfigId === configId
+        ? configFiles[0]?.id
+        : workflow.defaultConfigId,
+    });
   };
 
   const persist = async (
@@ -829,10 +1079,10 @@ export function WorkflowPanel({
     });
   };
 
-  const startWorkflowRun = async (workflowId: string) => {
+  const startWorkflowRun = async (workflowId: string, configId?: string) => {
     try {
       if (dirty && !await persist()) return;
-      const started = await runWorkflow(workflowId);
+      const started = await runWorkflow(workflowId, configId);
       rememberRun(started);
       setRun(started);
       setRunPanelOpen(true);
@@ -844,14 +1094,24 @@ export function WorkflowPanel({
 
   const startRun = async () => {
     if (!workflow) return;
+    if ((workflow.configFiles ?? []).length) {
+      setRunConfigSelection(workflow.defaultConfigId ?? workflow.configFiles?.[0]?.id ?? "");
+      setRunConfigRequest({ workflowId: workflow.id });
+      return;
+    }
     await startWorkflowRun(workflow.id);
   };
 
-  const startStepRun = async (stepId: string) => {
+  const startStepRun = async (stepId: string, configId?: string) => {
     if (!workflow) return;
+    if (!configId && (workflow.configFiles ?? []).length) {
+      setRunConfigSelection(workflow.defaultConfigId ?? workflow.configFiles?.[0]?.id ?? "");
+      setRunConfigRequest({ workflowId: workflow.id, stepId });
+      return;
+    }
     try {
       if (dirty && !await persist()) return;
-      const started = await runWorkflowStep(workflow.id, stepId);
+      const started = await runWorkflowStep(workflow.id, stepId, configId);
       rememberRun(started);
       setRun(started);
       setRunPanelOpen(true);
@@ -861,9 +1121,26 @@ export function WorkflowPanel({
     }
   };
 
+  const stopWorkflowRun = async (runId: string) => {
+    if (stoppingRunId === runId) return;
+    setStoppingRunId(runId);
+    try {
+      await cancelWorkflowRun(runId);
+      setStatus("已发送停止请求");
+    } catch (error) {
+      setStatus(`停止工作流失败：${String(error)}`);
+    } finally {
+      setStoppingRunId(null);
+    }
+  };
+
   const copyRunLog = async () => {
     if (!run) return;
-    const text = runTerminalRef.current?.getText() || formatRunLog(run);
+    const structuredLog = formatRunLog(run);
+    const terminalLog = runTerminalRef.current?.getText().trim() ?? "";
+    const text = terminalLog && terminalLog !== structuredLog
+      ? `${structuredLog}\n\n终端输出：\n${terminalLog}`
+      : structuredLog;
     try {
       const isTauriRuntime = Boolean((window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
       if (isTauriRuntime) {
@@ -1275,6 +1552,71 @@ export function WorkflowPanel({
                 )}
               </div>
 
+              <section style={{ marginBottom: 16, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11 }}>启动配置</strong>
+                  <span style={{ color: "rgba(255,255,255,0.34)", fontSize: 9 }}>
+                    {(workflow.configFiles ?? []).length} 个文件
+                  </span>
+                  <code style={{ marginLeft: "auto", color: "rgba(94,234,212,0.68)", fontSize: 9 }}>
+                    {"${config.path}"}
+                  </code>
+                  <button type="button" style={BUTTON} onClick={() => void addWorkflowConfigFiles()}>
+                    <AddIcon size={13} decorative />
+                    选择文件
+                  </button>
+                </div>
+                {(workflow.configFiles ?? []).length > 0 && (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {(workflow.configFiles ?? []).map((configFile) => {
+                      const isDefault = workflow.defaultConfigId === configFile.id;
+                      return (
+                        <div
+                          key={configFile.id}
+                          style={{
+                            minHeight: 42,
+                            display: "grid",
+                            gridTemplateColumns: "20px minmax(0,1fr) 30px",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "5px 7px 5px 10px",
+                            border: `1px solid ${isDefault ? "rgba(45,212,191,0.34)" : "rgba(255,255,255,0.09)"}`,
+                            borderRadius: 7,
+                            background: isDefault ? "rgba(13,148,136,0.08)" : "rgba(255,255,255,0.025)",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`workflow-default-config-${workflow.id}`}
+                            checked={isDefault}
+                            onChange={() => updateWorkflow({ defaultConfigId: configFile.id })}
+                            aria-label={`将 ${configFile.name} 设为默认启动配置`}
+                            title="设为默认配置"
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10.5 }}>
+                              {configFile.name}{isDefault ? " · 默认" : ""}
+                            </strong>
+                            <span title={configFile.path} style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.36)", fontSize: 8.5 }}>
+                              {configFile.path}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            style={{ ...ICON_BUTTON, height: 28 }}
+                            onClick={() => removeWorkflowConfigFile(configFile.id)}
+                            title={`移除 ${configFile.name}`}
+                            aria-label={`移除 ${configFile.name}`}
+                          >
+                            <DeleteIcon size={12} decorative />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
               <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
                 <strong style={{ fontSize: 11 }}>执行步骤</strong>
                 <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 7 }}>
@@ -1359,7 +1701,7 @@ export function WorkflowPanel({
                     <span style={{ display: "block", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.4)", fontSize: 9 }}>
                       {stepRun
                         ? `${stepStatusLabel(stepRun.status)}${stepRun.message ? ` · ${stepRun.message}` : ""}`
-                        : `${conditionLabel(item.condition)} · 完成：${completionLabel(item.completion)}`}
+                        : `${conditionLabel(item.condition)} · 完成：${completionLabel(item.completion)}${item.retry && item.retry.maxAttempts > 1 ? ` · 最多 ${item.retry.maxAttempts} 次` : ""}`}
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 3 }}>
@@ -1494,6 +1836,44 @@ export function WorkflowPanel({
                       spellCheck={false}
                     />
                   </div>
+                ) : step.action.type === "project_task" ? (
+                  <div style={{ display: "grid", gap: 7 }}>
+                    <div style={{
+                      padding: "9px",
+                      borderRadius: 7,
+                      border: "1px solid rgba(34,211,238,0.2)",
+                      background: "rgba(8,145,178,0.08)",
+                      color: "rgba(207,250,254,0.74)",
+                      fontSize: 10,
+                      lineHeight: 1.55,
+                    }}>
+                      {`${(step.action as ProjectTaskAction).provider} · ${(step.action as ProjectTaskAction).file} · ${(step.action as ProjectTaskAction).taskName}`}
+                    </div>
+                    <div style={{ color: "rgba(255,255,255,0.36)", fontSize: 9.5, lineHeight: 1.55 }}>
+                      执行时会按项目 ID 和来源重新解析，不在工作流中保存绝对路径或命令快照。
+                    </div>
+                  </div>
+                ) : step.action.type === "capability" ? (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    <div style={{
+                      padding: "9px",
+                      borderRadius: 7,
+                      border: "1px solid rgba(45,212,191,0.22)",
+                      background: "rgba(13,148,136,0.08)",
+                      color: "rgba(204,251,241,0.78)",
+                      fontSize: 10,
+                      lineHeight: 1.55,
+                      overflowWrap: "anywhere",
+                    }}>
+                      <strong>{step.action.capabilityId}</strong>
+                      {Object.entries(step.action.inputs).map(([key, value]) => (
+                        <span key={key} style={{ display: "block", marginTop: 4 }}>
+                          {key}: {Array.isArray(value) ? value.join(", ") : String(value)}
+                        </span>
+                      ))}
+                    </div>
+                    <button style={BUTTON} onClick={() => setEditingStep(step)}>编辑能力输入</button>
+                  </div>
                 ) : (
                   <div style={{ display: "grid", gap: 8 }}>
                     <div style={{
@@ -1555,14 +1935,21 @@ export function WorkflowPanel({
                 <select
                   style={INPUT}
                   value={step.completion.type}
+                  disabled={step.action.type === "capability"}
                   onChange={(event) => updateStep({ completion: defaultCompletion(event.target.value as CompletionRule["type"]) })}
                 >
-                  <option value="action_resolved">动作返回</option>
-                  <option value="process_started">进程已启动</option>
-                  <option value="process_exit">进程退出且成功</option>
-                  <option value="port_ready">端口可用</option>
-                  <option value="timer">计时结束</option>
-                  <option value="manual">人工确认</option>
+                  {step.action.type === "capability" ? (
+                    <option value="capability_completed">能力执行完成</option>
+                  ) : (
+                    <>
+                      <option value="action_resolved">已触发</option>
+                      <option value="process_started">进程已启动</option>
+                      <option value="process_exit">进程退出且成功</option>
+                      <option value="port_ready">端口可用</option>
+                      <option value="timer">计时结束</option>
+                      <option value="manual">人工确认</option>
+                    </>
+                  )}
                 </select>
               </Field>
               {step.completion.type === "process_started" && (
@@ -1619,10 +2006,47 @@ export function WorkflowPanel({
               <Field label="执行前延迟（毫秒）">
                 <input style={INPUT} type="number" min={0} value={step.delayMs} onChange={(event) => updateStep({ delayMs: Number(event.target.value) })} />
               </Field>
+              <Field label="失败后最多尝试">
+                <select
+                  style={INPUT}
+                  value={step.retry?.maxAttempts ?? 1}
+                  onChange={(event) => {
+                    const maxAttempts = Number(event.target.value);
+                    updateStep({
+                      retry: maxAttempts > 1
+                        ? { maxAttempts, delayMs: step.retry?.delayMs ?? 1000 }
+                        : undefined,
+                    });
+                  }}
+                >
+                  <option value={1}>1 次</option>
+                  <option value={2}>2 次</option>
+                  <option value={3}>3 次</option>
+                  <option value={4}>4 次</option>
+                  <option value={5}>5 次</option>
+                </select>
+              </Field>
+              {(step.retry?.maxAttempts ?? 1) > 1 && (
+                <Field label="重试间隔（毫秒）">
+                  <input
+                    style={INPUT}
+                    type="number"
+                    min={0}
+                    max={300_000}
+                    value={step.retry?.delayMs ?? 1000}
+                    onChange={(event) => updateStep({
+                      retry: {
+                        maxAttempts: step.retry?.maxAttempts ?? 2,
+                        delayMs: Number(event.target.value),
+                      },
+                    })}
+                  />
+                </Field>
+              )}
               <div style={{ paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.09)" }}>
-                {step.action.type === "script" ? (
+                {step.action.type === "script" || step.action.type === "project_task" ? (
                   <div style={{ display: "flex", alignItems: "center", color: "rgba(255,255,255,0.34)", fontSize: 10 }}>
-                    脚本内容已在上方编辑
+                    {step.action.type === "script" ? "脚本内容已在上方编辑" : "项目任务引用由项目工作台维护"}
                   </div>
                 ) : (
                   <button style={BUTTON} onClick={() => setEditingStep(step)}>更换动作</button>
@@ -1703,15 +2127,17 @@ export function WorkflowPanel({
                 {runLogCopied ? "已复制" : "复制日志"}
               </button>
             )}
-            {run && (run.status === "running" || run.status === "waiting") && (
+            {run && isRunActive(run) && !runPanelOpen && (
               <button
                 style={{ ...BUTTON, height: 28 }}
+                disabled={stoppingRunId === run.id}
                 onClick={(event) => {
                   event.stopPropagation();
-                  void cancelWorkflowRun(run.id);
+                  void stopWorkflowRun(run.id);
                 }}
+                title="停止当前工作流"
               >
-                停止
+                {stoppingRunId === run.id ? "停止中" : "停止工作流"}
               </button>
             )}
           </span>
@@ -1778,13 +2204,48 @@ export function WorkflowPanel({
                         </span>
                         <span style={{ color }}>{stepStatusLabel(runStep.status)}</span>
                         <span style={{ minWidth: 0, color: "rgba(226,232,244,0.62)", whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
-                          {runStep.name}{runStep.message ? ` · ${runStep.message}` : ""}
+                          {runStep.name}
+                          {runStep.attempt ? ` · 第 ${runStep.attempt} 次尝试` : ""}
+                          {runStep.message ? ` · ${runStep.message}` : ""}
+                          {runStep.outputs && (
+                            <code style={{
+                              display: "block",
+                              marginTop: 3,
+                              color: "rgba(153,246,228,0.68)",
+                              fontSize: 9.5,
+                              whiteSpace: "pre-wrap",
+                              overflowWrap: "anywhere",
+                            }}>
+                              {JSON.stringify(runStep.outputs)}
+                            </code>
+                          )}
+                          {runStep.artifacts?.map((artifact) => (
+                            <code
+                              key={artifact.id}
+                              style={{
+                                display: "block",
+                                marginTop: 3,
+                                color: "rgba(147,197,253,0.7)",
+                                fontSize: 9.5,
+                                whiteSpace: "pre-wrap",
+                                overflowWrap: "anywhere",
+                              }}
+                            >
+                              {`产物 · ${artifact.path ?? artifact.name}`}
+                            </code>
+                          ))}
                         </span>
                       </div>
                     );
                   })}
                 </div>
-                <WorkflowRunTerminal ref={runTerminalRef} run={run} />
+                <WorkflowRunTerminal
+                  ref={runTerminalRef}
+                  run={run}
+                  workflowActive={isRunActive(run)}
+                  stoppingWorkflow={stoppingRunId === run.id}
+                  onStopWorkflow={() => void stopWorkflowRun(run.id)}
+                />
               </>
             ) : (
               <div style={{ gridColumn: "1 / -1", padding: "8px", color: "rgba(255,255,255,0.34)" }}>
@@ -1800,9 +2261,108 @@ export function WorkflowPanel({
           keyId={editingStep === "new" ? "步骤" : editingStep.name}
           bindingLabel="工作流步骤"
           initialAction={editingStep === "new" ? null : editingStep.action}
+          capabilities={capabilities}
+          capabilityReferences={capabilityReferences}
           onClose={() => setEditingStep(null)}
           onSave={saveStepAction}
         />
+      )}
+      {runConfigRequest && runConfigWorkflow && (
+        <div
+          className="theme-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRunConfigRequest(null);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 3000,
+            display: "grid",
+            placeItems: "center",
+            padding: 20,
+            background: "rgba(3,7,18,0.58)",
+          }}
+        >
+          <section
+            className="theme-dialog-surface"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="workflow-run-config-title"
+            style={{
+              width: 460,
+              maxWidth: "calc(100vw - 32px)",
+              maxHeight: "calc(100vh - 40px)",
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: 12,
+              overflow: "hidden",
+              background: "var(--theme-bg, rgba(16,22,34,0.98))",
+            }}
+          >
+            <header style={{ minHeight: 50, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ minWidth: 0 }}>
+                <strong id="workflow-run-config-title" style={{ display: "block", fontSize: 13 }}>选择本次启动配置</strong>
+                <span style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 9 }}>
+                  {runConfigWorkflow.name}
+                </span>
+              </div>
+            </header>
+            <div style={{ minHeight: 0, display: "grid", gap: 7, padding: 14, overflow: "auto" }}>
+              {(runConfigWorkflow.configFiles ?? []).map((configFile) => (
+                <label
+                  key={configFile.id}
+                  style={{
+                    minHeight: 50,
+                    display: "grid",
+                    gridTemplateColumns: "22px minmax(0,1fr)",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "7px 10px",
+                    border: `1px solid ${runConfigSelection === configFile.id ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.1)"}`,
+                    borderRadius: 7,
+                    background: runConfigSelection === configFile.id ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.025)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="workflow-run-config"
+                    value={configFile.id}
+                    checked={runConfigSelection === configFile.id}
+                    onChange={() => setRunConfigSelection(configFile.id)}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <strong style={{ display: "block", fontSize: 11 }}>{configFile.name}</strong>
+                    <span title={configFile.path} style={{ display: "block", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 9 }}>
+                      {configFile.path}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <button type="button" style={BUTTON} onClick={() => setRunConfigRequest(null)}>取消</button>
+              <button
+                type="button"
+                style={{ ...BUTTON, background: "rgba(37,99,235,0.82)", borderColor: "rgba(96,165,250,0.55)", color: "white" }}
+                disabled={!runConfigSelection}
+                onClick={() => {
+                  const request = runConfigRequest;
+                  const configId = runConfigSelection;
+                  setRunConfigRequest(null);
+                  if (request.stepId) {
+                    void startStepRun(request.stepId, configId);
+                  } else {
+                    void startWorkflowRun(request.workflowId, configId);
+                  }
+                }}
+              >
+                使用此配置运行
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
       {confirmRequest && (
         <ConfirmDialog

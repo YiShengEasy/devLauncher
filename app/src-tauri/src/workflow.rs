@@ -3,12 +3,18 @@ use crate::builtins::terminal::TerminalState;
 use crate::config;
 use crate::platform::{current_platform, Platform};
 use crate::types::{
-    generate_id, Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowStep,
+    generate_id, Action, CompletionRule, StepCondition, WorkflowConfigFile, WorkflowDefinition,
+    WorkflowStep,
+};
+use crate::workflow_capabilities::{
+    self, CapabilityExecutionResult, CapabilityReferenceContext, WorkflowCapabilityArtifact,
 };
 use chrono::{Days, Local, LocalResult, TimeZone};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -16,12 +22,22 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::TcpStream;
 
 const MAX_STEPS: usize = 64;
+const MAX_CONFIG_FILES: usize = 32;
 const MAX_SCRIPT_BYTES: usize = 32 * 1024;
 const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 120_000;
+const MAX_RETRY_ATTEMPTS: u32 = 5;
+const MAX_RETRY_DELAY_MS: u64 = 5 * 60 * 1000;
 const MIN_SCHEDULE_INTERVAL_MINUTES: u64 = 1;
 const MAX_SCHEDULE_INTERVAL_MINUTES: u64 = 7 * 24 * 60;
+const MAX_RUN_HISTORY: usize = 500;
+const RUN_HISTORY_SCHEMA_VERSION: u32 = 1;
 const CANCELLED: &str = "__workflow_cancelled__";
+const INTERACTION_CANCELLED: &str = "__workflow_interaction_cancelled__";
+
+fn is_interaction_cancelled_error(error: &str) -> bool {
+    error.starts_with("SCREENSHOT_CANCELLED:")
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -40,6 +56,7 @@ pub enum WorkflowRunStatus {
     Succeeded,
     Failed,
     Cancelled,
+    Interrupted,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -60,10 +77,16 @@ pub struct WorkflowStepRun {
     pub step_id: String,
     pub name: String,
     pub status: WorkflowStepRunStatus,
+    #[serde(default)]
+    pub attempt: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outputs: Option<Map<String, Value>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<WorkflowCapabilityArtifact>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terminal_session_id: Option<String>,
 }
@@ -75,6 +98,14 @@ pub struct WorkflowRun {
     pub workflow_id: String,
     pub workflow_name: String,
     pub started_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_name: Option<String>,
     pub trigger: WorkflowRunTrigger,
     pub status: WorkflowRunStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,6 +113,28 @@ pub struct WorkflowRun {
     pub steps: Vec<WorkflowStepRun>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRunHistory {
+    #[serde(default = "default_run_history_schema_version")]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub records: Vec<WorkflowRun>,
+}
+
+impl Default for WorkflowRunHistory {
+    fn default() -> Self {
+        Self {
+            schema_version: RUN_HISTORY_SCHEMA_VERSION,
+            records: Vec::new(),
+        }
+    }
+}
+
+fn default_run_history_schema_version() -> u32 {
+    RUN_HISTORY_SCHEMA_VERSION
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -118,8 +171,17 @@ fn validate_timeout(value: u64, label: &str, errors: &mut Vec<String>) {
 }
 
 fn validate_completion(step: &WorkflowStep, errors: &mut Vec<String>, warnings: &mut Vec<String>) {
+    let is_capability = matches!(step.action, Action::Capability { .. });
+    let capability_completion = matches!(step.completion, CompletionRule::CapabilityCompleted);
+    if is_capability != capability_completion {
+        errors.push(
+            "capability actions must use capability_completed, and other actions cannot use it"
+                .into(),
+        );
+    }
     match &step.completion {
         CompletionRule::ActionResolved => {}
+        CompletionRule::CapabilityCompleted => {}
         CompletionRule::ProcessStarted {
             stabilization_ms,
             timeout_ms,
@@ -137,8 +199,13 @@ fn validate_completion(step: &WorkflowStep, errors: &mut Vec<String>, warnings: 
             if success_codes.is_empty() {
                 errors.push("process_exit requires at least one success code".into());
             }
-            if !matches!(step.action, Action::Script { .. }) {
-                errors.push("process_exit is only supported for script actions".into());
+            if !matches!(
+                step.action,
+                Action::Script { .. } | Action::ProjectTask { .. }
+            ) {
+                errors.push(
+                    "process_exit is only supported for script or project task actions".into(),
+                );
             }
         }
         CompletionRule::PortReady {
@@ -196,6 +263,30 @@ fn validate_action(action: &Action, errors: &mut Vec<String>) {
         Action::Workflow { .. } => {
             errors.push("nested workflow actions are not supported".into());
         }
+        Action::Capability {
+            capability_id,
+            inputs,
+            ..
+        } => {
+            workflow_capabilities::validate_action(capability_id, inputs, errors);
+        }
+        Action::ProjectTask {
+            project_id,
+            provider,
+            source_key,
+            file,
+            task_name,
+            ..
+        } => {
+            if project_id.trim().is_empty()
+                || provider.trim().is_empty()
+                || source_key.trim().is_empty()
+                || file.trim().is_empty()
+                || task_name.trim().is_empty()
+            {
+                errors.push("project task reference is incomplete".into());
+            }
+        }
         _ => {}
     }
 }
@@ -209,6 +300,40 @@ pub fn validate_workflow_definition(workflow: &WorkflowDefinition) -> WorkflowVa
     }
     if workflow.steps.len() > MAX_STEPS {
         errors.push(format!("workflow cannot exceed {MAX_STEPS} steps"));
+    }
+    if workflow.config_files.len() > MAX_CONFIG_FILES {
+        errors.push(format!(
+            "workflow cannot exceed {MAX_CONFIG_FILES} config files"
+        ));
+    }
+    let mut config_ids = HashSet::new();
+    let mut config_paths = HashSet::new();
+    for config_file in &workflow.config_files {
+        if config_file.id.trim().is_empty() || !config_ids.insert(config_file.id.clone()) {
+            errors.push(format!(
+                "config file IDs must be non-empty and unique: {}",
+                config_file.id
+            ));
+        }
+        if config_file.name.trim().is_empty() || config_file.name.chars().count() > 80 {
+            errors.push(format!(
+                "config file name must contain 1 to 80 characters: {}",
+                config_file.id
+            ));
+        }
+        if config_file.path.trim().is_empty() || !config_paths.insert(config_file.path.clone()) {
+            errors.push(format!(
+                "config file paths must be non-empty and unique: {}",
+                config_file.id
+            ));
+        }
+    }
+    if let Some(default_config_id) = workflow.default_config_id.as_deref() {
+        if !config_ids.contains(default_config_id) {
+            errors.push("default config file does not exist in this workflow".into());
+        }
+    } else if !workflow.config_files.is_empty() {
+        errors.push("workflow config files require a default selection".into());
     }
     if let Some(schedule) = workflow
         .schedule
@@ -251,8 +376,30 @@ pub fn validate_workflow_definition(workflow: &WorkflowDefinition) -> WorkflowVa
         if step.delay_ms > MAX_TIMEOUT_MS {
             errors.push(format!("step delay exceeds maximum: {}", step.id));
         }
+        if let Some(retry) = &step.retry {
+            if !(1..=MAX_RETRY_ATTEMPTS).contains(&retry.max_attempts) {
+                errors.push(format!(
+                    "step retry maxAttempts must be between 1 and {MAX_RETRY_ATTEMPTS}: {}",
+                    step.id
+                ));
+            }
+            if retry.delay_ms > MAX_RETRY_DELAY_MS {
+                errors.push(format!(
+                    "step retry delay exceeds {MAX_RETRY_DELAY_MS} ms: {}",
+                    step.id
+                ));
+            }
+        }
         validate_action(&step.action, &mut errors);
         validate_completion(step, &mut errors, &mut warnings);
+    }
+    let uses_config_reference = workflow.steps.iter().any(|step| {
+        serde_json::to_string(step)
+            .map(|value| value.contains("${config."))
+            .unwrap_or(false)
+    });
+    if uses_config_reference && workflow.config_files.is_empty() {
+        errors.push("config references require at least one workflow config file".into());
     }
 
     WorkflowValidationReport {
@@ -335,6 +482,150 @@ pub fn set_binding_workspace_mode(app: AppHandle, enabled: bool) -> Result<(), S
     set_workspace_window_size(app, enabled, 980.0, 680.0, binding_workspace_size)
 }
 
+pub fn workflow_run_history_path(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("workflow_run_history.json")
+}
+
+pub fn read_workflow_run_history_from_path(path: &Path) -> Result<WorkflowRunHistory, String> {
+    if !path.exists() {
+        return Ok(WorkflowRunHistory::default());
+    }
+    let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    serde_json::from_str(&content).map_err(|error| error.to_string())
+}
+
+fn persisted_run(run: &WorkflowRun) -> WorkflowRun {
+    let mut safe = run.clone();
+    safe.current_step_id = None;
+    safe.message = Some(
+        match safe.status {
+            WorkflowRunStatus::Pending => "workflow queued",
+            WorkflowRunStatus::Running => "workflow running",
+            WorkflowRunStatus::Waiting => "workflow waiting",
+            WorkflowRunStatus::Succeeded => "workflow completed",
+            WorkflowRunStatus::Failed => "workflow failed",
+            WorkflowRunStatus::Cancelled => "workflow cancelled",
+            WorkflowRunStatus::Interrupted => "workflow interrupted by application restart",
+        }
+        .into(),
+    );
+    for step in &mut safe.steps {
+        step.output = None;
+        step.outputs = None;
+        step.artifacts = None;
+        step.terminal_session_id = None;
+        step.message = Some(
+            match step.status {
+                WorkflowStepRunStatus::Pending => "not started",
+                WorkflowStepRunStatus::Running => "interrupted",
+                WorkflowStepRunStatus::Waiting => "interrupted while waiting",
+                WorkflowStepRunStatus::Succeeded => "completed",
+                WorkflowStepRunStatus::Failed => "failed",
+                WorkflowStepRunStatus::Skipped => "skipped",
+                WorkflowStepRunStatus::Cancelled => "cancelled",
+            }
+            .into(),
+        );
+    }
+    safe
+}
+
+pub fn write_workflow_run_history_to_path(
+    path: &Path,
+    history: &WorkflowRunHistory,
+) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let content = serde_json::to_vec_pretty(history).map_err(|error| error.to_string())?;
+    let temp_path = path.with_extension("json.tmp");
+    fs::write(&temp_path, content).map_err(|error| error.to_string())?;
+    if fs::rename(&temp_path, path).is_ok() {
+        return Ok(());
+    }
+    let backup_path = path.with_extension("json.bak");
+    if path.exists() {
+        fs::rename(path, &backup_path).map_err(|error| {
+            let _ = fs::remove_file(&temp_path);
+            error.to_string()
+        })?;
+    }
+    match fs::rename(&temp_path, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&backup_path);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::rename(&backup_path, path);
+            let _ = fs::remove_file(&temp_path);
+            Err(error.to_string())
+        }
+    }
+}
+
+fn persist_run(app: &AppHandle, run: &WorkflowRun) -> Result<(), String> {
+    let path = workflow_run_history_path(app);
+    let mut history = read_workflow_run_history_from_path(&path).unwrap_or_default();
+    let safe = persisted_run(run);
+    history.records.retain(|record| record.id != safe.id);
+    history.records.push(safe);
+    history
+        .records
+        .sort_by(|left, right| left.started_at.cmp(&right.started_at));
+    while history.records.len() > MAX_RUN_HISTORY {
+        let removable = history.records.iter().position(|record| {
+            matches!(
+                record.status,
+                WorkflowRunStatus::Succeeded
+                    | WorkflowRunStatus::Failed
+                    | WorkflowRunStatus::Cancelled
+                    | WorkflowRunStatus::Interrupted
+            )
+        });
+        let Some(index) = removable else {
+            break;
+        };
+        history.records.remove(index);
+    }
+    history.schema_version = RUN_HISTORY_SCHEMA_VERSION;
+    write_workflow_run_history_to_path(&path, &history)
+}
+
+pub fn setup_run_history(app: &AppHandle) {
+    let path = workflow_run_history_path(app);
+    let Ok(mut history) = read_workflow_run_history_from_path(&path) else {
+        return;
+    };
+    let now = unix_time_millis();
+    let mut changed = false;
+    for run in &mut history.records {
+        if matches!(
+            run.status,
+            WorkflowRunStatus::Pending | WorkflowRunStatus::Running | WorkflowRunStatus::Waiting
+        ) {
+            run.status = WorkflowRunStatus::Interrupted;
+            run.finished_at = Some(now);
+            run.message = Some("workflow interrupted by application restart".into());
+            for step in &mut run.steps {
+                if matches!(
+                    step.status,
+                    WorkflowStepRunStatus::Running | WorkflowStepRunStatus::Waiting
+                ) {
+                    step.status = WorkflowStepRunStatus::Cancelled;
+                    step.message = Some("interrupted by application restart".into());
+                }
+            }
+            changed = true;
+        }
+    }
+    if changed {
+        let _ = write_workflow_run_history_to_path(&path, &history);
+    }
+}
+
 fn emit_run(app: &AppHandle, inner: &WorkflowEngineInner, run_id: &str) {
     let snapshot = inner
         .runs
@@ -342,6 +633,22 @@ fn emit_run(app: &AppHandle, inner: &WorkflowEngineInner, run_id: &str) {
         .ok()
         .and_then(|runs| runs.get(run_id).cloned());
     if let Some(snapshot) = snapshot {
+        if let Err(error) = persist_run(app, &snapshot) {
+            eprintln!("failed to persist workflow run: {error}");
+            let _ = app.emit(
+                "workflow-run-history-error",
+                "运行状态已更新，但本地历史写入失败",
+            );
+        }
+        let _ = app.emit(
+            "project-run-summary",
+            serde_json::json!({
+                "runId": snapshot.id,
+                "projectId": snapshot.project_id,
+                "name": snapshot.workflow_name,
+                "status": snapshot.status,
+            }),
+        );
         let _ = app.emit("workflow-run-status", snapshot);
     }
 }
@@ -506,6 +813,7 @@ async fn scheduler_tick(app: &AppHandle, inner: Arc<WorkflowEngineInner>) {
             inner.clone(),
             workflow,
             WorkflowRunTrigger::Schedule,
+            None,
         );
     }
 }
@@ -517,6 +825,16 @@ where
     if let Ok(mut runs) = inner.runs.lock() {
         if let Some(run) = runs.get_mut(run_id) {
             update(run);
+            if matches!(
+                run.status,
+                WorkflowRunStatus::Succeeded
+                    | WorkflowRunStatus::Failed
+                    | WorkflowRunStatus::Cancelled
+                    | WorkflowRunStatus::Interrupted
+            ) && run.finished_at.is_none()
+            {
+                run.finished_at = Some(unix_time_millis());
+            }
         }
     }
     emit_run(app, inner, run_id);
@@ -553,12 +871,46 @@ fn attach_step_terminal(
     });
 }
 
+fn set_step_attempt(
+    app: &AppHandle,
+    inner: &WorkflowEngineInner,
+    run_id: &str,
+    step_id: &str,
+    attempt: u32,
+) {
+    update_run(app, inner, run_id, |run| {
+        if let Some(step) = run.steps.iter_mut().find(|step| step.step_id == step_id) {
+            step.attempt = attempt;
+        }
+    });
+}
+
 fn is_cancelled(inner: &WorkflowEngineInner, run_id: &str) -> bool {
     inner
         .cancelled
         .lock()
         .map(|cancelled| cancelled.contains(run_id))
         .unwrap_or(true)
+}
+
+fn retry_policy(step: &WorkflowStep) -> (u32, u64) {
+    step.retry
+        .as_ref()
+        .map(|retry| {
+            (
+                retry.max_attempts.clamp(1, MAX_RETRY_ATTEMPTS),
+                retry.delay_ms,
+            )
+        })
+        .unwrap_or((1, 0))
+}
+
+fn should_retry(error: &str, attempt: u32, max_attempts: u32) -> bool {
+    attempt < max_attempts && error != CANCELLED && error != INTERACTION_CANCELLED
+}
+
+fn workflow_terminal_session_id(run_id: &str, step_id: &str, attempt: u32) -> String {
+    format!("workflow-{run_id}-{step_id}-attempt-{attempt}")
 }
 
 async fn cancellable_sleep(
@@ -614,6 +966,9 @@ fn evaluate_condition(
 }
 
 fn execute_action(app: &AppHandle, action: &Action) -> Result<(), String> {
+    if matches!(action, Action::Capability { .. }) {
+        return Err("capability actions can only run inside a workflow".into());
+    }
     if let Action::Builtin { feature, .. } = action {
         return match feature.as_str() {
             "clipboard" => crate::builtins::clipboard::show_clipboard_window(app.clone()),
@@ -662,6 +1017,7 @@ pub(crate) fn execute_bound_action(app: &AppHandle, action: &Action) -> Result<(
             state.inner.clone(),
             workflow,
             WorkflowRunTrigger::Manual,
+            None,
         )?;
         return Ok(());
     }
@@ -726,10 +1082,11 @@ async fn run_script_to_exit(
     action: &Action,
     success_codes: &[i32],
     timeout_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let session_id_for_cleanup = session_id.clone();
     let (mut child, captured_output, reader_done) = crate::builtins::terminal::spawn_pty_process(
@@ -816,10 +1173,11 @@ async fn run_script_until_started(
     step_id: &str,
     action: &Action,
     stabilization_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let (mut child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
         app.clone(),
@@ -867,10 +1225,11 @@ async fn run_script_until_port_ready(
     port: u16,
     interval_ms: u64,
     timeout_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let (child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
         app.clone(),
@@ -929,10 +1288,11 @@ async fn run_script_for_duration(
     step_id: &str,
     action: &Action,
     duration_ms: u64,
+    attempt: u32,
 ) -> Result<Option<String>, String> {
     let (cmd, args) = script_command_spec(action)?;
     let terminal_state = app.state::<TerminalState>();
-    let session_id = format!("workflow-{run_id}-{step_id}");
+    let session_id = workflow_terminal_session_id(run_id, step_id, attempt);
     attach_step_terminal(app, inner, run_id, step_id, session_id.clone());
     let (child, output, reader_done) = crate::builtins::terminal::spawn_pty_process(
         app.clone(),
@@ -1118,14 +1478,81 @@ async fn wait_for_manual(
     }
 }
 
+struct StepExecutionResult {
+    output: Option<String>,
+    outputs: Option<Map<String, Value>>,
+    artifacts: Option<Vec<WorkflowCapabilityArtifact>>,
+    message: Option<String>,
+}
+
+impl StepExecutionResult {
+    fn legacy(output: Option<String>) -> Self {
+        Self {
+            output,
+            outputs: None,
+            artifacts: None,
+            message: None,
+        }
+    }
+}
+
 async fn execute_step(
     app: &AppHandle,
     inner: &WorkflowEngineInner,
     run_id: &str,
     step: &WorkflowStep,
-) -> Result<Option<String>, String> {
+    context: &CapabilityReferenceContext,
+    attempt: u32,
+) -> Result<StepExecutionResult, String> {
+    if let Action::Capability {
+        capability_id,
+        inputs,
+        ..
+    } = &step.action
+    {
+        if !matches!(step.completion, CompletionRule::CapabilityCompleted) {
+            return Err("capability action requires capability_completed".into());
+        }
+        let resolved_inputs = workflow_capabilities::resolve_inputs(inputs, context)?;
+        let execution =
+            workflow_capabilities::execute(app, capability_id, &resolved_inputs, run_id, &step.id);
+        tokio::pin!(execution);
+        let execution_result = loop {
+            tokio::select! {
+                result = &mut execution => break result,
+                _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                    if is_cancelled(inner, run_id) {
+                        crate::builtins::screenshot::cancel_workflow_capture(
+                            app,
+                            run_id,
+                            &step.id,
+                        );
+                        return Err(CANCELLED.into());
+                    }
+                }
+            }
+        };
+        let execution_result = match execution_result {
+            Err(error) if is_interaction_cancelled_error(&error) => {
+                return Err(INTERACTION_CANCELLED.into())
+            }
+            result => result?,
+        };
+        let CapabilityExecutionResult {
+            message,
+            outputs,
+            artifacts,
+        } = execution_result;
+        return Ok(StepExecutionResult {
+            output: None,
+            outputs: Some(outputs),
+            artifacts: (!artifacts.is_empty()).then_some(artifacts),
+            message: Some(message),
+        });
+    }
+
     if uses_managed_script_process(&step.action) {
-        return match &step.completion {
+        let output = match &step.completion {
             CompletionRule::ActionResolved => {
                 run_script_to_exit(
                     app,
@@ -1135,6 +1562,7 @@ async fn execute_step(
                     &step.action,
                     &[0],
                     DEFAULT_SCRIPT_TIMEOUT_MS,
+                    attempt,
                 )
                 .await
             }
@@ -1148,6 +1576,7 @@ async fn execute_step(
                     &step.id,
                     &step.action,
                     *stabilization_ms,
+                    attempt,
                 )
                 .await
             }
@@ -1163,6 +1592,7 @@ async fn execute_step(
                     &step.action,
                     success_codes,
                     *timeout_ms,
+                    attempt,
                 )
                 .await
             }
@@ -1182,12 +1612,21 @@ async fn execute_step(
                     *port,
                     *interval_ms,
                     *timeout_ms,
+                    attempt,
                 )
                 .await
             }
             CompletionRule::Timer { duration_ms } => {
-                run_script_for_duration(app, inner, run_id, &step.id, &step.action, *duration_ms)
-                    .await
+                run_script_for_duration(
+                    app,
+                    inner,
+                    run_id,
+                    &step.id,
+                    &step.action,
+                    *duration_ms,
+                    attempt,
+                )
+                .await
             }
             CompletionRule::Manual { timeout_ms } => {
                 let output = run_script_to_exit(
@@ -1198,10 +1637,14 @@ async fn execute_step(
                     &step.action,
                     &[0],
                     timeout_ms.unwrap_or(DEFAULT_SCRIPT_TIMEOUT_MS),
+                    attempt,
                 )
                 .await?;
                 wait_for_manual(app, inner, run_id, step, *timeout_ms).await?;
                 Ok(output)
+            }
+            CompletionRule::CapabilityCompleted => {
+                Err("capability_completed requires a capability action".into())
             }
             CompletionRule::WindowReady { .. } => {
                 Err("window_ready adapter is not available".into())
@@ -1210,11 +1653,15 @@ async fn execute_step(
             CompletionRule::ConnectionReady { .. } => {
                 Err("connection_ready adapter is not available".into())
             }
-        };
+        }?;
+        return Ok(StepExecutionResult::legacy(output));
     }
 
-    match &step.completion {
+    let output = match &step.completion {
         CompletionRule::ActionResolved => execute_action(app, &step.action).map(|_| None),
+        CompletionRule::CapabilityCompleted => {
+            Err("capability_completed requires a capability action".into())
+        }
         CompletionRule::ProcessStarted {
             stabilization_ms, ..
         } => {
@@ -1235,6 +1682,7 @@ async fn execute_step(
                 &step.action,
                 success_codes,
                 *timeout_ms,
+                attempt,
             )
             .await
         }
@@ -1266,7 +1714,8 @@ async fn execute_step(
         CompletionRule::ConnectionReady { .. } => {
             Err("connection_ready adapter is not available".into())
         }
-    }
+    }?;
+    Ok(StepExecutionResult::legacy(output))
 }
 
 async fn execute_workflow(
@@ -1274,6 +1723,7 @@ async fn execute_workflow(
     inner: Arc<WorkflowEngineInner>,
     workflow: WorkflowDefinition,
     run_id: String,
+    selected_config: Option<WorkflowConfigFile>,
 ) {
     update_run(&app, &inner, &run_id, |run| {
         run.status = WorkflowRunStatus::Running;
@@ -1281,6 +1731,15 @@ async fn execute_workflow(
     });
 
     let mut previous_status: Option<WorkflowStepRunStatus> = None;
+    let mut capability_context = CapabilityReferenceContext {
+        run_id: run_id.clone(),
+        workflow_id: workflow.id.clone(),
+        workflow_name: workflow.name.clone(),
+        config_id: selected_config.as_ref().map(|config| config.id.clone()),
+        config_name: selected_config.as_ref().map(|config| config.name.clone()),
+        config_path: selected_config.as_ref().map(|config| config.path.clone()),
+        step_outputs: HashMap::new(),
+    };
     for step in &workflow.steps {
         if is_cancelled(&inner, &run_id) {
             break;
@@ -1339,36 +1798,129 @@ async fn execute_workflow(
                 | CompletionRule::Timer { .. }
                 | CompletionRule::Manual { .. }
                 | CompletionRule::ProcessExit { .. }
+        ) || matches!(
+            &step.action,
+            Action::Capability { capability_id, .. }
+                if workflow_capabilities::is_interactive(capability_id)
         );
-        update_step(
-            &app,
-            &inner,
-            &run_id,
-            &step.id,
-            if waiting {
-                WorkflowStepRunStatus::Waiting
-            } else {
-                WorkflowStepRunStatus::Running
-            },
-            Some("executing step".into()),
-        );
-        if waiting {
+        let (max_attempts, retry_delay_ms) = retry_policy(step);
+        let mut attempt = 1;
+        let mut retry_notes = Vec::new();
+        let execution_result = loop {
+            set_step_attempt(&app, &inner, &run_id, &step.id, attempt);
+            update_step(
+                &app,
+                &inner,
+                &run_id,
+                &step.id,
+                if waiting {
+                    WorkflowStepRunStatus::Waiting
+                } else {
+                    WorkflowStepRunStatus::Running
+                },
+                Some(if max_attempts > 1 {
+                    format!("executing step · attempt {attempt}/{max_attempts}")
+                } else {
+                    "executing step".into()
+                }),
+            );
             update_run(&app, &inner, &run_id, |run| {
-                run.status = WorkflowRunStatus::Waiting;
+                run.status = if waiting {
+                    WorkflowRunStatus::Waiting
+                } else {
+                    WorkflowRunStatus::Running
+                };
+                run.message = Some(if max_attempts > 1 {
+                    format!("{} · attempt {attempt}/{max_attempts}", step.name)
+                } else {
+                    format!("{} · executing", step.name)
+                });
             });
-        }
 
-        match execute_step(&app, &inner, &run_id, step).await {
-            Ok(output) => {
+            let result =
+                execute_step(&app, &inner, &run_id, step, &capability_context, attempt).await;
+            match result {
+                Err(error) if should_retry(&error, attempt, max_attempts) => {
+                    retry_notes.push(format!("第 {attempt}/{max_attempts} 次尝试失败：{error}"));
+                    update_step(
+                        &app,
+                        &inner,
+                        &run_id,
+                        &step.id,
+                        WorkflowStepRunStatus::Waiting,
+                        Some(format!(
+                            "attempt {attempt}/{max_attempts} failed · retrying in {retry_delay_ms} ms"
+                        )),
+                    );
+                    update_run(&app, &inner, &run_id, |run| {
+                        run.status = WorkflowRunStatus::Waiting;
+                        run.message = Some(format!(
+                            "{} · waiting to retry {}/{}",
+                            step.name,
+                            attempt + 1,
+                            max_attempts
+                        ));
+                    });
+                    if cancellable_sleep(&inner, &run_id, Duration::from_millis(retry_delay_ms))
+                        .await
+                        .is_err()
+                    {
+                        break Err(CANCELLED.into());
+                    }
+                    attempt += 1;
+                }
+                result => break result,
+            }
+        };
+
+        match execution_result {
+            Ok(mut result) => {
+                if !retry_notes.is_empty() {
+                    let retry_output = retry_notes.join("\n");
+                    let combined_output = match result.output {
+                        Some(output) => format!("{retry_output}\n{output}"),
+                        None => retry_output,
+                    };
+                    result.output = process_output_tail(combined_output.as_bytes());
+                }
+                let completed_message = result
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "step completed".into());
                 update_step(
                     &app,
                     &inner,
                     &run_id,
                     &step.id,
                     WorkflowStepRunStatus::Succeeded,
-                    Some("step completed".into()),
+                    Some(if max_attempts > 1 {
+                        format!("attempt {attempt}/{max_attempts} succeeded · {completed_message}")
+                    } else {
+                        completed_message
+                    }),
                 );
-                if let Some(output) = output {
+                if let Some(outputs) = result.outputs {
+                    capability_context
+                        .step_outputs
+                        .insert(step.id.clone(), outputs.clone());
+                    update_run(&app, &inner, &run_id, |run| {
+                        if let Some(step_run) =
+                            run.steps.iter_mut().find(|entry| entry.step_id == step.id)
+                        {
+                            step_run.outputs = Some(outputs);
+                        }
+                    });
+                }
+                if let Some(artifacts) = result.artifacts {
+                    update_run(&app, &inner, &run_id, |run| {
+                        if let Some(step_run) =
+                            run.steps.iter_mut().find(|entry| entry.step_id == step.id)
+                        {
+                            step_run.artifacts = Some(artifacts);
+                        }
+                    });
+                }
+                if let Some(output) = result.output {
                     update_run(&app, &inner, &run_id, |run| {
                         if let Some(step_run) =
                             run.steps.iter_mut().find(|entry| entry.step_id == step.id)
@@ -1393,7 +1945,38 @@ async fn execute_workflow(
                 );
                 break;
             }
+            Err(error) if error == INTERACTION_CANCELLED => {
+                update_step(
+                    &app,
+                    &inner,
+                    &run_id,
+                    &step.id,
+                    WorkflowStepRunStatus::Cancelled,
+                    Some("用户取消了交互".into()),
+                );
+                update_run(&app, &inner, &run_id, |run| {
+                    run.status = WorkflowRunStatus::Cancelled;
+                    run.message = Some(format!("{} · 用户取消", step.name));
+                });
+                return;
+            }
             Err(error) => {
+                if !retry_notes.is_empty() {
+                    let retry_output = retry_notes.join("\n");
+                    let output = process_output_tail(retry_output.as_bytes());
+                    update_run(&app, &inner, &run_id, |run| {
+                        if let Some(step_run) =
+                            run.steps.iter_mut().find(|entry| entry.step_id == step.id)
+                        {
+                            step_run.output = output;
+                        }
+                    });
+                }
+                let error = if max_attempts > 1 {
+                    format!("attempt {attempt}/{max_attempts} failed · {error}")
+                } else {
+                    error
+                };
                 update_step(
                     &app,
                     &inner,
@@ -1451,11 +2034,172 @@ async fn execute_workflow(
     }
 }
 
+fn selected_workflow_config(
+    workflow: &WorkflowDefinition,
+    requested_config_id: Option<&str>,
+) -> Result<Option<WorkflowConfigFile>, String> {
+    if workflow.config_files.is_empty() {
+        return if requested_config_id.is_some() {
+            Err("workflow does not define config files".into())
+        } else {
+            Ok(None)
+        };
+    }
+
+    let selected_id = requested_config_id
+        .or(workflow.default_config_id.as_deref())
+        .ok_or_else(|| "workflow config files require a default selection".to_string())?;
+    let selected = workflow
+        .config_files
+        .iter()
+        .find(|config| config.id == selected_id)
+        .cloned()
+        .ok_or_else(|| "selected workflow config file was not found".to_string())?;
+    if !Path::new(&selected.path).is_file() {
+        return Err(format!("配置文件不存在：{}", selected.path));
+    }
+    Ok(Some(selected))
+}
+
+fn shell_quote(value: &str, shell: &str) -> String {
+    match shell {
+        "powershell" => format!("'{}'", value.replace('\'', "''")),
+        "cmd" | "bat" => format!("\"{}\"", value.replace('"', "\"\"")),
+        _ => format!("'{}'", value.replace('\'', "'\"'\"'")),
+    }
+}
+
+fn replace_config_tokens(
+    value: &str,
+    config: &WorkflowConfigFile,
+    quote_for: Option<&str>,
+) -> String {
+    let transform = |entry: &str| match quote_for {
+        Some(shell) => shell_quote(entry, shell),
+        None => entry.to_string(),
+    };
+    value
+        .replace("${config.id}", &transform(&config.id))
+        .replace("${config.name}", &transform(&config.name))
+        .replace("${config.path}", &transform(&config.path))
+}
+
+fn apply_workflow_config(workflow: &mut WorkflowDefinition, config: &WorkflowConfigFile) {
+    for step in &mut workflow.steps {
+        match &mut step.action {
+            Action::App { target, args, .. } => {
+                *target = replace_config_tokens(target, config, None);
+                if let Some(args) = args {
+                    for arg in args {
+                        *arg = replace_config_tokens(arg, config, None);
+                    }
+                }
+            }
+            Action::Folder {
+                target,
+                custom_opener,
+                custom_opener_args,
+                ..
+            } => {
+                *target = replace_config_tokens(target, config, None);
+                if let Some(opener) = custom_opener {
+                    *opener = replace_config_tokens(opener, config, None);
+                }
+                if let Some(args) = custom_opener_args {
+                    *args = replace_config_tokens(args, config, None);
+                }
+            }
+            Action::File { target, .. } | Action::Url { target, .. } => {
+                *target = replace_config_tokens(target, config, None);
+            }
+            Action::Ssh { identity, .. } => {
+                if let Some(identity) = identity {
+                    *identity = replace_config_tokens(identity, config, None);
+                }
+            }
+            Action::Script {
+                shell,
+                content,
+                file,
+                ..
+            } => {
+                if let Some(content) = content {
+                    *content = replace_config_tokens(content, config, Some(shell));
+                }
+                if let Some(file) = file {
+                    *file = replace_config_tokens(file, config, Some(shell));
+                }
+            }
+            _ => {}
+        }
+
+        match &mut step.condition {
+            StepCondition::PathExists { path } => {
+                *path = replace_config_tokens(path, config, None);
+            }
+            StepCondition::EnvEquals { value, .. } => {
+                *value = replace_config_tokens(value, config, None);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn resolve_project_task_actions(
+    app: &AppHandle,
+    workflow: &mut WorkflowDefinition,
+) -> Result<Option<String>, String> {
+    let data_path = crate::builtins::projecttasks::projecttasks_data_path(app);
+    let project_ids = workflow
+        .steps
+        .iter()
+        .filter_map(|step| match &step.action {
+            Action::ProjectTask { project_id, .. } => Some(project_id.clone()),
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
+
+    for step in &mut workflow.steps {
+        let Action::ProjectTask {
+            name,
+            icon,
+            project_id,
+            provider,
+            source_key,
+            file,
+            task_name,
+        } = step.action.clone()
+        else {
+            continue;
+        };
+        let command = crate::builtins::projecttasks::resolve_project_task_command(
+            &data_path,
+            &project_id,
+            &provider,
+            &source_key,
+            &file,
+            &task_name,
+        )?;
+        step.action = Action::Script {
+            name,
+            icon,
+            shell: "terminal".into(),
+            content: Some(command),
+            file: None,
+        };
+    }
+
+    Ok((project_ids.len() == 1)
+        .then(|| project_ids.into_iter().next())
+        .flatten())
+}
+
 fn start_workflow_definition(
     app: AppHandle,
     inner: Arc<WorkflowEngineInner>,
-    workflow: WorkflowDefinition,
+    mut workflow: WorkflowDefinition,
     trigger: WorkflowRunTrigger,
+    requested_config_id: Option<String>,
 ) -> Result<WorkflowRun, String> {
     if !workflow.enabled {
         return Err("workflow is disabled".into());
@@ -1464,6 +2208,11 @@ fn start_workflow_definition(
     if !report.valid {
         return Err(report.errors.join("; "));
     }
+    let selected_config = selected_workflow_config(&workflow, requested_config_id.as_deref())?;
+    if let Some(config) = &selected_config {
+        apply_workflow_config(&mut workflow, config);
+    }
+    let project_id = resolve_project_task_actions(&app, &mut workflow)?;
 
     let already_running = inner
         .runs
@@ -1488,6 +2237,10 @@ fn start_workflow_definition(
         workflow_id: workflow.id.clone(),
         workflow_name: workflow.name.clone(),
         started_at: unix_time_millis(),
+        finished_at: None,
+        project_id,
+        config_id: selected_config.as_ref().map(|config| config.id.clone()),
+        config_name: selected_config.as_ref().map(|config| config.name.clone()),
         trigger,
         status: WorkflowRunStatus::Pending,
         current_step_id: None,
@@ -1498,8 +2251,11 @@ fn start_workflow_definition(
                 step_id: step.id.clone(),
                 name: step.name.clone(),
                 status: WorkflowStepRunStatus::Pending,
+                attempt: 0,
                 message: None,
                 output: None,
+                outputs: None,
+                artifacts: None,
                 terminal_session_id: None,
             })
             .collect(),
@@ -1513,7 +2269,13 @@ fn start_workflow_definition(
     emit_run(&app, &inner, &run.id);
 
     let run_id = run.id.clone();
-    tauri::async_runtime::spawn(execute_workflow(app, inner, workflow, run_id));
+    tauri::async_runtime::spawn(execute_workflow(
+        app,
+        inner,
+        workflow,
+        run_id,
+        selected_config,
+    ));
     Ok(run)
 }
 
@@ -1521,6 +2283,7 @@ fn start_workflow_definition(
 pub async fn run_workflow(
     app: AppHandle,
     workflow_id: String,
+    config_id: Option<String>,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<WorkflowRun, String> {
     let config = config::load_config(app.clone())?;
@@ -1534,6 +2297,7 @@ pub async fn run_workflow(
         state.inner.clone(),
         workflow,
         WorkflowRunTrigger::Manual,
+        config_id,
     )
 }
 
@@ -1553,6 +2317,21 @@ fn standalone_step_workflow(
     if !step.enabled {
         return Err("workflow step is disabled".into());
     }
+    if let Action::Capability { inputs, .. } = &step.action {
+        let depends_on_previous_output = inputs.values().any(|value| match value {
+            Value::String(value) => value.contains("${steps."),
+            Value::Array(values) => values
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|value| value.contains("${steps.")),
+            _ => false,
+        });
+        if depends_on_previous_output {
+            return Err(
+                "capability step depends on previous outputs; run the complete workflow".into(),
+            );
+        }
+    }
 
     step.enabled = true;
     step.condition = StepCondition::Always;
@@ -1569,6 +2348,7 @@ pub async fn run_workflow_step(
     app: AppHandle,
     workflow_id: String,
     step_id: String,
+    config_id: Option<String>,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<WorkflowRun, String> {
     let config = config::load_config(app.clone())?;
@@ -1579,38 +2359,91 @@ pub async fn run_workflow_step(
         .ok_or_else(|| "workflow not found".to_string())?;
     let workflow = standalone_step_workflow(workflow, &step_id)?;
 
-    start_workflow_definition(app, state.inner.clone(), workflow, WorkflowRunTrigger::Step)
+    start_workflow_definition(
+        app,
+        state.inner.clone(),
+        workflow,
+        WorkflowRunTrigger::Step,
+        config_id,
+    )
 }
 
 #[tauri::command]
 pub fn get_workflow_run(
+    app: AppHandle,
     run_id: String,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<WorkflowRun, String> {
-    state
+    if let Some(run) = state
         .inner
         .runs
         .lock()
         .map_err(|_| "workflow state lock poisoned".to_string())?
         .get(&run_id)
         .cloned()
+    {
+        return Ok(run);
+    }
+    read_workflow_run_history_from_path(&workflow_run_history_path(&app))?
+        .records
+        .into_iter()
+        .find(|run| run.id == run_id)
         .ok_or_else(|| "workflow run not found".to_string())
 }
 
 #[tauri::command]
 pub fn list_workflow_runs(
+    app: AppHandle,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<Vec<WorkflowRun>, String> {
-    let mut runs = state
+    let mut by_id = read_workflow_run_history_from_path(&workflow_run_history_path(&app))?
+        .records
+        .into_iter()
+        .map(|run| (run.id.clone(), run))
+        .collect::<HashMap<_, _>>();
+    for run in state
         .inner
         .runs
         .lock()
         .map_err(|_| "workflow state lock poisoned".to_string())?
         .values()
         .cloned()
-        .collect::<Vec<_>>();
+    {
+        by_id.insert(run.id.clone(), run);
+    }
+    let mut runs = by_id.into_values().collect::<Vec<_>>();
     runs.sort_by(|left, right| left.started_at.cmp(&right.started_at));
     Ok(runs)
+}
+
+#[tauri::command]
+pub fn clear_workflow_run_history(
+    app: AppHandle,
+    state: tauri::State<'_, WorkflowEngineState>,
+) -> Result<(), String> {
+    let active = state
+        .inner
+        .runs
+        .lock()
+        .map_err(|_| "workflow state lock poisoned".to_string())?
+        .values()
+        .filter(|run| {
+            matches!(
+                run.status,
+                WorkflowRunStatus::Pending
+                    | WorkflowRunStatus::Running
+                    | WorkflowRunStatus::Waiting
+            )
+        })
+        .map(persisted_run)
+        .collect::<Vec<_>>();
+    write_workflow_run_history_to_path(
+        &workflow_run_history_path(&app),
+        &WorkflowRunHistory {
+            schema_version: RUN_HISTORY_SCHEMA_VERSION,
+            records: active,
+        },
+    )
 }
 
 #[tauri::command]
@@ -1654,16 +2487,24 @@ pub fn confirm_workflow_step(
 #[cfg(test)]
 mod tests {
     use super::{
-        binding_workspace_size, daily_schedule_due, evaluate_condition, next_daily_run_at,
-        parse_daily_time, process_output_tail, schedule_due, script_command_spec,
-        standalone_step_workflow, unix_time_millis, uses_managed_script_process,
-        validate_workflow_definition, workflow_workspace_size, WorkflowScheduleRuntime,
-        WorkflowStepRunStatus, MAX_PROCESS_OUTPUT_CHARS, PROCESS_OUTPUT_OMISSION,
+        apply_workflow_config, binding_workspace_size, cancellable_sleep, daily_schedule_due,
+        evaluate_condition, is_interaction_cancelled_error, next_daily_run_at, parse_daily_time,
+        persisted_run, process_output_tail, read_workflow_run_history_from_path, schedule_due,
+        script_command_spec, selected_workflow_config, should_retry, standalone_step_workflow,
+        unix_time_millis, uses_managed_script_process, validate_workflow_definition,
+        workflow_terminal_session_id, workflow_workspace_size, write_workflow_run_history_to_path,
+        WorkflowCapabilityArtifact, WorkflowEngineInner, WorkflowRun, WorkflowRunHistory,
+        WorkflowRunStatus, WorkflowRunTrigger, WorkflowScheduleRuntime, WorkflowStepRun,
+        WorkflowStepRunStatus, CANCELLED, INTERACTION_CANCELLED, MAX_PROCESS_OUTPUT_CHARS,
+        MAX_RETRY_DELAY_MS, PROCESS_OUTPUT_OMISSION,
     };
     use crate::types::{
-        Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowSchedule, WorkflowStep,
+        Action, CompletionRule, StepCondition, WorkflowConfigFile, WorkflowDefinition,
+        WorkflowRetryPolicy, WorkflowSchedule, WorkflowStep,
     };
+    use serde_json::{Map, Value};
     use std::collections::HashMap;
+    use std::time::Duration;
 
     fn script_workflow(completion: CompletionRule) -> WorkflowDefinition {
         WorkflowDefinition {
@@ -1673,6 +2514,8 @@ mod tests {
             enabled: true,
             failure_policy: "stop".into(),
             schedule: None,
+            config_files: Vec::new(),
+            default_config_id: None,
             steps: vec![WorkflowStep {
                 id: "step-1".into(),
                 name: "Echo".into(),
@@ -1687,11 +2530,22 @@ mod tests {
                 condition: StepCondition::Always,
                 completion,
                 delay_ms: 0,
+                retry: None,
                 on_failure: None,
             }],
             created_at: String::new(),
             updated_at: String::new(),
         }
+    }
+
+    #[test]
+    fn distinguishes_interaction_cancellation_from_capture_failures() {
+        assert!(is_interaction_cancelled_error(
+            "SCREENSHOT_CANCELLED: cancelled by user"
+        ));
+        assert!(!is_interaction_cancelled_error(
+            "SCREENSHOT_CAPTURE_FAILED: permission denied"
+        ));
     }
 
     #[test]
@@ -1701,6 +2555,185 @@ mod tests {
             timeout_ms: 5_000,
         });
         assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn validates_project_task_process_exit() {
+        let mut workflow = script_workflow(CompletionRule::ProcessExit {
+            success_codes: vec![0],
+            timeout_ms: 5_000,
+        });
+        workflow.steps[0].action = Action::ProjectTask {
+            name: "Test".into(),
+            icon: None,
+            project_id: "project-1".into(),
+            provider: "package".into(),
+            source_key: "test".into(),
+            file: "package.json".into(),
+            task_name: "test".into(),
+        };
+        assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn requires_a_default_for_workflow_config_files() {
+        let mut workflow = script_workflow(CompletionRule::ProcessExit {
+            success_codes: vec![0],
+            timeout_ms: 5_000,
+        });
+        workflow.config_files = vec![WorkflowConfigFile {
+            id: "config-dev".into(),
+            name: "dev.yaml".into(),
+            path: "/tmp/dev.yaml".into(),
+        }];
+
+        let report = validate_workflow_definition(&workflow);
+        assert!(!report.valid);
+        assert!(report
+            .errors
+            .contains(&"workflow config files require a default selection".to_string()));
+    }
+
+    #[test]
+    fn selects_default_config_and_quotes_script_references() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let config_path = directory.path().join("development config.yaml");
+        std::fs::write(&config_path, "port: 3000\n").expect("config file");
+        let mut workflow = script_workflow(CompletionRule::ProcessExit {
+            success_codes: vec![0],
+            timeout_ms: 5_000,
+        });
+        workflow.config_files = vec![WorkflowConfigFile {
+            id: "config-dev".into(),
+            name: "development".into(),
+            path: config_path.to_string_lossy().into_owned(),
+        }];
+        workflow.default_config_id = Some("config-dev".into());
+        if let Action::Script { content, .. } = &mut workflow.steps[0].action {
+            *content = Some("server --config ${config.path}".into());
+        }
+
+        let selected = selected_workflow_config(&workflow, None)
+            .expect("select config")
+            .expect("selected config");
+        apply_workflow_config(&mut workflow, &selected);
+
+        let Action::Script { content, .. } = &workflow.steps[0].action else {
+            panic!("expected script action");
+        };
+        assert_eq!(
+            content.as_deref(),
+            Some(format!("server --config '{}'", config_path.to_string_lossy()).as_str())
+        );
+    }
+
+    #[test]
+    fn explicit_config_overrides_default_for_application_arguments() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let default_path = directory.path().join("default.yaml");
+        let selected_path = directory.path().join("selected config.yaml");
+        std::fs::write(&default_path, "mode: default\n").expect("default config");
+        std::fs::write(&selected_path, "mode: selected\n").expect("selected config");
+        let mut workflow = script_workflow(CompletionRule::ProcessStarted {
+            stabilization_ms: 100,
+            timeout_ms: 1_000,
+        });
+        workflow.config_files = vec![
+            WorkflowConfigFile {
+                id: "config-default".into(),
+                name: "default".into(),
+                path: default_path.to_string_lossy().into_owned(),
+            },
+            WorkflowConfigFile {
+                id: "config-selected".into(),
+                name: "selected".into(),
+                path: selected_path.to_string_lossy().into_owned(),
+            },
+        ];
+        workflow.default_config_id = Some("config-default".into());
+        workflow.steps[0].action = Action::App {
+            name: "Server".into(),
+            icon: None,
+            target: "/Applications/Server.app".into(),
+            args: Some(vec!["--config".into(), "${config.path}".into()]),
+        };
+
+        let selected = selected_workflow_config(&workflow, Some("config-selected"))
+            .expect("select config")
+            .expect("selected config");
+        apply_workflow_config(&mut workflow, &selected);
+
+        let Action::App { args, .. } = &workflow.steps[0].action else {
+            panic!("expected app action");
+        };
+        assert_eq!(
+            args.as_ref().expect("app args"),
+            &vec![
+                "--config".to_string(),
+                selected_path.to_string_lossy().into_owned(),
+            ]
+        );
+    }
+
+    #[test]
+    fn run_history_persistence_removes_output_and_terminal_details() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let path = directory.path().join("history.json");
+        let run = WorkflowRun {
+            id: "run-1".into(),
+            workflow_id: "workflow-1".into(),
+            workflow_name: "Test".into(),
+            started_at: 100,
+            finished_at: Some(200),
+            project_id: Some("project-1".into()),
+            config_id: None,
+            config_name: None,
+            trigger: WorkflowRunTrigger::Manual,
+            status: WorkflowRunStatus::Failed,
+            current_step_id: Some("step-1".into()),
+            steps: vec![WorkflowStepRun {
+                step_id: "step-1".into(),
+                name: "Test".into(),
+                status: WorkflowStepRunStatus::Failed,
+                attempt: 3,
+                message: Some("/private/project failed".into()),
+                output: Some("secret output".into()),
+                outputs: Some(Map::from_iter([(
+                    "text".into(),
+                    Value::String("secret structured output".into()),
+                )])),
+                artifacts: Some(vec![WorkflowCapabilityArtifact {
+                    id: "artifact-1".into(),
+                    name: "secret artifact".into(),
+                    artifact_type: "file".into(),
+                    media_type: Some("text/plain".into()),
+                    path: Some("/private/result.txt".into()),
+                }]),
+                terminal_session_id: Some("terminal-1".into()),
+            }],
+            message: Some("/private/project failed".into()),
+        };
+        write_workflow_run_history_to_path(
+            &path,
+            &WorkflowRunHistory {
+                schema_version: 1,
+                records: vec![persisted_run(&run)],
+            },
+        )
+        .expect("write history");
+        let saved = read_workflow_run_history_from_path(&path)
+            .expect("read history")
+            .records
+            .pop()
+            .expect("saved run");
+        assert_eq!(saved.message.as_deref(), Some("workflow failed"));
+        assert!(saved.current_step_id.is_none());
+        assert!(saved.steps[0].output.is_none());
+        assert!(saved.steps[0].outputs.is_none());
+        assert!(saved.steps[0].artifacts.is_none());
+        assert!(saved.steps[0].terminal_session_id.is_none());
+        assert_eq!(saved.steps[0].attempt, 3);
+        assert_eq!(saved.steps[0].message.as_deref(), Some("failed"));
     }
 
     #[test]
@@ -1864,10 +2897,66 @@ mod tests {
             condition: StepCondition::PreviousSuccess,
             completion: CompletionRule::ActionResolved,
             delay_ms: 0,
+            retry: None,
             on_failure: None,
         });
 
         assert!(validate_workflow_definition(&workflow).valid);
+    }
+
+    #[test]
+    fn validates_bounded_retry_policy() {
+        let mut workflow = script_workflow(CompletionRule::ActionResolved);
+        workflow.steps[0].retry = Some(WorkflowRetryPolicy {
+            max_attempts: 3,
+            delay_ms: 1_500,
+        });
+        assert!(validate_workflow_definition(&workflow).valid);
+
+        workflow.steps[0].retry = Some(WorkflowRetryPolicy {
+            max_attempts: 0,
+            delay_ms: MAX_RETRY_DELAY_MS + 1,
+        });
+        let report = validate_workflow_definition(&workflow);
+        assert!(!report.valid);
+        assert!(report
+            .errors
+            .iter()
+            .any(|error| error.contains("maxAttempts")));
+        assert!(report
+            .errors
+            .iter()
+            .any(|error| error.contains("retry delay")));
+    }
+
+    #[test]
+    fn retry_decision_excludes_cancellation_and_stops_at_limit() {
+        assert!(should_retry("temporary failure", 1, 3));
+        assert!(!should_retry("temporary failure", 3, 3));
+        assert!(!should_retry(CANCELLED, 1, 3));
+        assert!(!should_retry(INTERACTION_CANCELLED, 1, 3));
+    }
+
+    #[test]
+    fn retry_terminal_sessions_are_distinct() {
+        assert_ne!(
+            workflow_terminal_session_id("run", "step", 1),
+            workflow_terminal_session_id("run", "step", 2)
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_delay_observes_workflow_cancellation() {
+        let inner = WorkflowEngineInner::default();
+        inner
+            .cancelled
+            .lock()
+            .expect("cancelled lock")
+            .insert("run-cancelled".into());
+        assert_eq!(
+            cancellable_sleep(&inner, "run-cancelled", Duration::from_secs(5)).await,
+            Err(CANCELLED.into())
+        );
     }
 
     #[test]

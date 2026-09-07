@@ -6,6 +6,7 @@ import {
   clipboardEntryTitle,
   filterClipboardEntries,
   isFavoriteEntry,
+  markdownFilename,
   resolveSelectedEntryId,
 } from "./clipboardPanelModel";
 
@@ -85,5 +86,13 @@ describe("clipboardPanelModel", () => {
 
   it("returns null when no entry is visible", () => {
     expect(resolveSelectedEntryId([], "missing")).toBeNull();
+  });
+
+  it("builds a safe markdown filename from the first meaningful line", () => {
+    expect(markdownFilename(textEntry("a", "\n# 发布计划: v2/测试\n正文"))).toBe("发布计划 v2 测试.md");
+  });
+
+  it("uses a fallback markdown filename for blank text", () => {
+    expect(markdownFilename(textEntry("a", " \n "))).toBe("clipboard-note.md");
   });
 });

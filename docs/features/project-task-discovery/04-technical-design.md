@@ -51,13 +51,13 @@ flowchart TB
 1. 前端请求 runme_task_command。
 2. Rust canonicalize 项目目录和任务文件，验证路径前缀、扩展名和任务名称。
 3. Rust 重新解析目标文件，确认任务仍存在。
-4. Rust 返回带安全 shell quoting 的命令：
+4. Rust 返回目标命名代码块中重新解析出的原始命令；项目终端本身已经在项目根目录启动：
 
 ~~~text
-cd '<project>' && runme run '<name>' --project '<project>' --filename '<file>'
+npm test
 ~~~
 
-5. 前端调用既有 terminal_run，由内置终端负责 PTY、输出、输入和退出显示。
+5. 前端将命令发送到项目终端，由 PTY 负责输出、输入和退出显示。
 
 ## 工作流链路
 

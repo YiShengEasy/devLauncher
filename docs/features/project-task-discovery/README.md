@@ -26,7 +26,7 @@
 - 优先调用 Runme `list --json`，只识别显式命名代码块，展示文件、行号、分类、风险和命令预览。
 - Runme CLI 不可用时，回退到本地 Markdown 解析，仍可发现显式 `name` 代码块。
 - 检测当前环境是否可调用 runme --version。
-- 对任务文件、任务名和项目路径进行后端校验，生成 runme run 命令并复用 DevLauncher 终端。
+- 对任务文件、任务名和项目路径进行后端校验，将代码块原始命令发送到 DevLauncher 项目终端。
 - 项目终端按项目保留运行会话；隐藏或重新打开项目工具、切换配置视图后会通过输出快照和增量事件恢复显示，只有点击“结束”才主动终止会话。
 - 将任务保存为普通 DevLauncher 工作流，后续可在工作流面板中配置条件、完成规则和键位绑定。
 - 记住最近一次项目目录；不把项目目录写入 DevLauncher 配置文件。
@@ -34,7 +34,7 @@
 
 ## 使用方式
 
-1. 安装 Runme CLI，并确保 runme 在 DevLauncher 启动环境的 PATH 中。
+1. 可选安装 Runme CLI，以增强任务发现准确性；未安装时使用本地 Markdown 解析。
 2. 在项目 Markdown 中使用命名代码块，例如：
 
 ~~~~markdown
@@ -51,5 +51,4 @@ npm test
 - 任务来源仍限定为显式命名的 Runme Markdown 代码块，不自动把 package.json、Makefile、Gradle 或匿名示例转成任务；AI 提示词可以指导编码助手核对这些来源后整理 TASKS.md。
 - 首版只直接执行 shell 类代码块；PowerShell、Python、JSON 等代码块会展示但不能执行。
 - 工作流保存的是经校验后的命令快照，尚未保存可跨机器迁移的项目引用。
-- 未检测到 Runme 时可以继续浏览和保存任务，但执行按钮会被禁用。
-- Windows 使用 Runme 时需遵循 Runme 官方对 WSL 和 shell 支持的说明。
+- 未检测到 Runme 时仍可发现并执行受支持的 shell 代码块。
