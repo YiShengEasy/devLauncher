@@ -140,6 +140,10 @@ manual runs. Scheduled workflows are visibly marked in the workflow list.
 - FR-053: Bind or unbind a workflow key.
 - FR-054: Run and cancel a workflow separately from configuration mutation in
   the desktop runtime. Exposing these controls through MCP is a later bridge.
+- FR-054A: The embedded terminal forwards keyboard input to its active PTY,
+  including the standard `Ctrl+C` control byte.
+- FR-054B: If a workflow finishes while a detached terminal process remains
+  active, the user can terminate and close that terminal independently.
 - FR-055: Return structured JSON results in addition to concise text.
 - FR-056: Mark tools with appropriate MCP annotations, while enforcing safety
   independently in server code.
@@ -160,10 +164,12 @@ manual runs. Scheduled workflows are visibly marked in the workflow list.
 2. Pressing the key invokes the workflow command rather than a raw action.
 3. A script step can wait for exit code or a later port-ready condition.
 4. Cancelling a run produces a cancelled terminal state.
-5. Codex can preview and apply the same workflow through MCP.
-6. MCP cannot save inline credentials or run a script as part of preview.
-7. Existing tests, frontend build, and Rust checks pass.
-8. A workflow can start at a daily local time and is visibly marked as
+5. An active workflow terminal accepts manual input and standard `Ctrl+C`.
+6. A terminal process left running after workflow completion can be closed.
+7. Codex can preview and apply the same workflow through MCP.
+8. MCP cannot save inline credentials or run a script as part of preview.
+9. Existing tests, frontend build, and Rust checks pass.
+10. A workflow can start at a daily local time and is visibly marked as
    “自启动” while its schedule is enabled.
 
 ## Exclusions

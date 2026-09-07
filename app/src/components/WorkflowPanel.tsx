@@ -29,7 +29,7 @@ import { BindingModal } from "@/components/BindingModal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ActionIcon } from "@/components/ActionIcon";
 import { MacWindowControls } from "@/components/MacWindowControls";
-import { planTerminalChunk } from "@/components/workflowTerminal";
+import { encodeTerminalInput, planTerminalChunk } from "@/components/workflowTerminal";
 import { useEscapeToClose } from "@/hooks/useEscapeToClose";
 import {
   AddIcon,
@@ -319,16 +319,49 @@ function decodeTerminalBytes(data: string): Uint8Array {
   return Uint8Array.from(atob(data), (char) => char.charCodeAt(0));
 }
 
-const WorkflowRunTerminal = forwardRef<WorkflowRunTerminalHandle, { run: WorkflowRun | null }>(
-function WorkflowRunTerminal({ run }, ref) {
+interface WorkflowRunTerminalProps {
+  onStopWorkflow: () => void;
+  run: WorkflowRun | null;
+  stoppingWorkflow: boolean;
+  workflowActive: boolean;
+}
+
+const WorkflowRunTerminal = forwardRef<WorkflowRunTerminalHandle, WorkflowRunTerminalProps>(
+function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowActive }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const sessionActiveRef = useRef(false);
   const seenStepIdsRef = useRef(new Set<string>());
   const seenAttemptsRef = useRef(new Map<string, number>());
   const seenExitSessionsRef = useRef(new Set<string>());
   const sessionOffsetsRef = useRef(new Map<string, number>());
+  const [sessionActive, setSessionActive] = useState(false);
+  const [closingSession, setClosingSession] = useState(false);
   const sessionId = workflowTerminalSession(run);
+
+  sessionIdRef.current = sessionId;
+
+  const updateSessionActive = (active: boolean) => {
+    sessionActiveRef.current = active;
+    setSessionActive(active);
+    if (!active) setClosingSession(false);
+  };
+
+  const closeTerminalSession = async () => {
+    const activeSessionId = sessionIdRef.current;
+    if (!activeSessionId || !sessionActiveRef.current || closingSession) return;
+    setClosingSession(true);
+    try {
+      await invoke("terminal_kill", { sessionId: activeSessionId });
+      updateSessionActive(false);
+      termRef.current?.focus();
+    } catch (error) {
+      setClosingSession(false);
+      termRef.current?.write(`\r\n\x1b[31m[关闭终端失败] ${String(error)}\x1b[0m\r\n`);
+    }
+  };
 
   useImperativeHandle(ref, () => ({
     getText: () => termRef.current ? terminalBufferText(termRef.current) : "",
@@ -358,7 +391,7 @@ function WorkflowRunTerminal({ run }, ref) {
         brightWhite: "#ffffff",
       },
       cursorBlink: false,
-      disableStdin: true,
+      disableStdin: false,
       allowTransparency: true,
       scrollback: 5000,
     });
@@ -372,6 +405,17 @@ function WorkflowRunTerminal({ run }, ref) {
     seenAttemptsRef.current.clear();
     seenExitSessionsRef.current.clear();
     sessionOffsetsRef.current.clear();
+    const inputSubscription = term.onData((data) => {
+      const activeSessionId = sessionIdRef.current;
+      if (!activeSessionId || !sessionActiveRef.current) return;
+      invoke("terminal_write", {
+        sessionId: activeSessionId,
+        data: encodeTerminalInput(data),
+      }).catch((error) => {
+        updateSessionActive(false);
+        term.write(`\r\n\x1b[31m[终端输入失败] ${String(error)}\x1b[0m\r\n`);
+      });
+    });
     if (run) {
       term.write(`\x1b[36m$ ${run.workflowName}\x1b[0m\r\n`);
       for (const [index, runStep] of run.steps.entries()) {
@@ -395,10 +439,13 @@ function WorkflowRunTerminal({ run }, ref) {
     };
     const ro = new ResizeObserver(resize);
     ro.observe(container);
-    window.setTimeout(resize, 0);
+    window.setTimeout(() => {
+      resize();
+    }, 0);
 
     return () => {
       ro.disconnect();
+      inputSubscription.dispose();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -427,6 +474,7 @@ function WorkflowRunTerminal({ run }, ref) {
 
   useEffect(() => {
     const term = termRef.current;
+    updateSessionActive(false);
     if (!term || !sessionId) return undefined;
     let disposed = false;
     let initialized = false;
@@ -437,6 +485,7 @@ function WorkflowRunTerminal({ run }, ref) {
     const markExited = () => {
       if (seenExitSessionsRef.current.has(sessionId)) return;
       seenExitSessionsRef.current.add(sessionId);
+      updateSessionActive(false);
       term.write("\r\n\x1b[90m[步骤进程已退出]\x1b[0m\r\n");
     };
     const appendChunk = (chunk: TerminalDataChunk) => {
@@ -467,7 +516,9 @@ function WorkflowRunTerminal({ run }, ref) {
           sessionId,
           Math.max(sessionOffsetsRef.current.get(sessionId) ?? 0, snapshot.offset),
         );
-        if (!snapshot.active) markExited();
+        updateSessionActive(snapshot.active);
+        if (snapshot.active) term.focus();
+        else markExited();
       } catch {
         if (attempt < 5 && !disposed) {
           await new Promise((resolve) => window.setTimeout(resolve, 40));
@@ -516,19 +567,102 @@ function WorkflowRunTerminal({ run }, ref) {
 
   return (
     <div
-      ref={containerRef}
       style={{
         width: "100%",
         height: "100%",
         minHeight: 0,
         boxSizing: "border-box",
-        padding: "7px 8px",
+        display: "flex",
+        flexDirection: "column",
         borderRadius: 7,
         border: "1px solid rgba(255,255,255,0.1)",
-        background: "rgba(0,0,0,0.2)",
+        background: "#100b12",
         overflow: "hidden",
       }}
-    />
+    >
+      <div
+        style={{
+          minHeight: 30,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          padding: "3px 7px 3px 10px",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.035)",
+        }}
+      >
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "rgba(226,232,244,0.56)", fontSize: 10, fontWeight: 700 }}>
+          <span
+            aria-hidden="true"
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: sessionActive ? "#60a5fa" : "rgba(255,255,255,0.25)",
+            }}
+          />
+          运行终端
+        </span>
+        {workflowActive ? (
+          <button
+            type="button"
+            onClick={onStopWorkflow}
+            disabled={stoppingWorkflow}
+            title="停止当前工作流"
+            style={{
+              height: 23,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "0 8px",
+              borderRadius: 5,
+              border: "1px solid rgba(248,113,113,0.35)",
+              background: "rgba(127,29,29,0.22)",
+              color: "rgba(254,202,202,0.92)",
+              fontSize: 9.5,
+              fontWeight: 750,
+              cursor: stoppingWorkflow ? "default" : "pointer",
+              opacity: stoppingWorkflow ? 0.62 : 1,
+            }}
+          >
+            {stoppingWorkflow ? "停止中" : "停止工作流"}
+          </button>
+        ) : sessionActive ? (
+          <button
+            type="button"
+            onClick={() => void closeTerminalSession()}
+            disabled={closingSession}
+            title="结束终端中仍在运行的程序并关闭此终端"
+            style={{
+              height: 23,
+              padding: "0 8px",
+              borderRadius: 5,
+              border: "1px solid rgba(248,113,113,0.35)",
+              background: "rgba(127,29,29,0.22)",
+              color: "rgba(254,202,202,0.92)",
+              fontSize: 9.5,
+              fontWeight: 750,
+              cursor: closingSession ? "default" : "pointer",
+              opacity: closingSession ? 0.62 : 1,
+            }}
+          >
+            {closingSession ? "关闭中" : "关闭终端"}
+          </button>
+        ) : null}
+      </div>
+      <div
+        ref={containerRef}
+        aria-label="工作流运行终端"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          boxSizing: "border-box",
+          padding: "7px 8px",
+          overflow: "hidden",
+        }}
+      />
+    </div>
   );
 });
 
@@ -562,6 +696,7 @@ export function WorkflowPanel({
   const [run, setRun] = useState<WorkflowRun | null>(initialRun ?? null);
   const [runPanelOpen, setRunPanelOpen] = useState(Boolean(initialRun));
   const [runLogCopied, setRunLogCopied] = useState(false);
+  const [stoppingRunId, setStoppingRunId] = useState<string | null>(null);
   const runsRef = useRef<WorkflowRun[]>(initialRun ? [initialRun] : []);
   const runTerminalRef = useRef<WorkflowRunTerminalHandle>(null);
   const [manualRequest, setManualRequest] = useState<{ runId: string; stepId: string; stepName: string } | null>(null);
@@ -906,6 +1041,19 @@ export function WorkflowPanel({
       setStatus("步骤已开始单独执行");
     } catch (error) {
       setStatus(String(error));
+    }
+  };
+
+  const stopWorkflowRun = async (runId: string) => {
+    if (stoppingRunId === runId) return;
+    setStoppingRunId(runId);
+    try {
+      await cancelWorkflowRun(runId);
+      setStatus("已发送停止请求");
+    } catch (error) {
+      setStatus(`停止工作流失败：${String(error)}`);
+    } finally {
+      setStoppingRunId(null);
     }
   };
 
@@ -1837,15 +1985,17 @@ export function WorkflowPanel({
                 {runLogCopied ? "已复制" : "复制日志"}
               </button>
             )}
-            {run && (run.status === "running" || run.status === "waiting") && (
+            {run && isRunActive(run) && !runPanelOpen && (
               <button
                 style={{ ...BUTTON, height: 28 }}
+                disabled={stoppingRunId === run.id}
                 onClick={(event) => {
                   event.stopPropagation();
-                  void cancelWorkflowRun(run.id);
+                  void stopWorkflowRun(run.id);
                 }}
+                title="停止当前工作流"
               >
-                停止
+                {stoppingRunId === run.id ? "停止中" : "停止工作流"}
               </button>
             )}
           </span>
@@ -1947,7 +2097,13 @@ export function WorkflowPanel({
                     );
                   })}
                 </div>
-                <WorkflowRunTerminal ref={runTerminalRef} run={run} />
+                <WorkflowRunTerminal
+                  ref={runTerminalRef}
+                  run={run}
+                  workflowActive={isRunActive(run)}
+                  stoppingWorkflow={stoppingRunId === run.id}
+                  onStopWorkflow={() => void stopWorkflowRun(run.id)}
+                />
               </>
             ) : (
               <div style={{ gridColumn: "1 / -1", padding: "8px", color: "rgba(255,255,255,0.34)" }}>

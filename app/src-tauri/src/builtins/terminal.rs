@@ -20,6 +20,7 @@ unsafe impl Sync for SendableMaster {}
 pub struct PtySession {
     writer: Box<dyn Write + Send>,
     master: SendableMaster,
+    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
 }
 
 pub struct TerminalState {
@@ -152,6 +153,7 @@ fn spawn_pty_process_in_dir(
     }
 
     let child = pair.slave.spawn_command(cb).map_err(|e| e.to_string())?;
+    let killer = child.clone_killer();
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let output = Arc::new(Mutex::new(Vec::new()));
@@ -164,6 +166,7 @@ fn spawn_pty_process_in_dir(
             PtySession {
                 writer,
                 master: SendableMaster(pair.master),
+                killer,
             },
         );
     }
@@ -335,7 +338,14 @@ pub fn terminal_kill(
     session_id: String,
     state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
-    state.sessions.lock().unwrap().remove(&session_id);
+    let session = state
+        .sessions
+        .lock()
+        .map_err(|_| "terminal session lock poisoned".to_string())?
+        .remove(&session_id);
+    if let Some(mut session) = session {
+        session.killer.kill().map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
