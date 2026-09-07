@@ -245,6 +245,12 @@ export interface WorkflowSchedule {
   dailyTime?: string;
 }
 
+export interface WorkflowConfigFile {
+  id: string;
+  name: string;
+  path: string;
+}
+
 export interface WorkflowDefinition {
   id: string;
   name: string;
@@ -252,6 +258,8 @@ export interface WorkflowDefinition {
   enabled: boolean;
   failurePolicy: WorkflowFailurePolicy;
   schedule?: WorkflowSchedule;
+  configFiles?: WorkflowConfigFile[];
+  defaultConfigId?: string;
   steps: WorkflowStep[];
   createdAt: string;
   updatedAt: string;
@@ -294,6 +302,8 @@ export interface WorkflowRun {
   startedAt: number;
   finishedAt?: number;
   projectId?: string;
+  configId?: string;
+  configName?: string;
   trigger: "manual" | "step" | "schedule";
   status: WorkflowRunStatus;
   currentStepId?: string;

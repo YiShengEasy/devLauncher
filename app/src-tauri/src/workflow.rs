@@ -3,7 +3,8 @@ use crate::builtins::terminal::TerminalState;
 use crate::config;
 use crate::platform::{current_platform, Platform};
 use crate::types::{
-    generate_id, Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowStep,
+    generate_id, Action, CompletionRule, StepCondition, WorkflowConfigFile, WorkflowDefinition,
+    WorkflowStep,
 };
 use crate::workflow_capabilities::{
     self, CapabilityExecutionResult, CapabilityReferenceContext, WorkflowCapabilityArtifact,
@@ -21,6 +22,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::net::TcpStream;
 
 const MAX_STEPS: usize = 64;
+const MAX_CONFIG_FILES: usize = 32;
 const MAX_SCRIPT_BYTES: usize = 32 * 1024;
 const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 120_000;
@@ -100,6 +102,10 @@ pub struct WorkflowRun {
     pub finished_at: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_name: Option<String>,
     pub trigger: WorkflowRunTrigger,
     pub status: WorkflowRunStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -295,6 +301,40 @@ pub fn validate_workflow_definition(workflow: &WorkflowDefinition) -> WorkflowVa
     if workflow.steps.len() > MAX_STEPS {
         errors.push(format!("workflow cannot exceed {MAX_STEPS} steps"));
     }
+    if workflow.config_files.len() > MAX_CONFIG_FILES {
+        errors.push(format!(
+            "workflow cannot exceed {MAX_CONFIG_FILES} config files"
+        ));
+    }
+    let mut config_ids = HashSet::new();
+    let mut config_paths = HashSet::new();
+    for config_file in &workflow.config_files {
+        if config_file.id.trim().is_empty() || !config_ids.insert(config_file.id.clone()) {
+            errors.push(format!(
+                "config file IDs must be non-empty and unique: {}",
+                config_file.id
+            ));
+        }
+        if config_file.name.trim().is_empty() || config_file.name.chars().count() > 80 {
+            errors.push(format!(
+                "config file name must contain 1 to 80 characters: {}",
+                config_file.id
+            ));
+        }
+        if config_file.path.trim().is_empty() || !config_paths.insert(config_file.path.clone()) {
+            errors.push(format!(
+                "config file paths must be non-empty and unique: {}",
+                config_file.id
+            ));
+        }
+    }
+    if let Some(default_config_id) = workflow.default_config_id.as_deref() {
+        if !config_ids.contains(default_config_id) {
+            errors.push("default config file does not exist in this workflow".into());
+        }
+    } else if !workflow.config_files.is_empty() {
+        errors.push("workflow config files require a default selection".into());
+    }
     if let Some(schedule) = workflow
         .schedule
         .as_ref()
@@ -352,6 +392,14 @@ pub fn validate_workflow_definition(workflow: &WorkflowDefinition) -> WorkflowVa
         }
         validate_action(&step.action, &mut errors);
         validate_completion(step, &mut errors, &mut warnings);
+    }
+    let uses_config_reference = workflow.steps.iter().any(|step| {
+        serde_json::to_string(step)
+            .map(|value| value.contains("${config."))
+            .unwrap_or(false)
+    });
+    if uses_config_reference && workflow.config_files.is_empty() {
+        errors.push("config references require at least one workflow config file".into());
     }
 
     WorkflowValidationReport {
@@ -765,6 +813,7 @@ async fn scheduler_tick(app: &AppHandle, inner: Arc<WorkflowEngineInner>) {
             inner.clone(),
             workflow,
             WorkflowRunTrigger::Schedule,
+            None,
         );
     }
 }
@@ -968,6 +1017,7 @@ pub(crate) fn execute_bound_action(app: &AppHandle, action: &Action) -> Result<(
             state.inner.clone(),
             workflow,
             WorkflowRunTrigger::Manual,
+            None,
         )?;
         return Ok(());
     }
@@ -1673,6 +1723,7 @@ async fn execute_workflow(
     inner: Arc<WorkflowEngineInner>,
     workflow: WorkflowDefinition,
     run_id: String,
+    selected_config: Option<WorkflowConfigFile>,
 ) {
     update_run(&app, &inner, &run_id, |run| {
         run.status = WorkflowRunStatus::Running;
@@ -1684,6 +1735,9 @@ async fn execute_workflow(
         run_id: run_id.clone(),
         workflow_id: workflow.id.clone(),
         workflow_name: workflow.name.clone(),
+        config_id: selected_config.as_ref().map(|config| config.id.clone()),
+        config_name: selected_config.as_ref().map(|config| config.name.clone()),
+        config_path: selected_config.as_ref().map(|config| config.path.clone()),
         step_outputs: HashMap::new(),
     };
     for step in &workflow.steps {
@@ -1980,6 +2034,117 @@ async fn execute_workflow(
     }
 }
 
+fn selected_workflow_config(
+    workflow: &WorkflowDefinition,
+    requested_config_id: Option<&str>,
+) -> Result<Option<WorkflowConfigFile>, String> {
+    if workflow.config_files.is_empty() {
+        return if requested_config_id.is_some() {
+            Err("workflow does not define config files".into())
+        } else {
+            Ok(None)
+        };
+    }
+
+    let selected_id = requested_config_id
+        .or(workflow.default_config_id.as_deref())
+        .ok_or_else(|| "workflow config files require a default selection".to_string())?;
+    let selected = workflow
+        .config_files
+        .iter()
+        .find(|config| config.id == selected_id)
+        .cloned()
+        .ok_or_else(|| "selected workflow config file was not found".to_string())?;
+    if !Path::new(&selected.path).is_file() {
+        return Err(format!("配置文件不存在：{}", selected.path));
+    }
+    Ok(Some(selected))
+}
+
+fn shell_quote(value: &str, shell: &str) -> String {
+    match shell {
+        "powershell" => format!("'{}'", value.replace('\'', "''")),
+        "cmd" | "bat" => format!("\"{}\"", value.replace('"', "\"\"")),
+        _ => format!("'{}'", value.replace('\'', "'\"'\"'")),
+    }
+}
+
+fn replace_config_tokens(
+    value: &str,
+    config: &WorkflowConfigFile,
+    quote_for: Option<&str>,
+) -> String {
+    let transform = |entry: &str| match quote_for {
+        Some(shell) => shell_quote(entry, shell),
+        None => entry.to_string(),
+    };
+    value
+        .replace("${config.id}", &transform(&config.id))
+        .replace("${config.name}", &transform(&config.name))
+        .replace("${config.path}", &transform(&config.path))
+}
+
+fn apply_workflow_config(workflow: &mut WorkflowDefinition, config: &WorkflowConfigFile) {
+    for step in &mut workflow.steps {
+        match &mut step.action {
+            Action::App { target, args, .. } => {
+                *target = replace_config_tokens(target, config, None);
+                if let Some(args) = args {
+                    for arg in args {
+                        *arg = replace_config_tokens(arg, config, None);
+                    }
+                }
+            }
+            Action::Folder {
+                target,
+                custom_opener,
+                custom_opener_args,
+                ..
+            } => {
+                *target = replace_config_tokens(target, config, None);
+                if let Some(opener) = custom_opener {
+                    *opener = replace_config_tokens(opener, config, None);
+                }
+                if let Some(args) = custom_opener_args {
+                    *args = replace_config_tokens(args, config, None);
+                }
+            }
+            Action::File { target, .. } | Action::Url { target, .. } => {
+                *target = replace_config_tokens(target, config, None);
+            }
+            Action::Ssh { identity, .. } => {
+                if let Some(identity) = identity {
+                    *identity = replace_config_tokens(identity, config, None);
+                }
+            }
+            Action::Script {
+                shell,
+                content,
+                file,
+                ..
+            } => {
+                if let Some(content) = content {
+                    *content = replace_config_tokens(content, config, Some(shell));
+                }
+                if let Some(file) = file {
+                    *file = replace_config_tokens(file, config, Some(shell));
+                }
+            }
+            _ => {}
+        }
+
+        match &mut step.condition {
+            StepCondition::PathExists { path } => {
+                *path = replace_config_tokens(path, config, None);
+            }
+            StepCondition::EnvEquals { value, .. } => {
+                *value = replace_config_tokens(value, config, None);
+            }
+            _ => {}
+        }
+    }
+}
+
 fn resolve_project_task_actions(
     app: &AppHandle,
     workflow: &mut WorkflowDefinition,
@@ -2034,6 +2199,7 @@ fn start_workflow_definition(
     inner: Arc<WorkflowEngineInner>,
     mut workflow: WorkflowDefinition,
     trigger: WorkflowRunTrigger,
+    requested_config_id: Option<String>,
 ) -> Result<WorkflowRun, String> {
     if !workflow.enabled {
         return Err("workflow is disabled".into());
@@ -2041,6 +2207,10 @@ fn start_workflow_definition(
     let report = validate_workflow_definition(&workflow);
     if !report.valid {
         return Err(report.errors.join("; "));
+    }
+    let selected_config = selected_workflow_config(&workflow, requested_config_id.as_deref())?;
+    if let Some(config) = &selected_config {
+        apply_workflow_config(&mut workflow, config);
     }
     let project_id = resolve_project_task_actions(&app, &mut workflow)?;
 
@@ -2069,6 +2239,8 @@ fn start_workflow_definition(
         started_at: unix_time_millis(),
         finished_at: None,
         project_id,
+        config_id: selected_config.as_ref().map(|config| config.id.clone()),
+        config_name: selected_config.as_ref().map(|config| config.name.clone()),
         trigger,
         status: WorkflowRunStatus::Pending,
         current_step_id: None,
@@ -2097,7 +2269,13 @@ fn start_workflow_definition(
     emit_run(&app, &inner, &run.id);
 
     let run_id = run.id.clone();
-    tauri::async_runtime::spawn(execute_workflow(app, inner, workflow, run_id));
+    tauri::async_runtime::spawn(execute_workflow(
+        app,
+        inner,
+        workflow,
+        run_id,
+        selected_config,
+    ));
     Ok(run)
 }
 
@@ -2105,6 +2283,7 @@ fn start_workflow_definition(
 pub async fn run_workflow(
     app: AppHandle,
     workflow_id: String,
+    config_id: Option<String>,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<WorkflowRun, String> {
     let config = config::load_config(app.clone())?;
@@ -2118,6 +2297,7 @@ pub async fn run_workflow(
         state.inner.clone(),
         workflow,
         WorkflowRunTrigger::Manual,
+        config_id,
     )
 }
 
@@ -2168,6 +2348,7 @@ pub async fn run_workflow_step(
     app: AppHandle,
     workflow_id: String,
     step_id: String,
+    config_id: Option<String>,
     state: tauri::State<'_, WorkflowEngineState>,
 ) -> Result<WorkflowRun, String> {
     let config = config::load_config(app.clone())?;
@@ -2178,7 +2359,13 @@ pub async fn run_workflow_step(
         .ok_or_else(|| "workflow not found".to_string())?;
     let workflow = standalone_step_workflow(workflow, &step_id)?;
 
-    start_workflow_definition(app, state.inner.clone(), workflow, WorkflowRunTrigger::Step)
+    start_workflow_definition(
+        app,
+        state.inner.clone(),
+        workflow,
+        WorkflowRunTrigger::Step,
+        config_id,
+    )
 }
 
 #[tauri::command]
@@ -2300,20 +2487,20 @@ pub fn confirm_workflow_step(
 #[cfg(test)]
 mod tests {
     use super::{
-        binding_workspace_size, cancellable_sleep, daily_schedule_due, evaluate_condition,
-        is_interaction_cancelled_error, next_daily_run_at, parse_daily_time, persisted_run,
-        process_output_tail, read_workflow_run_history_from_path, schedule_due,
-        script_command_spec, should_retry, standalone_step_workflow, unix_time_millis,
-        uses_managed_script_process, validate_workflow_definition, workflow_terminal_session_id,
-        workflow_workspace_size, write_workflow_run_history_to_path, WorkflowCapabilityArtifact,
-        WorkflowEngineInner, WorkflowRun, WorkflowRunHistory, WorkflowRunStatus,
-        WorkflowRunTrigger, WorkflowScheduleRuntime, WorkflowStepRun, WorkflowStepRunStatus,
-        CANCELLED, INTERACTION_CANCELLED, MAX_PROCESS_OUTPUT_CHARS, MAX_RETRY_DELAY_MS,
-        PROCESS_OUTPUT_OMISSION,
+        apply_workflow_config, binding_workspace_size, cancellable_sleep, daily_schedule_due,
+        evaluate_condition, is_interaction_cancelled_error, next_daily_run_at, parse_daily_time,
+        persisted_run, process_output_tail, read_workflow_run_history_from_path, schedule_due,
+        script_command_spec, selected_workflow_config, should_retry, standalone_step_workflow,
+        unix_time_millis, uses_managed_script_process, validate_workflow_definition,
+        workflow_terminal_session_id, workflow_workspace_size, write_workflow_run_history_to_path,
+        WorkflowCapabilityArtifact, WorkflowEngineInner, WorkflowRun, WorkflowRunHistory,
+        WorkflowRunStatus, WorkflowRunTrigger, WorkflowScheduleRuntime, WorkflowStepRun,
+        WorkflowStepRunStatus, CANCELLED, INTERACTION_CANCELLED, MAX_PROCESS_OUTPUT_CHARS,
+        MAX_RETRY_DELAY_MS, PROCESS_OUTPUT_OMISSION,
     };
     use crate::types::{
-        Action, CompletionRule, StepCondition, WorkflowDefinition, WorkflowRetryPolicy,
-        WorkflowSchedule, WorkflowStep,
+        Action, CompletionRule, StepCondition, WorkflowConfigFile, WorkflowDefinition,
+        WorkflowRetryPolicy, WorkflowSchedule, WorkflowStep,
     };
     use serde_json::{Map, Value};
     use std::collections::HashMap;
@@ -2327,6 +2514,8 @@ mod tests {
             enabled: true,
             failure_policy: "stop".into(),
             schedule: None,
+            config_files: Vec::new(),
+            default_config_id: None,
             steps: vec![WorkflowStep {
                 id: "step-1".into(),
                 name: "Echo".into(),
@@ -2387,6 +2576,106 @@ mod tests {
     }
 
     #[test]
+    fn requires_a_default_for_workflow_config_files() {
+        let mut workflow = script_workflow(CompletionRule::ProcessExit {
+            success_codes: vec![0],
+            timeout_ms: 5_000,
+        });
+        workflow.config_files = vec![WorkflowConfigFile {
+            id: "config-dev".into(),
+            name: "dev.yaml".into(),
+            path: "/tmp/dev.yaml".into(),
+        }];
+
+        let report = validate_workflow_definition(&workflow);
+        assert!(!report.valid);
+        assert!(report
+            .errors
+            .contains(&"workflow config files require a default selection".to_string()));
+    }
+
+    #[test]
+    fn selects_default_config_and_quotes_script_references() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let config_path = directory.path().join("development config.yaml");
+        std::fs::write(&config_path, "port: 3000\n").expect("config file");
+        let mut workflow = script_workflow(CompletionRule::ProcessExit {
+            success_codes: vec![0],
+            timeout_ms: 5_000,
+        });
+        workflow.config_files = vec![WorkflowConfigFile {
+            id: "config-dev".into(),
+            name: "development".into(),
+            path: config_path.to_string_lossy().into_owned(),
+        }];
+        workflow.default_config_id = Some("config-dev".into());
+        if let Action::Script { content, .. } = &mut workflow.steps[0].action {
+            *content = Some("server --config ${config.path}".into());
+        }
+
+        let selected = selected_workflow_config(&workflow, None)
+            .expect("select config")
+            .expect("selected config");
+        apply_workflow_config(&mut workflow, &selected);
+
+        let Action::Script { content, .. } = &workflow.steps[0].action else {
+            panic!("expected script action");
+        };
+        assert_eq!(
+            content.as_deref(),
+            Some(format!("server --config '{}'", config_path.to_string_lossy()).as_str())
+        );
+    }
+
+    #[test]
+    fn explicit_config_overrides_default_for_application_arguments() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let default_path = directory.path().join("default.yaml");
+        let selected_path = directory.path().join("selected config.yaml");
+        std::fs::write(&default_path, "mode: default\n").expect("default config");
+        std::fs::write(&selected_path, "mode: selected\n").expect("selected config");
+        let mut workflow = script_workflow(CompletionRule::ProcessStarted {
+            stabilization_ms: 100,
+            timeout_ms: 1_000,
+        });
+        workflow.config_files = vec![
+            WorkflowConfigFile {
+                id: "config-default".into(),
+                name: "default".into(),
+                path: default_path.to_string_lossy().into_owned(),
+            },
+            WorkflowConfigFile {
+                id: "config-selected".into(),
+                name: "selected".into(),
+                path: selected_path.to_string_lossy().into_owned(),
+            },
+        ];
+        workflow.default_config_id = Some("config-default".into());
+        workflow.steps[0].action = Action::App {
+            name: "Server".into(),
+            icon: None,
+            target: "/Applications/Server.app".into(),
+            args: Some(vec!["--config".into(), "${config.path}".into()]),
+        };
+
+        let selected = selected_workflow_config(&workflow, Some("config-selected"))
+            .expect("select config")
+            .expect("selected config");
+        apply_workflow_config(&mut workflow, &selected);
+
+        let Action::App { args, .. } = &workflow.steps[0].action else {
+            panic!("expected app action");
+        };
+        assert_eq!(
+            args.as_ref().expect("app args"),
+            &vec![
+                "--config".to_string(),
+                selected_path.to_string_lossy().into_owned(),
+            ]
+        );
+    }
+
+    #[test]
     fn run_history_persistence_removes_output_and_terminal_details() {
         let directory = tempfile::tempdir().expect("temp dir");
         let path = directory.path().join("history.json");
@@ -2397,6 +2686,8 @@ mod tests {
             started_at: 100,
             finished_at: Some(200),
             project_id: Some("project-1".into()),
+            config_id: None,
+            config_name: None,
             trigger: WorkflowRunTrigger::Manual,
             status: WorkflowRunStatus::Failed,
             current_step_id: Some("step-1".into()),

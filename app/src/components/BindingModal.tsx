@@ -114,6 +114,9 @@ export function BindingModal({
   // Form state for each type
   const [name, setName]       = useState(initialAction?.name ?? "");
   const [target, setTarget]   = useState((initialAction as AppAction | FolderAction | FileAction | UrlAction)?.target ?? "");
+  const [appArgsText, setAppArgsText] = useState(
+    initialAction?.type === "app" ? (initialAction.args ?? []).join("\n") : "",
+  );
   const initialUrlAction = initialAction?.type === "url" ? initialAction as UrlAction : null;
   const [webUsername, setWebUsername] = useState(initialUrlAction?.username ?? "");
   const [webPassword, setWebPassword] = useState("");
@@ -285,7 +288,18 @@ export function BindingModal({
           setSaveError("请选择或输入程序路径。");
           return;
         }
-        action = { type: "app", name: name || target.split(/[\\/]/).pop() || "App", target: target.trim() };
+        {
+          const args = appArgsText
+            .split("\n")
+            .map((value) => value.trim())
+            .filter(Boolean);
+          action = {
+            type: "app",
+            name: name || target.split(/[\\/]/).pop() || "App",
+            target: target.trim(),
+            ...(args.length ? { args } : {}),
+          };
+        }
         break;
       case "folder":
         if (!target.trim()) {
@@ -604,17 +618,28 @@ export function BindingModal({
 
           {/* App */}
           {(activeType === "app") && (
-            <Field label="程序路径 *">
-              <div style={{ display: "flex", gap: 6 }}>
-                <input
-                  style={{ ...INPUT_STYLE, flex: 1 }}
-                  placeholder={isMac ? "/Applications/App.app" : "C:\\Program Files\\...\\app.exe"}
-                  value={target}
-                  onChange={e => setTarget(e.target.value)}
+            <>
+              <Field label="程序路径 *">
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    style={{ ...INPUT_STYLE, flex: 1 }}
+                    placeholder={isMac ? "/Applications/App.app" : "C:\\Program Files\\...\\app.exe"}
+                    value={target}
+                    onChange={e => setTarget(e.target.value)}
+                  />
+                  <button style={BROWSE_BTN_STYLE} onClick={handleBrowseApp}>浏览</button>
+                </div>
+              </Field>
+              <Field label="启动参数（每行一个）">
+                <textarea
+                  style={{ ...INPUT_STYLE, minHeight: 76, resize: "vertical", fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace", fontSize: 11 }}
+                  placeholder={"--config\n${config.path}"}
+                  value={appArgsText}
+                  onChange={(event) => setAppArgsText(event.target.value)}
+                  spellCheck={false}
                 />
-                <button style={BROWSE_BTN_STYLE} onClick={handleBrowseApp}>浏览</button>
-              </div>
-            </Field>
+              </Field>
+            </>
           )}
 
           {/* Folder / File */}

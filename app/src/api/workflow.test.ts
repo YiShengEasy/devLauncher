@@ -61,6 +61,11 @@ describe("workflow helpers", () => {
 
     workflow.name = "自定义发布前检查";
     expect(matchingOfficialTemplateId(workflow)).toBeUndefined();
+
+    const configured = createWorkflowFromTemplate("release-preflight");
+    configured.configFiles = [{ id: "config-dev", name: "dev.yaml", path: "/project/dev.yaml" }];
+    configured.defaultConfigId = "config-dev";
+    expect(matchingOfficialTemplateId(configured)).toBeUndefined();
   });
 
   it("creates workflows from a template package", () => {

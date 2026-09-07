@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState }
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open as dialogOpen } from "@tauri-apps/plugin-dialog";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import type { CSSProperties, ReactNode } from "react";
@@ -17,6 +18,7 @@ import {
   runWorkflow,
   runWorkflowStep,
   validateWorkflow,
+  workflowId,
 } from "@/api/workflow";
 import { listWorkflowCapabilities } from "@/api/workflowCapabilities";
 import {
@@ -54,6 +56,7 @@ import type {
   ScriptAction,
   StepCondition,
   WorkflowDefinition,
+  WorkflowConfigFile,
   WorkflowCapabilityDescriptor,
   WorkflowRun,
   WorkflowStep,
@@ -253,6 +256,7 @@ function formatRunLog(run: WorkflowRun): string {
   const lines = [
     `工作流：${run.workflowName}`,
     `启动方式：${runTriggerLabel(run.trigger)}`,
+    ...(run.configName ? [`启动配置：${run.configName}`] : []),
     `状态：${runStatusLabel(run.status)}`,
     ...(summaryDetail ? [`详情：${summaryDetail}`] : []),
     "",
@@ -673,6 +677,11 @@ interface ConfirmRequest {
   onConfirm: () => void;
 }
 
+interface RunConfigRequest {
+  workflowId: string;
+  stepId?: string;
+}
+
 export function WorkflowPanel({
   config,
   onSaveConfig,
@@ -701,6 +710,8 @@ export function WorkflowPanel({
   const runTerminalRef = useRef<WorkflowRunTerminalHandle>(null);
   const [manualRequest, setManualRequest] = useState<{ runId: string; stepId: string; stepName: string } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
+  const [runConfigRequest, setRunConfigRequest] = useState<RunConfigRequest | null>(null);
+  const [runConfigSelection, setRunConfigSelection] = useState("");
   const [workflowQuery, setWorkflowQuery] = useState("");
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [monitorOpen, setMonitorOpen] = useState(false);
@@ -711,11 +722,26 @@ export function WorkflowPanel({
 
   useEscapeToClose(
     onClose,
-    !editingStep && !confirmRequest && !manualRequest,
+    !editingStep && !confirmRequest && !manualRequest && !runConfigRequest,
   );
+
+  useEffect(() => {
+    if (!runConfigRequest) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setRunConfigRequest(null);
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [runConfigRequest]);
 
   const workflow = workflows.find((item) => item.id === selectedWorkflowId) ?? null;
   const step = workflow?.steps.find((item) => item.id === selectedStepId) ?? null;
+  const runConfigWorkflow = runConfigRequest
+    ? workflows.find((item) => item.id === runConfigRequest.workflowId) ?? null
+    : null;
   const customWorkflows = useMemo(
     () => workflows.filter((item) => !matchingOfficialTemplateId(item)),
     [workflows],
@@ -843,6 +869,47 @@ export function WorkflowPanel({
 
   const updateStepAction = (action: Action) => {
     updateStep({ action, name: action.name });
+  };
+
+  const addWorkflowConfigFiles = async () => {
+    if (!workflow) return;
+    const selected = await dialogOpen({
+      multiple: true,
+      directory: false,
+      title: "选择工作流启动配置",
+    });
+    const paths = typeof selected === "string" ? [selected] : selected ?? [];
+    if (!paths.length) return;
+
+    const existingPaths = new Set((workflow.configFiles ?? []).map((item) => item.path));
+    const additions = paths
+      .filter((path) => !existingPaths.has(path))
+      .map<WorkflowConfigFile>((path) => ({
+        id: workflowId("step").replace("step-", "config-"),
+        name: path.split(/[\\/]/).pop() || "配置文件",
+        path,
+      }));
+    if (!additions.length) {
+      setStatus("选择的配置文件已经存在");
+      return;
+    }
+    const configFiles = [...(workflow.configFiles ?? []), ...additions];
+    updateWorkflow({
+      configFiles,
+      defaultConfigId: workflow.defaultConfigId ?? configFiles[0].id,
+    });
+    setStatus(`已加入 ${additions.length} 个启动配置`);
+  };
+
+  const removeWorkflowConfigFile = (configId: string) => {
+    if (!workflow) return;
+    const configFiles = (workflow.configFiles ?? []).filter((item) => item.id !== configId);
+    updateWorkflow({
+      configFiles,
+      defaultConfigId: workflow.defaultConfigId === configId
+        ? configFiles[0]?.id
+        : workflow.defaultConfigId,
+    });
   };
 
   const persist = async (
@@ -1012,10 +1079,10 @@ export function WorkflowPanel({
     });
   };
 
-  const startWorkflowRun = async (workflowId: string) => {
+  const startWorkflowRun = async (workflowId: string, configId?: string) => {
     try {
       if (dirty && !await persist()) return;
-      const started = await runWorkflow(workflowId);
+      const started = await runWorkflow(workflowId, configId);
       rememberRun(started);
       setRun(started);
       setRunPanelOpen(true);
@@ -1027,14 +1094,24 @@ export function WorkflowPanel({
 
   const startRun = async () => {
     if (!workflow) return;
+    if ((workflow.configFiles ?? []).length) {
+      setRunConfigSelection(workflow.defaultConfigId ?? workflow.configFiles?.[0]?.id ?? "");
+      setRunConfigRequest({ workflowId: workflow.id });
+      return;
+    }
     await startWorkflowRun(workflow.id);
   };
 
-  const startStepRun = async (stepId: string) => {
+  const startStepRun = async (stepId: string, configId?: string) => {
     if (!workflow) return;
+    if (!configId && (workflow.configFiles ?? []).length) {
+      setRunConfigSelection(workflow.defaultConfigId ?? workflow.configFiles?.[0]?.id ?? "");
+      setRunConfigRequest({ workflowId: workflow.id, stepId });
+      return;
+    }
     try {
       if (dirty && !await persist()) return;
-      const started = await runWorkflowStep(workflow.id, stepId);
+      const started = await runWorkflowStep(workflow.id, stepId, configId);
       rememberRun(started);
       setRun(started);
       setRunPanelOpen(true);
@@ -1474,6 +1551,71 @@ export function WorkflowPanel({
                   </div>
                 )}
               </div>
+
+              <section style={{ marginBottom: 16, borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <strong style={{ fontSize: 11 }}>启动配置</strong>
+                  <span style={{ color: "rgba(255,255,255,0.34)", fontSize: 9 }}>
+                    {(workflow.configFiles ?? []).length} 个文件
+                  </span>
+                  <code style={{ marginLeft: "auto", color: "rgba(94,234,212,0.68)", fontSize: 9 }}>
+                    {"${config.path}"}
+                  </code>
+                  <button type="button" style={BUTTON} onClick={() => void addWorkflowConfigFiles()}>
+                    <AddIcon size={13} decorative />
+                    选择文件
+                  </button>
+                </div>
+                {(workflow.configFiles ?? []).length > 0 && (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    {(workflow.configFiles ?? []).map((configFile) => {
+                      const isDefault = workflow.defaultConfigId === configFile.id;
+                      return (
+                        <div
+                          key={configFile.id}
+                          style={{
+                            minHeight: 42,
+                            display: "grid",
+                            gridTemplateColumns: "20px minmax(0,1fr) 30px",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "5px 7px 5px 10px",
+                            border: `1px solid ${isDefault ? "rgba(45,212,191,0.34)" : "rgba(255,255,255,0.09)"}`,
+                            borderRadius: 7,
+                            background: isDefault ? "rgba(13,148,136,0.08)" : "rgba(255,255,255,0.025)",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name={`workflow-default-config-${workflow.id}`}
+                            checked={isDefault}
+                            onChange={() => updateWorkflow({ defaultConfigId: configFile.id })}
+                            aria-label={`将 ${configFile.name} 设为默认启动配置`}
+                            title="设为默认配置"
+                          />
+                          <div style={{ minWidth: 0 }}>
+                            <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10.5 }}>
+                              {configFile.name}{isDefault ? " · 默认" : ""}
+                            </strong>
+                            <span title={configFile.path} style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.36)", fontSize: 8.5 }}>
+                              {configFile.path}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            style={{ ...ICON_BUTTON, height: 28 }}
+                            onClick={() => removeWorkflowConfigFile(configFile.id)}
+                            title={`移除 ${configFile.name}`}
+                            aria-label={`移除 ${configFile.name}`}
+                          >
+                            <DeleteIcon size={12} decorative />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
 
               <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
                 <strong style={{ fontSize: 11 }}>执行步骤</strong>
@@ -2124,6 +2266,103 @@ export function WorkflowPanel({
           onClose={() => setEditingStep(null)}
           onSave={saveStepAction}
         />
+      )}
+      {runConfigRequest && runConfigWorkflow && (
+        <div
+          className="theme-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setRunConfigRequest(null);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 3000,
+            display: "grid",
+            placeItems: "center",
+            padding: 20,
+            background: "rgba(3,7,18,0.58)",
+          }}
+        >
+          <section
+            className="theme-dialog-surface"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="workflow-run-config-title"
+            style={{
+              width: 460,
+              maxWidth: "calc(100vw - 32px)",
+              maxHeight: "calc(100vh - 40px)",
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: 12,
+              overflow: "hidden",
+              background: "var(--theme-bg, rgba(16,22,34,0.98))",
+            }}
+          >
+            <header style={{ minHeight: 50, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ minWidth: 0 }}>
+                <strong id="workflow-run-config-title" style={{ display: "block", fontSize: 13 }}>选择本次启动配置</strong>
+                <span style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 9 }}>
+                  {runConfigWorkflow.name}
+                </span>
+              </div>
+            </header>
+            <div style={{ minHeight: 0, display: "grid", gap: 7, padding: 14, overflow: "auto" }}>
+              {(runConfigWorkflow.configFiles ?? []).map((configFile) => (
+                <label
+                  key={configFile.id}
+                  style={{
+                    minHeight: 50,
+                    display: "grid",
+                    gridTemplateColumns: "22px minmax(0,1fr)",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "7px 10px",
+                    border: `1px solid ${runConfigSelection === configFile.id ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.1)"}`,
+                    borderRadius: 7,
+                    background: runConfigSelection === configFile.id ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.025)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="workflow-run-config"
+                    value={configFile.id}
+                    checked={runConfigSelection === configFile.id}
+                    onChange={() => setRunConfigSelection(configFile.id)}
+                  />
+                  <span style={{ minWidth: 0 }}>
+                    <strong style={{ display: "block", fontSize: 11 }}>{configFile.name}</strong>
+                    <span title={configFile.path} style={{ display: "block", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 9 }}>
+                      {configFile.path}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <button type="button" style={BUTTON} onClick={() => setRunConfigRequest(null)}>取消</button>
+              <button
+                type="button"
+                style={{ ...BUTTON, background: "rgba(37,99,235,0.82)", borderColor: "rgba(96,165,250,0.55)", color: "white" }}
+                disabled={!runConfigSelection}
+                onClick={() => {
+                  const request = runConfigRequest;
+                  const configId = runConfigSelection;
+                  setRunConfigRequest(null);
+                  if (request.stepId) {
+                    void startStepRun(request.stepId, configId);
+                  } else {
+                    void startWorkflowRun(request.workflowId, configId);
+                  }
+                }}
+              >
+                使用此配置运行
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
       {confirmRequest && (
         <ConfirmDialog

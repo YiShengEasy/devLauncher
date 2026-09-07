@@ -89,12 +89,12 @@ export function validateWorkflow(workflow: WorkflowDefinition): Promise<Workflow
   return invoke("validate_workflow", { workflow });
 }
 
-export function runWorkflow(workflowId: string): Promise<WorkflowRun> {
-  return invoke("run_workflow", { workflowId });
+export function runWorkflow(workflowId: string, configId?: string): Promise<WorkflowRun> {
+  return invoke("run_workflow", { workflowId, configId });
 }
 
-export function runWorkflowStep(workflowId: string, stepId: string): Promise<WorkflowRun> {
-  return invoke("run_workflow_step", { workflowId, stepId });
+export function runWorkflowStep(workflowId: string, stepId: string, configId?: string): Promise<WorkflowRun> {
+  return invoke("run_workflow_step", { workflowId, stepId, configId });
 }
 
 export function listWorkflowRuns(): Promise<WorkflowRun[]> {

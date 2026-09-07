@@ -299,6 +299,8 @@ export function matchingOfficialTemplateId(workflow: WorkflowDefinition): string
     && workflow.description === template.description
     && workflow.enabled
     && workflow.failurePolicy === template.failurePolicy
+    && !(workflow.configFiles?.length)
+    && !workflow.defaultConfigId
     && workflow.steps.length === template.steps.length
     && workflow.steps.every((step, index) => {
       const templateStep = template.steps[index];

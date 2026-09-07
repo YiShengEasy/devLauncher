@@ -57,6 +57,9 @@ pub struct CapabilityReferenceContext {
     pub run_id: String,
     pub workflow_id: String,
     pub workflow_name: String,
+    pub config_id: Option<String>,
+    pub config_name: Option<String>,
+    pub config_path: Option<String>,
     pub step_outputs: HashMap<String, Map<String, Value>>,
 }
 
@@ -527,6 +530,9 @@ fn lookup_reference(reference: &str, context: &CapabilityReferenceContext) -> Op
         "workflow.id" => Some(Value::String(context.workflow_id.clone())),
         "workflow.name" => Some(Value::String(context.workflow_name.clone())),
         "run.id" => Some(Value::String(context.run_id.clone())),
+        "config.id" => context.config_id.clone().map(Value::String),
+        "config.name" => context.config_name.clone().map(Value::String),
+        "config.path" => context.config_path.clone().map(Value::String),
         _ => {
             let value = reference.strip_prefix("steps.")?;
             let (step_id, field) = value.rsplit_once(".outputs.")?;
@@ -994,6 +1000,12 @@ mod tests {
         assert_eq!(
             resolve_string("结果：${steps.step-1.outputs.text}", &context).unwrap(),
             Value::String("结果：完成".into())
+        );
+
+        context.config_path = Some("/tmp/dev config.yaml".into());
+        assert_eq!(
+            resolve_string("${config.path}", &context).unwrap(),
+            Value::String("/tmp/dev config.yaml".into())
         );
 
         context.step_outputs.insert(

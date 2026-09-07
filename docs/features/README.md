@@ -47,4 +47,5 @@ stable when a file exists.
 ## Active Features
 
 - [Workflow Capability Engine](workflow-capability-engine/README.md)
+- [Workflow Launch Configs](workflow-launch-configs/README.md)
 - [Project Task Arguments](project-task-arguments/01-requirements.md)

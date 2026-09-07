@@ -298,6 +298,14 @@ pub struct WorkflowSchedule {
     pub daily_time: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowConfigFile {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+}
+
 fn default_schedule_mode() -> String {
     "interval".into()
 }
@@ -323,6 +331,10 @@ pub struct WorkflowDefinition {
     pub failure_policy: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<WorkflowSchedule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config_files: Vec<WorkflowConfigFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_config_id: Option<String>,
     #[serde(default)]
     pub steps: Vec<WorkflowStep>,
     #[serde(default)]
@@ -560,5 +572,30 @@ workflows:
         let saved = serde_yaml::to_string(&config).expect("workflow config should save");
         assert!(saved.contains("maxAttempts: 3"));
         assert!(saved.contains("delayMs: 1500"));
+    }
+
+    #[test]
+    fn preserves_workflow_launch_config_selection() {
+        let yaml = r#"
+pages: []
+workflows:
+  - id: workflow-config
+    name: Configurable
+    defaultConfigId: config-dev
+    configFiles:
+      - id: config-dev
+        name: dev.yaml
+        path: /project/dev.yaml
+    steps: []
+"#;
+
+        let config: KeyboardConfig = serde_yaml::from_str(yaml).expect("workflow config");
+        let workflow = &config.workflows[0];
+        assert_eq!(workflow.default_config_id.as_deref(), Some("config-dev"));
+        assert_eq!(workflow.config_files[0].path, "/project/dev.yaml");
+
+        let saved = serde_yaml::to_string(&config).expect("workflow config should save");
+        assert!(saved.contains("defaultConfigId: config-dev"));
+        assert!(saved.contains("path: /project/dev.yaml"));
     }
 }
