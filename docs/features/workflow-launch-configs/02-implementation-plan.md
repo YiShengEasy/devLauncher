@@ -5,7 +5,9 @@
 - [x] Add runtime selection to complete-workflow and single-step commands.
 - [x] Resolve config references for application arguments, scripts, supported action paths, conditions, and capability inputs.
 - [x] Add workflow editor controls for adding, removing, and choosing the default file.
-- [x] Add a run-time selector with the default preselected.
+- [x] Add bounded recursive directory discovery with ignored build/dependency directories and no symlink traversal.
+- [x] Add an in-app single-file chooser with relative paths, search, and extension filtering.
+- [x] Run whole workflows and single steps directly with the saved default config.
 - [x] Preserve application launch arguments in the binding editor.
 - [x] Run frontend tests and production build.
 - [x] Run Rust tests and all-target checks.

@@ -14,11 +14,13 @@ import {
   createWorkflow,
   createWorkflowStep,
   defaultCompletionForAction,
+  discoverWorkflowConfigFiles,
   listWorkflowRuns,
   runWorkflow,
   runWorkflowStep,
   validateWorkflow,
   workflowId,
+  type WorkflowConfigDiscovery,
 } from "@/api/workflow";
 import { listWorkflowCapabilities } from "@/api/workflowCapabilities";
 import {
@@ -342,10 +344,16 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
   const seenExitSessionsRef = useRef(new Set<string>());
   const sessionOffsetsRef = useRef(new Map<string, number>());
   const [sessionActive, setSessionActive] = useState(false);
+  const [activeSessions, setActiveSessions] = useState<Record<string, boolean>>({});
+  const [inputSession, setInputSession] = useState<string | null>(null);
+  const sessionKey = JSON.stringify([...new Set(run?.steps.flatMap((step) => step.terminalSessionId ? [step.terminalSessionId] : []) ?? [])]);
   const [closingSession, setClosingSession] = useState(false);
-  const sessionId = workflowTerminalSession(run);
+  const sessionId = inputSession && activeSessions[inputSession]
+    ? inputSession
+    : [...(JSON.parse(sessionKey) as string[])].reverse().find((id) => activeSessions[id]) ?? workflowTerminalSession(run);
 
   sessionIdRef.current = sessionId;
+  sessionActiveRef.current = Boolean(sessionId && activeSessions[sessionId]);
 
   const updateSessionActive = (active: boolean) => {
     sessionActiveRef.current = active;
@@ -354,16 +362,16 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
   };
 
   const closeTerminalSession = async () => {
-    const activeSessionId = sessionIdRef.current;
-    if (!activeSessionId || !sessionActiveRef.current || closingSession) return;
+    if (closingSession) return;
     setClosingSession(true);
     try {
-      await invoke("terminal_kill", { sessionId: activeSessionId });
-      updateSessionActive(false);
+      await cancelWorkflowRun(run!.id);
       termRef.current?.focus();
     } catch (error) {
       setClosingSession(false);
       termRef.current?.write(`\r\n\x1b[31m[关闭终端失败] ${String(error)}\x1b[0m\r\n`);
+    } finally {
+      setClosingSession(false);
     }
   };
 
@@ -409,6 +417,8 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
     seenAttemptsRef.current.clear();
     seenExitSessionsRef.current.clear();
     sessionOffsetsRef.current.clear();
+    setActiveSessions({});
+    setInputSession(null);
     const inputSubscription = term.onData((data) => {
       const activeSessionId = sessionIdRef.current;
       if (!activeSessionId || !sessionActiveRef.current) return;
@@ -431,7 +441,7 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
         seenStepIdsRef.current.add(runStep.stepId);
         term.write(`\r\n\x1b[90m$ step ${String(index + 1).padStart(2, "0")} · ${runStep.name}\x1b[0m\r\n`);
         const output = cleanTerminalText(
-          runStep.terminalSessionId === sessionId
+          runStep.terminalSessionId
             ? runStep.message || ""
             : runStep.output || runStep.message || "",
         );
@@ -478,19 +488,24 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
 
   useEffect(() => {
     const term = termRef.current;
-    updateSessionActive(false);
-    if (!term || !sessionId) return undefined;
+    if (!term) return undefined;
+    const cleanups = (JSON.parse(sessionKey) as string[]).map((sessionId) => {
     let disposed = false;
     let initialized = false;
     let syncing = false;
     const pending: TerminalDataChunk[] = [];
     const disposers: Array<() => void> = [];
+    const stepName = run?.steps.find((step) => step.terminalSessionId === sessionId)?.name ?? sessionId;
+    const setActive = (active: boolean) => {
+      if (!disposed) setActiveSessions((previous) => ({ ...previous, [sessionId]: active }));
+    };
 
     const markExited = () => {
+      if (disposed) return;
+      setActive(false);
       if (seenExitSessionsRef.current.has(sessionId)) return;
       seenExitSessionsRef.current.add(sessionId);
-      updateSessionActive(false);
-      term.write("\r\n\x1b[90m[步骤进程已退出]\x1b[0m\r\n");
+      term.write(`\r\n\x1b[90m[${stepName} · 进程已退出]\x1b[0m\r\n`);
     };
     const appendChunk = (chunk: TerminalDataChunk) => {
       const bytes = decodeTerminalBytes(chunk.data);
@@ -501,6 +516,7 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
         void syncSnapshot();
         return;
       }
+      if (disposed) return;
       if (plan.skipBytes < bytes.length) term.write(bytes.slice(plan.skipBytes));
       sessionOffsetsRef.current.set(sessionId, plan.nextOffset);
     };
@@ -520,9 +536,8 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
           sessionId,
           Math.max(sessionOffsetsRef.current.get(sessionId) ?? 0, snapshot.offset),
         );
-        updateSessionActive(snapshot.active);
-        if (snapshot.active) term.focus();
-        else markExited();
+        setActive(snapshot.active);
+        if (!snapshot.active) markExited();
       } catch {
         if (attempt < 5 && !disposed) {
           await new Promise((resolve) => window.setTimeout(resolve, 40));
@@ -560,7 +575,13 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
       disposed = true;
       disposers.forEach((dispose) => dispose());
     };
-  }, [sessionId, run?.id]);
+    });
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [sessionKey, run?.id]);
+
+  useEffect(() => {
+    setSessionActive(Object.values(activeSessions).some(Boolean));
+  }, [activeSessions]);
 
   useEffect(() => {
     const term = termRef.current;
@@ -608,6 +629,18 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
           />
           运行终端
         </span>
+        <select
+          aria-label="终端输入目标"
+          value={sessionId ?? ""}
+          onChange={(event) => { setInputSession(event.target.value); termRef.current?.focus(); }}
+          style={{ ...INPUT, width: "auto", maxWidth: 220, fontSize: 10 }}
+          disabled={!sessionActive}
+        >
+          {!sessionActive && <option value={sessionId ?? ""}>无运行中的终端</option>}
+          {run?.steps.filter((step) => step.terminalSessionId && activeSessions[step.terminalSessionId]).map((step) => (
+            <option key={step.stepId} value={step.terminalSessionId!}>{step.name}</option>
+          ))}
+        </select>
         {workflowActive ? (
           <button
             type="button"
@@ -637,7 +670,7 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
             type="button"
             onClick={() => void closeTerminalSession()}
             disabled={closingSession}
-            title="结束终端中仍在运行的程序并关闭此终端"
+            title="关闭本次工作流的全部终端"
             style={{
               height: 23,
               padding: "0 8px",
@@ -651,7 +684,7 @@ function WorkflowRunTerminal({ onStopWorkflow, run, stoppingWorkflow, workflowAc
               opacity: closingSession ? 0.62 : 1,
             }}
           >
-            {closingSession ? "关闭中" : "关闭终端"}
+            {closingSession ? "关闭中" : "关闭全部终端"}
           </button>
         ) : null}
       </div>
@@ -675,11 +708,6 @@ interface ConfirmRequest {
   message: string;
   confirmLabel: string;
   onConfirm: () => void;
-}
-
-interface RunConfigRequest {
-  workflowId: string;
-  stepId?: string;
 }
 
 export function WorkflowPanel({
@@ -710,8 +738,10 @@ export function WorkflowPanel({
   const runTerminalRef = useRef<WorkflowRunTerminalHandle>(null);
   const [manualRequest, setManualRequest] = useState<{ runId: string; stepId: string; stepName: string } | null>(null);
   const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null);
-  const [runConfigRequest, setRunConfigRequest] = useState<RunConfigRequest | null>(null);
-  const [runConfigSelection, setRunConfigSelection] = useState("");
+  const [configDiscovery, setConfigDiscovery] = useState<WorkflowConfigDiscovery | null>(null);
+  const [configDiscoverySelection, setConfigDiscoverySelection] = useState("");
+  const [configDiscoveryQuery, setConfigDiscoveryQuery] = useState("");
+  const [configDiscoveryExtension, setConfigDiscoveryExtension] = useState("all");
   const [workflowQuery, setWorkflowQuery] = useState("");
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [monitorOpen, setMonitorOpen] = useState(false);
@@ -722,26 +752,39 @@ export function WorkflowPanel({
 
   useEscapeToClose(
     onClose,
-    !editingStep && !confirmRequest && !manualRequest && !runConfigRequest,
+    !editingStep && !confirmRequest && !manualRequest && !configDiscovery,
   );
 
   useEffect(() => {
-    if (!runConfigRequest) return undefined;
+    if (!configDiscovery) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
-      setRunConfigRequest(null);
+      setConfigDiscovery(null);
     };
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [runConfigRequest]);
+  }, [configDiscovery]);
 
   const workflow = workflows.find((item) => item.id === selectedWorkflowId) ?? null;
   const step = workflow?.steps.find((item) => item.id === selectedStepId) ?? null;
-  const runConfigWorkflow = runConfigRequest
-    ? workflows.find((item) => item.id === runConfigRequest.workflowId) ?? null
-    : null;
+  const configDiscoveryExtensions = useMemo(
+    () => [...new Set(configDiscovery?.files.map((item) => item.extension) ?? [])].sort(),
+    [configDiscovery],
+  );
+  const visibleConfigCandidates = useMemo(() => {
+    const query = configDiscoveryQuery.trim().toLocaleLowerCase();
+    return (configDiscovery?.files ?? []).filter((item) => (
+      (configDiscoveryExtension === "all" || item.extension === configDiscoveryExtension)
+      && (!query || item.relativePath.toLocaleLowerCase().includes(query))
+    ));
+  }, [configDiscovery, configDiscoveryExtension, configDiscoveryQuery]);
+  useEffect(() => {
+    if (!configDiscovery) return;
+    if (visibleConfigCandidates.some((item) => item.path === configDiscoverySelection)) return;
+    setConfigDiscoverySelection(visibleConfigCandidates[0]?.path ?? "");
+  }, [configDiscovery, configDiscoverySelection, visibleConfigCandidates]);
   const customWorkflows = useMemo(
     () => workflows.filter((item) => !matchingOfficialTemplateId(item)),
     [workflows],
@@ -871,34 +914,59 @@ export function WorkflowPanel({
     updateStep({ action, name: action.name });
   };
 
-  const addWorkflowConfigFiles = async () => {
+  const openWorkflowConfigDirectory = async () => {
     if (!workflow) return;
     const selected = await dialogOpen({
-      multiple: true,
-      directory: false,
-      title: "选择工作流启动配置",
+      multiple: false,
+      directory: true,
+      title: "选择配置目录",
     });
-    const paths = typeof selected === "string" ? [selected] : selected ?? [];
-    if (!paths.length) return;
+    if (typeof selected !== "string") return;
+    setStatus("正在扫描配置目录…");
+    try {
+      const discovery = await discoverWorkflowConfigFiles(selected);
+      if (!discovery.files.length) {
+        setStatus("目录中没有发现支持的配置文件");
+        return;
+      }
+      setConfigDiscovery(discovery);
+      setConfigDiscoverySelection(discovery.files[0].path);
+      setConfigDiscoveryQuery("");
+      setConfigDiscoveryExtension("all");
+      setStatus(discovery.truncated
+        ? `已显示前 ${discovery.files.length} 个配置文件`
+        : `发现 ${discovery.files.length} 个配置文件`);
+    } catch (error) {
+      setStatus(String(error));
+    }
+  };
 
-    const existingPaths = new Set((workflow.configFiles ?? []).map((item) => item.path));
-    const additions = paths
-      .filter((path) => !existingPaths.has(path))
-      .map<WorkflowConfigFile>((path) => ({
-        id: workflowId("step").replace("step-", "config-"),
-        name: path.split(/[\\/]/).pop() || "配置文件",
-        path,
-      }));
-    if (!additions.length) {
-      setStatus("选择的配置文件已经存在");
+  const addDiscoveredWorkflowConfig = () => {
+    if (!workflow || !configDiscovery) return;
+    const candidate = configDiscovery.files.find((item) => item.path === configDiscoverySelection);
+    if (!candidate) {
+      setStatus("请先选择一个配置文件");
       return;
     }
-    const configFiles = [...(workflow.configFiles ?? []), ...additions];
+    const existing = (workflow.configFiles ?? []).find((item) => item.path === candidate.path);
+    if (existing) {
+      updateWorkflow({ defaultConfigId: existing.id });
+      setConfigDiscovery(null);
+      setStatus(`已将 ${existing.name} 设为默认启动配置`);
+      return;
+    }
+    const addition: WorkflowConfigFile = {
+      id: workflowId("config"),
+      name: candidate.name,
+      path: candidate.path,
+    };
+    const configFiles = [...(workflow.configFiles ?? []), addition];
     updateWorkflow({
       configFiles,
-      defaultConfigId: workflow.defaultConfigId ?? configFiles[0].id,
+      defaultConfigId: workflow.defaultConfigId ?? addition.id,
     });
-    setStatus(`已加入 ${additions.length} 个启动配置`);
+    setConfigDiscovery(null);
+    setStatus(`已加入启动配置：${candidate.relativePath}`);
   };
 
   const removeWorkflowConfigFile = (configId: string) => {
@@ -1079,10 +1147,10 @@ export function WorkflowPanel({
     });
   };
 
-  const startWorkflowRun = async (workflowId: string, configId?: string) => {
+  const startWorkflowRun = async (workflowId: string) => {
     try {
       if (dirty && !await persist()) return;
-      const started = await runWorkflow(workflowId, configId);
+      const started = await runWorkflow(workflowId);
       rememberRun(started);
       setRun(started);
       setRunPanelOpen(true);
@@ -1094,24 +1162,14 @@ export function WorkflowPanel({
 
   const startRun = async () => {
     if (!workflow) return;
-    if ((workflow.configFiles ?? []).length) {
-      setRunConfigSelection(workflow.defaultConfigId ?? workflow.configFiles?.[0]?.id ?? "");
-      setRunConfigRequest({ workflowId: workflow.id });
-      return;
-    }
     await startWorkflowRun(workflow.id);
   };
 
-  const startStepRun = async (stepId: string, configId?: string) => {
+  const startStepRun = async (stepId: string) => {
     if (!workflow) return;
-    if (!configId && (workflow.configFiles ?? []).length) {
-      setRunConfigSelection(workflow.defaultConfigId ?? workflow.configFiles?.[0]?.id ?? "");
-      setRunConfigRequest({ workflowId: workflow.id, stepId });
-      return;
-    }
     try {
       if (dirty && !await persist()) return;
-      const started = await runWorkflowStep(workflow.id, stepId, configId);
+      const started = await runWorkflowStep(workflow.id, stepId);
       rememberRun(started);
       setRun(started);
       setRunPanelOpen(true);
@@ -1561,9 +1619,9 @@ export function WorkflowPanel({
                   <code style={{ marginLeft: "auto", color: "rgba(94,234,212,0.68)", fontSize: 9 }}>
                     {"${config.path}"}
                   </code>
-                  <button type="button" style={BUTTON} onClick={() => void addWorkflowConfigFiles()}>
+                  <button type="button" style={BUTTON} onClick={() => void openWorkflowConfigDirectory()}>
                     <AddIcon size={13} decorative />
-                    选择文件
+                    选择配置目录
                   </button>
                 </div>
                 {(workflow.configFiles ?? []).length > 0 && (
@@ -2267,12 +2325,12 @@ export function WorkflowPanel({
           onSave={saveStepAction}
         />
       )}
-      {runConfigRequest && runConfigWorkflow && (
+      {configDiscovery && (
         <div
           className="theme-modal-backdrop"
           role="presentation"
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setRunConfigRequest(null);
+            if (event.target === event.currentTarget) setConfigDiscovery(null);
           }}
           style={{
             position: "fixed",
@@ -2288,11 +2346,11 @@ export function WorkflowPanel({
             className="theme-dialog-surface"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="workflow-run-config-title"
+            aria-labelledby="workflow-config-discovery-title"
             style={{
-              width: 460,
+              width: 620,
               maxWidth: "calc(100vw - 32px)",
-              maxHeight: "calc(100vh - 40px)",
+              maxHeight: "min(720px, calc(100vh - 40px))",
               display: "flex",
               flexDirection: "column",
               borderRadius: 12,
@@ -2300,66 +2358,97 @@ export function WorkflowPanel({
               background: "var(--theme-bg, rgba(16,22,34,0.98))",
             }}
           >
-            <header style={{ minHeight: 50, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+            <header style={{ minHeight: 56, display: "flex", alignItems: "center", padding: "0 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ minWidth: 0 }}>
-                <strong id="workflow-run-config-title" style={{ display: "block", fontSize: 13 }}>选择本次启动配置</strong>
-                <span style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 9 }}>
-                  {runConfigWorkflow.name}
+                <strong id="workflow-config-discovery-title" style={{ display: "block", fontSize: 13 }}>选择目录中的配置文件</strong>
+                <span title={configDiscovery.root} style={{ display: "block", maxWidth: 560, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 9 }}>
+                  {configDiscovery.root} · {configDiscovery.files.length} 个候选
                 </span>
               </div>
             </header>
-            <div style={{ minHeight: 0, display: "grid", gap: 7, padding: 14, overflow: "auto" }}>
-              {(runConfigWorkflow.configFiles ?? []).map((configFile) => (
-                <label
-                  key={configFile.id}
-                  style={{
-                    minHeight: 50,
-                    display: "grid",
-                    gridTemplateColumns: "22px minmax(0,1fr)",
-                    alignItems: "center",
-                    gap: 9,
-                    padding: "7px 10px",
-                    border: `1px solid ${runConfigSelection === configFile.id ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.1)"}`,
-                    borderRadius: 7,
-                    background: runConfigSelection === configFile.id ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.025)",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="workflow-run-config"
-                    value={configFile.id}
-                    checked={runConfigSelection === configFile.id}
-                    onChange={() => setRunConfigSelection(configFile.id)}
-                  />
-                  <span style={{ minWidth: 0 }}>
-                    <strong style={{ display: "block", fontSize: 11 }}>{configFile.name}</strong>
-                    <span title={configFile.path} style={{ display: "block", marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 9 }}>
-                      {configFile.path}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </div>
-            <footer style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-              <button type="button" style={BUTTON} onClick={() => setRunConfigRequest(null)}>取消</button>
-              <button
-                type="button"
-                style={{ ...BUTTON, background: "rgba(37,99,235,0.82)", borderColor: "rgba(96,165,250,0.55)", color: "white" }}
-                disabled={!runConfigSelection}
-                onClick={() => {
-                  const request = runConfigRequest;
-                  const configId = runConfigSelection;
-                  setRunConfigRequest(null);
-                  if (request.stepId) {
-                    void startStepRun(request.stepId, configId);
-                  } else {
-                    void startWorkflowRun(request.workflowId, configId);
-                  }
-                }}
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 130px", gap: 8, padding: "12px 14px 9px" }}>
+              <input
+                style={INPUT}
+                value={configDiscoveryQuery}
+                onChange={(event) => setConfigDiscoveryQuery(event.target.value)}
+                placeholder="按目录或文件名搜索"
+                aria-label="搜索配置文件"
+                autoFocus
+              />
+              <select
+                style={INPUT}
+                value={configDiscoveryExtension}
+                onChange={(event) => setConfigDiscoveryExtension(event.target.value)}
+                aria-label="配置文件后缀"
               >
-                使用此配置运行
-              </button>
+                <option value="all">全部后缀</option>
+                {configDiscoveryExtensions.map((extension) => (
+                  <option key={extension} value={extension}>.{extension}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ minHeight: 180, flex: 1, display: "grid", alignContent: "start", gap: 6, padding: "4px 14px 12px", overflow: "auto" }}>
+              {visibleConfigCandidates.map((candidate) => {
+                const selected = configDiscoverySelection === candidate.path;
+                const existing = (workflow?.configFiles ?? []).some((item) => item.path === candidate.path);
+                return (
+                  <label
+                    key={candidate.path}
+                    style={{
+                      minHeight: 48,
+                      display: "grid",
+                      gridTemplateColumns: "22px minmax(0,1fr) auto",
+                      alignItems: "center",
+                      gap: 9,
+                      padding: "6px 10px",
+                      border: `1px solid ${selected ? "rgba(96,165,250,0.5)" : "rgba(255,255,255,0.09)"}`,
+                      borderRadius: 7,
+                      background: selected ? "rgba(37,99,235,0.12)" : "rgba(255,255,255,0.025)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="workflow-config-candidate"
+                      value={candidate.path}
+                      checked={selected}
+                      onChange={() => setConfigDiscoverySelection(candidate.path)}
+                    />
+                    <span style={{ minWidth: 0 }}>
+                      <strong style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 10.5 }}>
+                        {candidate.name}
+                      </strong>
+                      <span title={candidate.relativePath} style={{ display: "block", marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "rgba(255,255,255,0.38)", fontSize: 8.5 }}>
+                        {candidate.relativePath}
+                      </span>
+                    </span>
+                    <span style={{ color: existing ? "#6ee7b7" : "rgba(255,255,255,0.3)", fontSize: 8.5 }}>
+                      {existing ? "已添加" : `.${candidate.extension}`}
+                    </span>
+                  </label>
+                );
+              })}
+              {!visibleConfigCandidates.length && (
+                <div style={{ display: "grid", placeItems: "center", minHeight: 160, color: "rgba(255,255,255,0.34)", fontSize: 10 }}>
+                  没有匹配的配置文件
+                </div>
+              )}
+            </div>
+            <footer style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <span style={{ color: "rgba(255,255,255,0.34)", fontSize: 9 }}>
+                {configDiscovery.truncated ? "目录较大，仅显示前 512 个配置文件" : `当前显示 ${visibleConfigCandidates.length} 个`}
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" style={BUTTON} onClick={() => setConfigDiscovery(null)}>取消</button>
+                <button
+                  type="button"
+                  style={{ ...BUTTON, background: "rgba(37,99,235,0.82)", borderColor: "rgba(96,165,250,0.55)", color: "white" }}
+                  disabled={!configDiscoverySelection}
+                  onClick={addDiscoveredWorkflowConfig}
+                >
+                  选择此文件
+                </button>
+              </div>
             </footer>
           </section>
         </div>

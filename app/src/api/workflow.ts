@@ -14,7 +14,20 @@ export interface WorkflowValidationReport {
   warnings: string[];
 }
 
-export function workflowId(prefix: "workflow" | "step" = "workflow"): string {
+export interface WorkflowConfigCandidate {
+  path: string;
+  relativePath: string;
+  name: string;
+  extension: string;
+}
+
+export interface WorkflowConfigDiscovery {
+  root: string;
+  files: WorkflowConfigCandidate[];
+  truncated: boolean;
+}
+
+export function workflowId(prefix: "workflow" | "step" | "config" = "workflow"): string {
   const id = globalThis.crypto?.randomUUID?.()
     ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   return `${prefix}-${id}`;
@@ -87,6 +100,10 @@ export function completionLabel(completion: CompletionRule): string {
 
 export function validateWorkflow(workflow: WorkflowDefinition): Promise<WorkflowValidationReport> {
   return invoke("validate_workflow", { workflow });
+}
+
+export function discoverWorkflowConfigFiles(root: string): Promise<WorkflowConfigDiscovery> {
+  return invoke("discover_workflow_config_files", { root });
 }
 
 export function runWorkflow(workflowId: string, configId?: string): Promise<WorkflowRun> {

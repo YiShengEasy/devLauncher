@@ -221,6 +221,7 @@ pub fn run() {
             video_tools::open_video_tool_path,
             actions::execute_action,
             workflow::validate_workflow,
+            workflow::discover_workflow_config_files,
             workflow::set_workflow_workspace_mode,
             workflow::set_binding_workspace_mode,
             workflow::run_workflow,

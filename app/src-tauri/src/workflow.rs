@@ -23,6 +23,8 @@ use tokio::net::TcpStream;
 
 const MAX_STEPS: usize = 64;
 const MAX_CONFIG_FILES: usize = 32;
+const MAX_CONFIG_DISCOVERY_FILES: usize = 512;
+const MAX_CONFIG_DISCOVERY_DEPTH: usize = 32;
 const MAX_SCRIPT_BYTES: usize = 32 * 1024;
 const MAX_TIMEOUT_MS: u64 = 24 * 60 * 60 * 1000;
 const DEFAULT_SCRIPT_TIMEOUT_MS: u64 = 120_000;
@@ -143,6 +145,23 @@ pub struct WorkflowValidationReport {
     pub valid: bool,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowConfigCandidate {
+    pub path: String,
+    pub relative_path: String,
+    pub name: String,
+    pub extension: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowConfigDiscovery {
+    pub root: String,
+    pub files: Vec<WorkflowConfigCandidate>,
+    pub truncated: bool,
 }
 
 #[derive(Default)]
@@ -412,6 +431,147 @@ pub fn validate_workflow_definition(workflow: &WorkflowDefinition) -> WorkflowVa
 #[tauri::command]
 pub fn validate_workflow(workflow: WorkflowDefinition) -> WorkflowValidationReport {
     validate_workflow_definition(&workflow)
+}
+
+fn is_workflow_config_candidate(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if name == ".env" || name.starts_with(".env.") {
+        return true;
+    }
+    matches!(
+        path.extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "yaml"
+            | "yml"
+            | "json"
+            | "toml"
+            | "ini"
+            | "conf"
+            | "config"
+            | "properties"
+            | "env"
+            | "xml"
+            | "plist"
+    )
+}
+
+fn is_workflow_config_ignored_directory(name: &str) -> bool {
+    matches!(
+        name,
+        ".git"
+            | "node_modules"
+            | "target"
+            | "dist"
+            | "build"
+            | ".venv"
+            | "venv"
+            | "vendor"
+            | "coverage"
+            | ".next"
+            | ".nuxt"
+            | ".cache"
+    )
+}
+
+fn collect_workflow_config_candidates(
+    root: &Path,
+    directory: &Path,
+    depth: usize,
+    files: &mut Vec<WorkflowConfigCandidate>,
+    truncated: &mut bool,
+) -> Result<(), String> {
+    if depth > MAX_CONFIG_DISCOVERY_DEPTH {
+        *truncated = true;
+        return Ok(());
+    }
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| format!("无法扫描配置目录 {}：{error}", directory.display()))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("无法读取配置目录：{error}"))?;
+    entries.sort_by_key(|entry| entry.file_name());
+
+    for entry in entries {
+        if files.len() >= MAX_CONFIG_DISCOVERY_FILES {
+            *truncated = true;
+            break;
+        }
+        let file_type = entry
+            .file_type()
+            .map_err(|error| format!("无法读取文件类型：{error}"))?;
+        if file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if file_type.is_dir() {
+            let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
+            if !is_workflow_config_ignored_directory(&name) {
+                collect_workflow_config_candidates(root, &path, depth + 1, files, truncated)?;
+            }
+            continue;
+        }
+        if !file_type.is_file() || !is_workflow_config_candidate(&path) {
+            continue;
+        }
+        let relative_path = path
+            .strip_prefix(root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("配置文件")
+            .to_string();
+        let extension = if name == ".env" || name.starts_with(".env.") {
+            "env".to_string()
+        } else {
+            path.extension()
+                .and_then(|value| value.to_str())
+                .unwrap_or("config")
+                .to_ascii_lowercase()
+        };
+        files.push(WorkflowConfigCandidate {
+            path: path.to_string_lossy().into_owned(),
+            relative_path,
+            name,
+            extension,
+        });
+    }
+    Ok(())
+}
+
+fn discover_workflow_config_files_blocking(root: &str) -> Result<WorkflowConfigDiscovery, String> {
+    let root = PathBuf::from(root)
+        .canonicalize()
+        .map_err(|error| format!("配置目录不存在：{error}"))?;
+    if !root.is_dir() {
+        return Err("选择的路径不是目录".into());
+    }
+    let mut files = Vec::new();
+    let mut truncated = false;
+    collect_workflow_config_candidates(&root, &root, 0, &mut files, &mut truncated)?;
+    files.sort_by(|left, right| left.relative_path.cmp(&right.relative_path));
+    Ok(WorkflowConfigDiscovery {
+        root: root.to_string_lossy().into_owned(),
+        files,
+        truncated,
+    })
+}
+
+#[tauri::command]
+pub async fn discover_workflow_config_files(
+    root: String,
+) -> Result<WorkflowConfigDiscovery, String> {
+    tauri::async_runtime::spawn_blocking(move || discover_workflow_config_files_blocking(&root))
+        .await
+        .map_err(|error| format!("配置扫描线程失败：{error}"))?
 }
 
 fn workflow_workspace_size(logical_width: f64, logical_height: f64) -> (f64, f64) {
@@ -2450,6 +2610,7 @@ pub fn clear_workflow_run_history(
 pub fn cancel_workflow_run(
     run_id: String,
     state: tauri::State<'_, WorkflowEngineState>,
+    terminals: tauri::State<'_, crate::builtins::terminal::TerminalState>,
 ) -> Result<(), String> {
     if !state
         .inner
@@ -2465,7 +2626,8 @@ pub fn cancel_workflow_run(
         .cancelled
         .lock()
         .map_err(|_| "workflow state lock poisoned".to_string())?
-        .insert(run_id);
+        .insert(run_id.clone());
+    crate::builtins::terminal::kill_workflow_sessions(&terminals, &run_id)?;
     Ok(())
 }
 
@@ -2488,8 +2650,9 @@ pub fn confirm_workflow_step(
 mod tests {
     use super::{
         apply_workflow_config, binding_workspace_size, cancellable_sleep, daily_schedule_due,
-        evaluate_condition, is_interaction_cancelled_error, next_daily_run_at, parse_daily_time,
-        persisted_run, process_output_tail, read_workflow_run_history_from_path, schedule_due,
+        discover_workflow_config_files_blocking, evaluate_condition,
+        is_interaction_cancelled_error, next_daily_run_at, parse_daily_time, persisted_run,
+        process_output_tail, read_workflow_run_history_from_path, schedule_due,
         script_command_spec, selected_workflow_config, should_retry, standalone_step_workflow,
         unix_time_millis, uses_managed_script_process, validate_workflow_definition,
         workflow_terminal_session_id, workflow_workspace_size, write_workflow_run_history_to_path,
@@ -2673,6 +2836,30 @@ mod tests {
                 selected_path.to_string_lossy().into_owned(),
             ]
         );
+    }
+
+    #[test]
+    fn discovers_nested_config_files_and_ignores_unrelated_files() {
+        let directory = tempfile::tempdir().expect("temp dir");
+        let nested = directory.path().join("regions/east/services/api");
+        std::fs::create_dir_all(&nested).expect("nested directories");
+        std::fs::write(nested.join("application.yaml"), "port: 3000\n").expect("yaml config");
+        std::fs::write(nested.join("notes.txt"), "not a config\n").expect("text file");
+        let ignored = directory.path().join("node_modules/package");
+        std::fs::create_dir_all(&ignored).expect("ignored directory");
+        std::fs::write(ignored.join("hidden.yaml"), "hidden: true\n").expect("ignored config");
+
+        let discovery =
+            discover_workflow_config_files_blocking(directory.path().to_string_lossy().as_ref())
+                .expect("config discovery");
+
+        assert_eq!(discovery.files.len(), 1);
+        assert_eq!(
+            discovery.files[0].relative_path,
+            "regions/east/services/api/application.yaml"
+        );
+        assert_eq!(discovery.files[0].extension, "yaml");
+        assert!(!discovery.truncated);
     }
 
     #[test]

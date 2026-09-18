@@ -333,6 +333,22 @@ pub fn terminal_resize(
 }
 
 /// Kill a PTY session and release its resources.
+pub fn kill_workflow_sessions(state: &TerminalState, run_id: &str) -> Result<(), String> {
+    let prefix = format!("workflow-{run_id}-");
+    let mut sessions = state.sessions.lock().map_err(|_| "terminal session lock poisoned".to_string())?;
+    let ids: Vec<String> = sessions.keys().filter(|id| id.starts_with(&prefix)).cloned().collect();
+    let mut errors = Vec::new();
+    for id in ids {
+        if let Some(session) = sessions.get_mut(&id) {
+            match session.killer.kill() {
+                Ok(()) => { sessions.remove(&id); }
+                Err(error) => errors.push(format!("{id}: {error}")),
+            }
+        }
+    }
+    if errors.is_empty() { Ok(()) } else { Err(errors.join("\n")) }
+}
+
 #[tauri::command]
 pub fn terminal_kill(
     session_id: String,
@@ -391,6 +407,33 @@ pub fn toggle_terminal_window(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn workflow_stop_closes_all_its_sessions_and_keeps_other_runs() {
+        let state = test_state();
+        let mut children = Vec::new();
+        for id in ["workflow-one-api-attempt-1", "workflow-one-web-attempt-1", "workflow-two-api-attempt-1"] {
+            let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
+            let mut command = CommandBuilder::new(if cfg!(windows) { "cmd.exe" } else { "/bin/sh" });
+            if cfg!(windows) { command.args(["/C", "ping -n 30 127.0.0.1 > nul"]); }
+            else { command.args(["-c", "sleep 30"]); }
+            let child = pair.slave.spawn_command(command).unwrap();
+            state.sessions.lock().unwrap().insert(id.into(), PtySession {
+                writer: pair.master.take_writer().unwrap(),
+                master: SendableMaster(pair.master),
+                killer: child.clone_killer(),
+            });
+            children.push(child);
+        }
+        let result = kill_workflow_sessions(&state, "one");
+        let remaining: Vec<_> = state.sessions.lock().unwrap().keys().cloned().collect();
+        let other_running = children[2].try_wait().unwrap().is_none();
+        // Always clean up before asserting, including when the behavior regresses.
+        for child in &mut children { let _ = child.kill(); let _ = child.wait(); }
+        result.unwrap();
+        assert_eq!(remaining, vec!["workflow-two-api-attempt-1"]);
+        assert!(other_running);
+    }
 
     fn test_state() -> TerminalState {
         TerminalState {
