@@ -61,6 +61,16 @@
 
   /* ── Scrollbar ── */
   ::-webkit-scrollbar { width: 0; }
+
+  .markdown-preview--selectable {
+    -webkit-user-select: text !important;
+    user-select: text !important;
+  }
+
+  .markdown-preview--selectable * {
+    -webkit-user-select: auto !important;
+    user-select: auto !important;
+  }
 }
 
 

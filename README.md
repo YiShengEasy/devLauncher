@@ -179,6 +179,7 @@ docs/features/workflow-automation/
 - [docs/devlauncher-ui-final-spec.md](docs/devlauncher-ui-final-spec.md)
 - [docs/features/README.md](docs/features/README.md)
 - [docs/features/workflow-automation/README.md](docs/features/workflow-automation/README.md)
+- [docs/features/project-workbench/README.md](docs/features/project-workbench/README.md)
 - [website/README.md](website/README.md)
 - [plugins/devlauncher-pet/README.md](plugins/devlauncher-pet/README.md)
 - [plugins/devlauncher-automation/README.md](plugins/devlauncher-automation/README.md)

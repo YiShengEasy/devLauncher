@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { ClipboardEntry } from "@/types/actions";
 import { BuiltinIcon } from "@/components/BuiltinIcon";
 import { useConfirmDialog } from "@/components/ConfirmDialog";
+import { MarkdownPreview } from "@/components/MarkdownPreview";
 import { WindowPinButton } from "@/components/WindowPinButton";
 import { animateListEnter, animatePanelEnter } from "@/motion/presets";
 import { useGsapContext } from "@/motion/useGsapContext";
@@ -16,6 +17,7 @@ import {
   clipboardEntryTitle,
   filterClipboardEntries,
   isFavoriteEntry,
+  markdownFilename,
   resolveSelectedEntryId,
 } from "./clipboardPanelModel";
 
@@ -29,9 +31,12 @@ interface ClipboardPanelProps {
   onToggleFavorite: (entry: ClipboardEntry) => void;
   onRemoveFavorite: (id: string) => void;
   onClearFavorites: () => void;
+  onSaveMarkdown: (content: string, defaultFilename: string) => Promise<"saved" | "cancelled">;
 }
 
 type FilterType = "all" | "text" | "image" | "favorites";
+type TextView = "source" | "markdown";
+type TextClipboardEntry = Extract<ClipboardEntry, { kind: "text" }>;
 
 const shellStyle: CSSProperties = {
   width: "100vw",
@@ -71,6 +76,7 @@ const iconButtonStyle: CSSProperties = {
 const scrollButtonStyle: CSSProperties = {
   width: 32,
   height: 22,
+  padding: 0,
   borderRadius: 8,
   border: "1px solid rgba(255,255,255,0.14)",
   background: "rgba(255,255,255,0.08)",
@@ -78,9 +84,7 @@ const scrollButtonStyle: CSSProperties = {
   cursor: "pointer",
   display: "grid",
   placeItems: "center",
-  fontSize: 16,
-  fontWeight: 700,
-  lineHeight: 1,
+  boxSizing: "border-box",
 };
 
 export function ClipboardPanel({
@@ -93,6 +97,7 @@ export function ClipboardPanel({
   onToggleFavorite,
   onRemoveFavorite,
   onClearFavorites,
+  onSaveMarkdown,
 }: ClipboardPanelProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -100,6 +105,10 @@ export function ClipboardPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [textView, setTextView] = useState<TextView>("source");
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [expandedMarkdown, setExpandedMarkdown] = useState<TextClipboardEntry | null>(null);
+  const [markdownCopyState, setMarkdownCopyState] = useState<"idle" | "all">("idle");
   const windowLabel = getCurrentWindow().label;
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -148,6 +157,20 @@ export function ClipboardPanel({
   useEffect(() => {
     updateScrollProgress();
   }, [filtered.length, updateScrollProgress]);
+
+  useEffect(() => {
+    if (!expandedMarkdown) return;
+    const handleEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setExpandedMarkdown(null);
+    };
+    window.addEventListener("keydown", handleEscape, true);
+    return () => {
+      window.removeEventListener("keydown", handleEscape, true);
+    };
+  }, [expandedMarkdown]);
 
   useGsapContext(rootRef, () => {
     if (!rootRef.current) return;
@@ -211,12 +234,35 @@ export function ClipboardPanel({
     }
   };
 
+  const saveSelectedMarkdown = async () => {
+    if (!selectedEntry || selectedEntry.kind !== "text" || saveState === "saving") return;
+    setSaveState("saving");
+    try {
+      const result = await onSaveMarkdown(selectedEntry.content, markdownFilename(selectedEntry));
+      setSaveState(result === "saved" ? "saved" : "idle");
+      if (result === "saved") {
+        window.setTimeout(() => setSaveState("idle"), 1600);
+      }
+    } catch (error) {
+      console.error("save clipboard markdown failed", error);
+      setSaveState("error");
+      window.setTimeout(() => setSaveState("idle"), 1800);
+    }
+  };
+
+  const copyExpandedMarkdown = () => {
+    if (!expandedMarkdown) return;
+    onCopyText(expandedMarkdown.content, { keepOpen: true });
+    setMarkdownCopyState("all");
+    window.setTimeout(() => setMarkdownCopyState("idle"), 1200);
+  };
+
   return (
     <div ref={rootRef} className="motion-panel theme-window-surface" style={shellStyle} data-tauri-drag-region>
       <header
         style={{
           display: "grid",
-          gridTemplateColumns: "36px minmax(480px, 680px) minmax(96px, 1fr)",
+          gridTemplateColumns: "36px minmax(480px, 680px) minmax(280px, 1fr)",
           gap: 10,
           alignItems: "center",
           minWidth: 0,
@@ -272,7 +318,37 @@ export function ClipboardPanel({
           </nav>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, minWidth: 0, paddingRight: 4 }} data-tauri-drag-region="false">
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 7, minWidth: 0, paddingRight: 4 }} data-tauri-drag-region="false">
+          <div
+            style={{
+              height: 28,
+              display: "flex",
+              alignItems: "center",
+              padding: 2,
+              borderRadius: 9,
+              border: "1px solid rgba(255,255,255,0.13)",
+              background: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <TextViewButton active={textView === "source"} label="原文" onClick={() => setTextView("source")} />
+            <TextViewButton active={textView === "markdown"} label="Markdown" onClick={() => setTextView("markdown")} />
+          </div>
+          <button
+            type="button"
+            title={selectedEntry?.kind === "text" ? "将当前文本保存为 Markdown 文件" : "请选择一条文本记录"}
+            disabled={selectedEntry?.kind !== "text" || saveState === "saving"}
+            onClick={saveSelectedMarkdown}
+            style={{
+              ...iconButtonStyle,
+              minWidth: 76,
+              border: "1px solid rgba(116,166,255,0.22)",
+              background: selectedEntry?.kind === "text" ? "rgba(78,122,195,0.13)" : "transparent",
+              color: selectedEntry?.kind === "text" ? "rgba(220,232,255,0.88)" : "rgba(232,234,240,0.28)",
+              cursor: selectedEntry?.kind === "text" && saveState !== "saving" ? "pointer" : "default",
+            }}
+          >
+            {saveState === "saving" ? "保存中…" : "保存 .md"}
+          </button>
           <button
             type="button"
             title={filter === "favorites" ? "清空收藏" : "清空历史"}
@@ -335,6 +411,15 @@ export function ClipboardPanel({
               favorite={isFavoriteEntry(entry, favorites)}
               copied={copiedId === entry.id}
               reducedMotion={reducedMotion}
+              renderMarkdown={textView === "markdown"}
+              onExpandMarkdown={
+                entry.kind === "text"
+                  ? () => {
+                      setExpandedMarkdown(entry);
+                      setMarkdownCopyState("idle");
+                    }
+                  : undefined
+              }
               onSelect={() => setSelectedId(entry.id)}
               onCopy={() => copyEntry(entry)}
               onToggleFavorite={() => toggleFavorite(entry)}
@@ -343,9 +428,9 @@ export function ClipboardPanel({
         )}
       </section>
 
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12 }} data-tauri-drag-region="false">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, position: "relative" }} data-tauri-drag-region="false">
         <button type="button" style={scrollButtonStyle} onClick={() => scrollCards("prev")} aria-label="上一组">
-          ‹
+          <ChevronIcon direction="left" />
         </button>
         <div
           style={{
@@ -367,11 +452,181 @@ export function ClipboardPanel({
           />
         </div>
         <button type="button" style={scrollButtonStyle} onClick={() => scrollCards("next")} aria-label="下一组">
-          ›
+          <ChevronIcon direction="right" />
         </button>
+        {saveState !== "idle" && saveState !== "saving" && (
+          <span
+            role="status"
+            style={{
+              position: "absolute",
+              right: 6,
+              fontSize: 11,
+              fontWeight: 700,
+              color: saveState === "saved" ? "#a7f3d0" : "#fecaca",
+            }}
+          >
+            {saveState === "saved" ? "Markdown 已保存" : "保存失败"}
+          </span>
+        )}
       </div>
+      {expandedMarkdown && (
+        <MarkdownExpandedDialog
+          entry={expandedMarkdown}
+          copyState={markdownCopyState}
+          onCopyAll={copyExpandedMarkdown}
+          onClose={() => setExpandedMarkdown(null)}
+        />
+      )}
       {confirmDialog}
     </div>
+  );
+}
+
+function MarkdownExpandedDialog({
+  entry,
+  copyState,
+  onCopyAll,
+  onClose,
+}: {
+  entry: TextClipboardEntry;
+  copyState: "idle" | "all";
+  onCopyAll: () => void;
+  onClose: () => void;
+}) {
+  const actionStyle: CSSProperties = {
+    height: 30,
+    padding: "0 12px",
+    borderRadius: 9,
+    border: "1px solid rgba(255,255,255,0.14)",
+    background: "rgba(255,255,255,0.08)",
+    color: "rgba(242,246,255,0.86)",
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Markdown 放大预览"
+      data-tauri-drag-region="false"
+      style={{
+        position: "absolute",
+        inset: 10,
+        zIndex: 100,
+        display: "grid",
+        gridTemplateRows: "48px minmax(0, 1fr) 32px",
+        padding: "0 18px 14px",
+        borderRadius: 18,
+        overflow: "hidden",
+        boxSizing: "border-box",
+        background: "linear-gradient(145deg, rgba(24,31,43,0.98), rgba(15,21,33,0.98))",
+        border: "1px solid rgba(177,199,235,0.30)",
+        boxShadow: "0 24px 70px rgba(0,0,0,0.58), inset 0 1px 0 rgba(255,255,255,0.10)",
+        backdropFilter: "blur(30px)",
+        WebkitBackdropFilter: "blur(30px)",
+      }}
+    >
+      <header style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+        <strong
+          style={{
+            minWidth: 0,
+            flex: 1,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: "rgba(248,250,252,0.94)",
+            fontSize: 14,
+          }}
+        >
+          {clipboardEntryTitle(entry)}
+        </strong>
+        <button
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onCopyAll}
+          style={{ ...actionStyle, color: copyState === "all" ? "#a7f3d0" : actionStyle.color }}
+        >
+          {copyState === "all" ? "已复制全文" : "复制全文"}
+        </button>
+        <button
+          type="button"
+          aria-label="关闭 Markdown 预览"
+          title="关闭（Esc）"
+          onClick={onClose}
+          style={{ ...actionStyle, width: 30, padding: 0, display: "grid", placeItems: "center", fontSize: 18 }}
+        >
+          ×
+        </button>
+      </header>
+
+      <div
+        style={{
+          minHeight: 0,
+          overflow: "hidden",
+          padding: "22px 26px",
+          borderRadius: 12,
+          background: "rgba(255,255,255,0.045)",
+          border: "1px solid rgba(255,255,255,0.09)",
+          userSelect: "text",
+          WebkitUserSelect: "text",
+          cursor: "text",
+        }}
+      >
+        <MarkdownPreview content={entry.content} expanded />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", color: "rgba(226,232,240,0.42)", fontSize: 11 }}>
+        <span>像普通文本一样拖动选择，按 Cmd/Ctrl+C 复制</span>
+        <span>{entry.content.length} chars</span>
+      </div>
+    </div>
+  );
+}
+
+function ChevronIcon({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      focusable="false"
+      style={{ display: "block" }}
+    >
+      <path
+        d={direction === "left" ? "M10 4.5 6 8l4 3.5" : "M6 4.5 10 8l-4 3.5"}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function TextViewButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      style={{
+        height: 24,
+        padding: "0 9px",
+        border: 0,
+        borderRadius: 7,
+        background: active ? "rgba(119,158,222,0.30)" : "transparent",
+        color: active ? "rgba(248,250,252,0.96)" : "rgba(232,234,240,0.52)",
+        fontSize: 11,
+        fontWeight: 750,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -419,6 +674,8 @@ function ClipboardCard({
   favorite,
   copied,
   reducedMotion,
+  renderMarkdown,
+  onExpandMarkdown,
   onSelect,
   onCopy,
   onToggleFavorite,
@@ -429,6 +686,8 @@ function ClipboardCard({
   favorite: boolean;
   copied: boolean;
   reducedMotion: boolean;
+  renderMarkdown: boolean;
+  onExpandMarkdown?: () => void;
   onSelect: () => void;
   onCopy: () => void;
   onToggleFavorite: () => void;
@@ -525,6 +784,10 @@ function ClipboardCard({
           />
           <strong style={{ fontSize: 16, lineHeight: 1.3 }}>{clipboardEntryTitle(entry)}</strong>
         </div>
+      ) : renderMarkdown ? (
+        <div style={{ minHeight: 0, overflow: "hidden", paddingTop: 2 }}>
+          <MarkdownPreview content={entry.content} onOpen={onExpandMarkdown} />
+        </div>
       ) : (
         <div style={{ minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "flex-start", paddingTop: 4 }}>
           <strong
@@ -546,7 +809,7 @@ function ClipboardCard({
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 7, color: "rgba(232,234,240,0.45)", fontSize: 12, fontWeight: 700 }}>
-        <span>{entry.kind === "text" ? "最近" : "图片"}</span>
+        <span>{entry.kind === "text" ? renderMarkdown ? "点击放大" : "最近" : "图片"}</span>
         <span>·</span>
         <span>{clipboardEntryMeta(entry)}</span>
       </div>

@@ -24,7 +24,7 @@ export const BUILTIN_FEATURES = Object.fromEntries(
   _BUILTIN_MANIFESTS.map(m => [m.id, m])
 ) as Record<BuiltinFeature, typeof _BUILTIN_MANIFESTS[number]>;
 
-export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin" | "plugin" | "workflow";
+export type ActionType = "app" | "folder" | "file" | "url" | "ssh" | "script" | "system" | "builtin" | "plugin" | "workflow" | "project_task" | "capability";
 
 interface ActionBase {
   type: ActionType;
@@ -115,6 +115,55 @@ export interface WorkflowAction extends ActionBase {
   workflowId: string;
 }
 
+export interface ProjectTaskAction extends ActionBase {
+  type: "project_task";
+  projectId: string;
+  provider: "runme" | "package" | string;
+  sourceKey: string;
+  file: string;
+  taskName: string;
+}
+
+export type CapabilityValue = string | number | boolean | string[];
+export type CapabilityFieldType = "string" | "number" | "boolean" | "string_array";
+
+export interface WorkflowCapabilityField {
+  key: string;
+  title: string;
+  description: string;
+  fieldType: CapabilityFieldType;
+  required: boolean;
+  secret: boolean;
+  defaultValue?: CapabilityValue;
+}
+
+export interface WorkflowCapabilityDescriptor {
+  id: string;
+  version: number;
+  title: string;
+  description: string;
+  category: "data" | "system" | "productivity" | "media" | "network";
+  executionMode: "sync" | "background" | "interactive";
+  platforms: WorkflowPlatform[];
+  inputs: WorkflowCapabilityField[];
+  outputs: WorkflowCapabilityField[];
+  permissions: string[];
+}
+
+export interface WorkflowCapabilityArtifact {
+  id: string;
+  name: string;
+  artifactType: string;
+  mediaType?: string;
+  path?: string;
+}
+
+export interface WorkflowCapabilityAction extends ActionBase {
+  type: "capability";
+  capabilityId: string;
+  inputs: Record<string, CapabilityValue>;
+}
+
 // -----------------------------------------------
 // Clipboard Entry (text + image)
 // -----------------------------------------------
@@ -144,11 +193,18 @@ export type Action =
   | SystemAction
   | BuiltinAction
   | PluginAction
-  | WorkflowAction;
+  | WorkflowAction
+  | ProjectTaskAction
+  | WorkflowCapabilityAction;
 
 export type WorkflowFailurePolicy = "stop" | "continue";
 
 export type WorkflowPlatform = "macos" | "windows" | "linux";
+
+export interface WorkflowRetryPolicy {
+  maxAttempts: number;
+  delayMs: number;
+}
 
 export type StepCondition =
   | { type: "always" }
@@ -160,6 +216,7 @@ export type StepCondition =
 
 export type CompletionRule =
   | { type: "action_resolved" }
+  | { type: "capability_completed" }
   | { type: "process_started"; stabilizationMs: number; timeoutMs: number }
   | { type: "process_exit"; successCodes: number[]; timeoutMs: number }
   | { type: "port_ready"; host: string; port: number; intervalMs: number; timeoutMs: number }
@@ -177,6 +234,7 @@ export interface WorkflowStep {
   condition: StepCondition;
   completion: CompletionRule;
   delayMs: number;
+  retry?: WorkflowRetryPolicy;
   onFailure?: WorkflowFailurePolicy;
 }
 
@@ -187,6 +245,12 @@ export interface WorkflowSchedule {
   dailyTime?: string;
 }
 
+export interface WorkflowConfigFile {
+  id: string;
+  name: string;
+  path: string;
+}
+
 export interface WorkflowDefinition {
   id: string;
   name: string;
@@ -194,6 +258,8 @@ export interface WorkflowDefinition {
   enabled: boolean;
   failurePolicy: WorkflowFailurePolicy;
   schedule?: WorkflowSchedule;
+  configFiles?: WorkflowConfigFile[];
+  defaultConfigId?: string;
   steps: WorkflowStep[];
   createdAt: string;
   updatedAt: string;
@@ -205,7 +271,8 @@ export type WorkflowRunStatus =
   | "waiting"
   | "succeeded"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "interrupted";
 
 export type WorkflowStepRunStatus =
   | "pending"
@@ -220,8 +287,11 @@ export interface WorkflowStepRun {
   stepId: string;
   name: string;
   status: WorkflowStepRunStatus;
+  attempt?: number;
   message?: string;
   output?: string;
+  outputs?: Record<string, CapabilityValue>;
+  artifacts?: WorkflowCapabilityArtifact[];
   terminalSessionId?: string;
 }
 
@@ -230,6 +300,10 @@ export interface WorkflowRun {
   workflowId: string;
   workflowName: string;
   startedAt: number;
+  finishedAt?: number;
+  projectId?: string;
+  configId?: string;
+  configName?: string;
   trigger: "manual" | "step" | "schedule";
   status: WorkflowRunStatus;
   currentStepId?: string;
@@ -335,8 +409,10 @@ export const ACTION_TYPE_META: Record<ActionType, { label: string; color: string
   url:    { label: "网址",     color: "#34d399", bg: "rgba(5,120,80,0.75)" },
   ssh:    { label: "SSH",      color: "#c084fc", bg: "rgba(120,40,180,0.75)" },
   script: { label: "脚本",     color: "#f87171", bg: "rgba(180,30,30,0.75)" },
+  project_task: { label: "项目任务", color: "#22d3ee", bg: "rgba(8,145,178,0.75)" },
   system: { label: "系统",     color: "#94a3b8", bg: "rgba(60,80,120,0.75)" },
   builtin: { label: "内置",    color: "#7dd3fc", bg: "rgba(18,22,45,0.90)" },
   plugin: { label: "插件",     color: "#a7f3d0", bg: "rgba(20,120,90,0.78)" },
   workflow: { label: "工作流", color: "#fb7185", bg: "rgba(159,18,57,0.75)" },
+  capability: { label: "能力", color: "#2dd4bf", bg: "rgba(13,148,136,0.75)" },
 };

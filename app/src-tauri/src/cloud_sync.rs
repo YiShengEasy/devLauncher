@@ -1,10 +1,7 @@
+use crate::builtins::projecttasks::ProjectTasksData;
 use crate::builtins::quickmemory::{
     quickmemory_data_path, read_quickmemory_data_from_path, write_quickmemory_data_to_path,
     QuickMemoryData,
-};
-use crate::builtins::projecttasks::{
-    projecttasks_data_path, read_projecttasks_data_from_path, write_projecttasks_data_to_path,
-    ProjectTasksData,
 };
 use crate::config::{config_path, read_config_from_path, write_config_to_path};
 use crate::types::KeyboardConfig;
@@ -267,13 +264,11 @@ fn device_name() -> String {
 fn content_hash(
     keyboard_config: &KeyboardConfig,
     quickmemory_data: &QuickMemoryData,
-    projecttasks_data: &ProjectTasksData,
 ) -> Result<String, String> {
     let value = serde_json::json!({
         "schemaVersion": SYNC_SCHEMA_VERSION,
         "keyboardConfig": keyboard_config,
         "quickmemoryData": quickmemory_data,
-        "projecttasksData": projecttasks_data,
     });
     let bytes = serde_json::to_vec(&value).map_err(|e| e.to_string())?;
     let digest = Sha256::digest(bytes);
@@ -318,12 +313,11 @@ fn backup_existing_file(path: &Path) -> Result<Option<PathBuf>, String> {
 
 fn assemble_upload_payload(app: &tauri::AppHandle) -> Result<SnapshotUploadPayload, String> {
     let keyboard_config = read_config_from_path(&config_path(app))?;
-    let projecttasks_data = read_projecttasks_data_from_path(&projecttasks_data_path(app))?;
     let mut quickmemory_data = read_quickmemory_data_from_path(&quickmemory_data_path(app))?;
-    // Keep task records inside the existing QuickMemory payload as well, so
-    // already-deployed schema-v1 sync servers preserve them without an upgrade.
-    quickmemory_data.projecttasks_data = Some(projecttasks_data.clone());
-    let content_hash = content_hash(&keyboard_config, &quickmemory_data, &projecttasks_data)?;
+    // Project roots, task commands, favorites, and run history are device-local.
+    // Clear the legacy nested copy before hashing or uploading a sync snapshot.
+    quickmemory_data.projecttasks_data = None;
+    let content_hash = content_hash(&keyboard_config, &quickmemory_data)?;
 
     Ok(SnapshotUploadPayload {
         schema_version: SYNC_SCHEMA_VERSION,
@@ -332,7 +326,8 @@ fn assemble_upload_payload(app: &tauri::AppHandle) -> Result<SnapshotUploadPaylo
         content_hash,
         keyboard_config,
         quickmemory_data,
-        projecttasks_data,
+        // Keep the schema-v1 field for server compatibility, but never upload local paths.
+        projecttasks_data: ProjectTasksData::default(),
     })
 }
 
@@ -469,7 +464,6 @@ pub fn sync_restore_latest_snapshot(
 
     let config_file = config_path(&app);
     let quickmemory_file = quickmemory_data_path(&app);
-    let projecttasks_file = projecttasks_data_path(&app);
     let mut backup_paths = Vec::new();
 
     if let Some(path) = backup_existing_file(&config_file)? {
@@ -478,24 +472,13 @@ pub fn sync_restore_latest_snapshot(
     if let Some(path) = backup_existing_file(&quickmemory_file)? {
         backup_paths.push(path.to_string_lossy().to_string());
     }
-    if let Some(path) = backup_existing_file(&projecttasks_file)? {
-        backup_paths.push(path.to_string_lossy().to_string());
-    }
-
     let mut quickmemory_data = snapshot.quickmemory_data;
-    let projecttasks_data = if snapshot.projecttasks_data.projects.is_empty()
-        && snapshot.projecttasks_data.task_favorites.is_empty()
-        && snapshot.projecttasks_data.config_favorites.is_empty()
-        && snapshot.projecttasks_data.last_root.is_empty()
-    {
-        quickmemory_data.projecttasks_data.take().unwrap_or_default()
-    } else {
-        snapshot.projecttasks_data
-    };
+    // Never restore project paths or task records from a remote snapshot.
+    quickmemory_data.projecttasks_data = None;
+    let _ignored_projecttasks_data = snapshot.projecttasks_data;
 
     write_config_to_path(&config_file, &snapshot.keyboard_config)?;
     write_quickmemory_data_to_path(&quickmemory_file, &quickmemory_data)?;
-    write_projecttasks_data_to_path(&projecttasks_file, &projecttasks_data)?;
 
     Ok(CloudSyncRestoreResult {
         snapshot: CloudSyncSnapshotMeta {

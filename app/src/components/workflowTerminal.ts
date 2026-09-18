@@ -4,6 +4,11 @@ export interface TerminalChunkPlan {
   nextOffset: number;
 }
 
+export function encodeTerminalInput(data: string): string {
+  const bytes = new TextEncoder().encode(data);
+  return btoa(Array.from(bytes, (byte) => String.fromCharCode(byte)).join(""));
+}
+
 export function planTerminalChunk(
   currentOffset: number,
   chunkOffset: number,

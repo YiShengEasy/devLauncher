@@ -2,6 +2,7 @@ import { createWorkflow, createWorkflowStep } from "@/api/workflow";
 import { matchingOfficialTemplateId } from "@/api/workflowTemplates";
 import type {
   KeyboardConfig,
+  ProjectTaskAction,
   ScriptAction,
   WorkflowDefinition,
 } from "@/types/actions";
@@ -12,7 +13,6 @@ export type WorkflowImportTarget =
 
 export interface WorkflowImportSource {
   projectName: string;
-  root: string;
   file: string;
   line: number;
 }
@@ -24,12 +24,20 @@ export interface WorkflowImportResult {
   created: boolean;
 }
 
-function containsAction(workflow: WorkflowDefinition, action: ScriptAction): boolean {
-  return workflow.steps.some((step) =>
-    step.action.type === "script"
-    && step.action.content === action.content
-    && step.action.name === action.name
-  );
+type ImportableProjectAction = ProjectTaskAction | ScriptAction;
+
+function containsAction(workflow: WorkflowDefinition, action: ImportableProjectAction): boolean {
+  return workflow.steps.some((step) => {
+    if (action.type === "project_task" && step.action.type === "project_task") {
+      return step.action.projectId === action.projectId
+        && step.action.provider === action.provider
+        && step.action.sourceKey === action.sourceKey;
+    }
+    return action.type === "script"
+      && step.action.type === "script"
+      && step.action.content === action.content
+      && step.action.name === action.name;
+  });
 }
 
 export function listUserCreatedWorkflows(
@@ -40,7 +48,7 @@ export function listUserCreatedWorkflows(
 
 export function importTaskIntoWorkflow(
   config: KeyboardConfig,
-  action: ScriptAction,
+  action: ImportableProjectAction,
   source: WorkflowImportSource,
   target: WorkflowImportTarget,
 ): WorkflowImportResult {
@@ -49,7 +57,7 @@ export function importTaskIntoWorkflow(
     const name = target.name.trim();
     if (!name) throw new Error("请输入工作流名称");
     const workflow = createWorkflow(name);
-    workflow.description = `项目：${source.projectName}\n来源：${source.file}:${source.line}\n目录：${source.root}`;
+    workflow.description = `项目：${source.projectName}\n来源：${source.file}:${source.line}`;
     workflow.steps = [createWorkflowStep(action)];
     return {
       config: {

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { save as dialogSave } from "@tauri-apps/plugin-dialog";
 import { ClipboardPanel } from "@/components/ClipboardPanel";
 import { applyThemeFromConfig } from "@/api/theme";
 import type { ClipboardEntry } from "@/types/actions";
@@ -110,6 +111,19 @@ export function ClipboardApp() {
     setFavorites([]);
   };
 
+  const handleSaveMarkdown = async (
+    content: string,
+    defaultFilename: string,
+  ): Promise<"saved" | "cancelled"> => {
+    const path = await dialogSave({
+      filters: [{ name: "Markdown", extensions: ["md", "markdown"] }],
+      defaultPath: defaultFilename,
+    });
+    if (!path) return "cancelled";
+    await invoke("save_clipboard_markdown", { path, content });
+    return "saved";
+  };
+
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex", alignItems: "flex-end", justifyContent: "center", background: "transparent", boxSizing: "border-box" }}>
       <ClipboardPanel
@@ -122,6 +136,7 @@ export function ClipboardApp() {
         onToggleFavorite={handleToggleFavorite}
         onRemoveFavorite={handleRemoveFavorite}
         onClearFavorites={handleClearFavorites}
+        onSaveMarkdown={handleSaveMarkdown}
       />
     </div>
   );

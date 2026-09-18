@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -124,6 +125,20 @@ pub enum Action {
         #[serde(skip_serializing_if = "Option::is_none")]
         file: Option<String>,
     },
+    #[serde(rename = "project_task")]
+    ProjectTask {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+        #[serde(rename = "projectId", alias = "project_id")]
+        project_id: String,
+        provider: String,
+        #[serde(rename = "sourceKey", alias = "source_key")]
+        source_key: String,
+        file: String,
+        #[serde(rename = "taskName", alias = "task_name")]
+        task_name: String,
+    },
     System {
         name: String,
         command: String,
@@ -147,6 +162,15 @@ pub enum Action {
         icon: Option<String>,
         #[serde(rename = "workflowId", alias = "workflow_id")]
         workflow_id: String,
+    },
+    Capability {
+        name: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        icon: Option<String>,
+        #[serde(rename = "capabilityId", alias = "capability_id")]
+        capability_id: String,
+        #[serde(default)]
+        inputs: Map<String, Value>,
     },
 }
 
@@ -179,6 +203,7 @@ impl Default for StepCondition {
 )]
 pub enum CompletionRule {
     ActionResolved,
+    CapabilityCompleted,
     ProcessStarted {
         stabilization_ms: u64,
         timeout_ms: u64,
@@ -227,6 +252,19 @@ fn default_failure_policy() -> String {
     "stop".to_string()
 }
 
+fn default_retry_max_attempts() -> u32 {
+    1
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowRetryPolicy {
+    #[serde(default = "default_retry_max_attempts")]
+    pub max_attempts: u32,
+    #[serde(default)]
+    pub delay_ms: u64,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowStep {
@@ -242,6 +280,8 @@ pub struct WorkflowStep {
     #[serde(default)]
     pub delay_ms: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry: Option<WorkflowRetryPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub on_failure: Option<String>,
 }
 
@@ -256,6 +296,14 @@ pub struct WorkflowSchedule {
     pub interval_minutes: u64,
     #[serde(default = "default_schedule_daily_time")]
     pub daily_time: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkflowConfigFile {
+    pub id: String,
+    pub name: String,
+    pub path: String,
 }
 
 fn default_schedule_mode() -> String {
@@ -283,6 +331,10 @@ pub struct WorkflowDefinition {
     pub failure_policy: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub schedule: Option<WorkflowSchedule>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config_files: Vec<WorkflowConfigFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_config_id: Option<String>,
     #[serde(default)]
     pub steps: Vec<WorkflowStep>,
     #[serde(default)]
@@ -476,5 +528,74 @@ pages:
         assert!(saved.contains("type: plugin"));
         assert!(saved.contains("pluginId: devlauncher.examples.hello"));
         assert!(saved.contains("actionId: open"));
+    }
+
+    #[test]
+    fn loads_legacy_workflows_and_preserves_retry_policy() {
+        let yaml = r#"
+pages: []
+workflows:
+  - id: workflow-legacy
+    name: Legacy
+    steps:
+      - id: step-legacy
+        name: Legacy step
+        action:
+          type: script
+          name: Legacy step
+          shell: terminal
+          content: exit 0
+  - id: workflow-retry
+    name: Retry
+    steps:
+      - id: step-retry
+        name: Retry step
+        action:
+          type: script
+          name: Retry step
+          shell: terminal
+          content: exit 1
+        retry:
+          maxAttempts: 3
+          delayMs: 1500
+"#;
+
+        let config: KeyboardConfig = serde_yaml::from_str(yaml).expect("workflow config");
+        assert!(config.workflows[0].steps[0].retry.is_none());
+        let retry = config.workflows[1].steps[0]
+            .retry
+            .as_ref()
+            .expect("retry policy");
+        assert_eq!(retry.max_attempts, 3);
+        assert_eq!(retry.delay_ms, 1500);
+
+        let saved = serde_yaml::to_string(&config).expect("workflow config should save");
+        assert!(saved.contains("maxAttempts: 3"));
+        assert!(saved.contains("delayMs: 1500"));
+    }
+
+    #[test]
+    fn preserves_workflow_launch_config_selection() {
+        let yaml = r#"
+pages: []
+workflows:
+  - id: workflow-config
+    name: Configurable
+    defaultConfigId: config-dev
+    configFiles:
+      - id: config-dev
+        name: dev.yaml
+        path: /project/dev.yaml
+    steps: []
+"#;
+
+        let config: KeyboardConfig = serde_yaml::from_str(yaml).expect("workflow config");
+        let workflow = &config.workflows[0];
+        assert_eq!(workflow.default_config_id.as_deref(), Some("config-dev"));
+        assert_eq!(workflow.config_files[0].path, "/project/dev.yaml");
+
+        let saved = serde_yaml::to_string(&config).expect("workflow config should save");
+        assert!(saved.contains("defaultConfigId: config-dev"));
+        assert!(saved.contains("path: /project/dev.yaml"));
     }
 }

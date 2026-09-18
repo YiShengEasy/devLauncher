@@ -17,6 +17,11 @@ const PREVIEW_CONFIG: KeyboardConfig = {
       description: "由 MCP 创建的生产发布流水线：检查工作区、运行测试、构建官网与 DMG，经人工确认后发布 GitHub Release、部署 ECS 官网并执行健康检查。",
       enabled: true,
       failurePolicy: "stop",
+      configFiles: [
+        { id: "config-development", name: "development.yaml", path: "/Users/demo/Projects/devLauncher/config/development.yaml" },
+        { id: "config-local", name: "local.yaml", path: "/Users/demo/Projects/devLauncher/config/local.yaml" },
+      ],
+      defaultConfigId: "config-development",
       createdAt: "2026-07-18T00:00:00.000Z",
       updatedAt: "2026-07-18T00:00:00.000Z",
       steps: [

@@ -3,6 +3,8 @@ export const LEGACY_ROOT_STORAGE_KEY = "devlauncher.projecttasks.root";
 export const MAX_PROJECT_HISTORY = 24;
 
 export interface ScannedProject {
+  projectId?: string;
+  status?: "ready" | "missing" | string;
   root: string;
   name: string;
   taskCount: number;
@@ -20,6 +22,12 @@ function normalizeProject(value: unknown): ScannedProject | null {
   const root = typeof candidate.root === "string" ? candidate.root.trim() : "";
   if (!root) return null;
   return {
+    ...(typeof candidate.projectId === "string" && candidate.projectId.trim()
+      ? { projectId: candidate.projectId.trim() }
+      : {}),
+    ...(typeof candidate.status === "string" && candidate.status.trim()
+      ? { status: candidate.status.trim() }
+      : {}),
     root,
     name:
       typeof candidate.name === "string" && candidate.name.trim()
@@ -78,7 +86,11 @@ export function upsertProjectHistory(
   if (!normalized) return projects;
   const existingIndex = projects.findIndex((existing) => existing.root === normalized.root);
   if (existingIndex >= 0) {
-    return projects.map((existing, index) => index === existingIndex ? normalized : existing);
+    const existing = projects[existingIndex];
+    const merged = !normalized.projectId && existing.projectId
+      ? { ...normalized, projectId: existing.projectId }
+      : normalized;
+    return projects.map((item, index) => index === existingIndex ? merged : item);
   }
   return [normalized, ...projects].slice(0, MAX_PROJECT_HISTORY);
 }

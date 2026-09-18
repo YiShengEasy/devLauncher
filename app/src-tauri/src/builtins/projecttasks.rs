@@ -1,19 +1,29 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
 use crate::window_pinning;
 
 const MAX_MARKDOWN_FILES: usize = 512;
 const MAX_MARKDOWN_BYTES: u64 = 1024 * 1024;
+const MAX_PROJECT_PROFILES: usize = 24;
+const MAX_TASK_ARGUMENT_PRESETS: usize = 200;
+const PROJECTTASKS_SCHEMA_VERSION: u32 = 3;
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectTasksData {
+    #[serde(default = "default_projecttasks_schema_version")]
+    pub schema_version: u32,
+    #[serde(default)]
+    pub project_profiles: Vec<ProjectProfile>,
+    /// Legacy scan summaries remain readable while the UI migrates to project profiles.
     #[serde(default)]
     pub projects: Vec<ScannedProject>,
     #[serde(default)]
@@ -21,12 +31,52 @@ pub struct ProjectTasksData {
     #[serde(default)]
     pub config_favorites: Vec<FavoriteConfigRef>,
     #[serde(default)]
+    pub task_argument_presets: Vec<TaskArgumentPreset>,
+    #[serde(default)]
     pub last_root: String,
+}
+
+impl Default for ProjectTasksData {
+    fn default() -> Self {
+        Self {
+            schema_version: PROJECTTASKS_SCHEMA_VERSION,
+            project_profiles: Vec::new(),
+            projects: Vec::new(),
+            task_favorites: Vec::new(),
+            config_favorites: Vec::new(),
+            task_argument_presets: Vec::new(),
+            last_root: String::new(),
+        }
+    }
+}
+
+fn default_projecttasks_schema_version() -> u32 {
+    1
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectProfile {
+    pub id: String,
+    pub name: String,
+    pub root: String,
+    pub created_at: u64,
+    pub last_visited_at: u64,
+    #[serde(default = "default_profile_status")]
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repository_hint: Option<String>,
+}
+
+fn default_profile_status() -> String {
+    "ready".to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ScannedProject {
+    #[serde(default)]
+    pub project_id: String,
     pub root: String,
     pub name: String,
     pub task_count: u32,
@@ -47,6 +97,16 @@ pub struct FavoriteConfigRef {
     pub path: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskArgumentPreset {
+    pub project_id: String,
+    pub provider: String,
+    pub source_key: String,
+    pub value: String,
+    pub last_used_at: u64,
+}
+
 pub fn projecttasks_data_path(app: &tauri::AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
@@ -59,15 +119,43 @@ pub fn read_projecttasks_data_from_path(path: &Path) -> Result<ProjectTasksData,
         return Ok(ProjectTasksData::default());
     }
     let content = fs::read_to_string(path).map_err(|e| e.to_string())?;
-    serde_json::from_str(&content).map_err(|e| e.to_string())
+    let data = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    Ok(migrate_projecttasks_data(data))
 }
 
 pub fn write_projecttasks_data_to_path(path: &Path, data: &ProjectTasksData) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let json = serde_json::to_string_pretty(data).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())
+    let normalized = migrate_projecttasks_data(data.clone());
+    let json = serde_json::to_string_pretty(&normalized).map_err(|e| e.to_string())?;
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("projecttasks_data.json");
+    let temporary = path.with_file_name(format!(".{file_name}.tmp-{}", unix_time_millis()));
+    fs::write(&temporary, json).map_err(|e| e.to_string())?;
+    if fs::rename(&temporary, path).is_ok() {
+        return Ok(());
+    }
+    let backup = path.with_file_name(format!(".{file_name}.bak-{}", unix_time_millis()));
+    if path.exists() {
+        fs::rename(path, &backup).map_err(|error| {
+            let _ = fs::remove_file(&temporary);
+            error.to_string()
+        })?;
+    }
+    match fs::rename(&temporary, path) {
+        Ok(()) => {
+            let _ = fs::remove_file(&backup);
+            Ok(())
+        }
+        Err(error) => {
+            let _ = fs::rename(&backup, path);
+            let _ = fs::remove_file(&temporary);
+            Err(error.to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -80,10 +168,285 @@ pub fn save_projecttasks_data(app: tauri::AppHandle, data: ProjectTasksData) -> 
     write_projecttasks_data_to_path(&projecttasks_data_path(&app), &data)
 }
 
+#[tauri::command]
+pub fn list_project_profiles(app: tauri::AppHandle) -> Result<Vec<ProjectProfile>, String> {
+    Ok(read_projecttasks_data_from_path(&projecttasks_data_path(&app))?.project_profiles)
+}
+
+#[tauri::command]
+pub fn relocate_project_profile(
+    app: tauri::AppHandle,
+    project_id: String,
+    root: String,
+) -> Result<ProjectProfile, String> {
+    let canonical = canonical_directory(&root)?;
+    let canonical_root = canonical.to_string_lossy().into_owned();
+    let mut data = read_projecttasks_data_from_path(&projecttasks_data_path(&app))?;
+    let profile = data
+        .project_profiles
+        .iter_mut()
+        .find(|profile| profile.id == project_id)
+        .ok_or_else(|| "项目档案不存在".to_string())?;
+    profile.root = canonical_root.clone();
+    profile.name = project_name(&canonical);
+    profile.last_visited_at = unix_time_millis();
+    profile.status = "ready".to_string();
+    profile.repository_hint = repository_hint(&canonical);
+    for project in &mut data.projects {
+        if project.project_id == project_id {
+            project.root = canonical_root.clone();
+            project.name = profile.name.clone();
+        }
+    }
+    let result = profile.clone();
+    write_projecttasks_data_to_path(&projecttasks_data_path(&app), &data)?;
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn remove_project_profile(app: tauri::AppHandle, project_id: String) -> Result<(), String> {
+    let path = projecttasks_data_path(&app);
+    let mut data = read_projecttasks_data_from_path(&path)?;
+    let roots = data
+        .project_profiles
+        .iter()
+        .filter(|profile| profile.id == project_id)
+        .map(|profile| profile.root.clone())
+        .collect::<Vec<_>>();
+    data.project_profiles
+        .retain(|profile| profile.id != project_id);
+    data.projects
+        .retain(|project| project.project_id != project_id);
+    data.task_favorites
+        .retain(|favorite| !roots.iter().any(|root| root == &favorite.root));
+    data.config_favorites
+        .retain(|favorite| !roots.iter().any(|root| root == &favorite.root));
+    data.task_argument_presets
+        .retain(|preset| preset.project_id != project_id);
+    if roots.iter().any(|root| root == &data.last_root) {
+        data.last_root = data
+            .project_profiles
+            .first()
+            .map(|profile| profile.root.clone())
+            .unwrap_or_default();
+    }
+    write_projecttasks_data_to_path(&path, &data)
+}
+
+fn unix_time_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+fn project_id_for_root(root: &str) -> String {
+    let digest = Sha256::digest(root.as_bytes());
+    format!("project-{}", &format!("{digest:x}")[..16])
+}
+
+fn project_name(root: &Path) -> String {
+    root.file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("项目")
+        .to_string()
+}
+
+fn repository_hint(root: &Path) -> Option<String> {
+    let config = fs::read_to_string(root.join(".git").join("config")).ok()?;
+    let mut in_origin = false;
+    for line in config.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_origin = trimmed == "[remote \"origin\"]";
+            continue;
+        }
+        if !in_origin {
+            continue;
+        }
+        let Some(value) = trimmed
+            .strip_prefix("url")
+            .and_then(|value| value.split_once('='))
+        else {
+            continue;
+        };
+        let remote = value
+            .1
+            .trim()
+            .trim_end_matches('/')
+            .trim_end_matches(".git");
+        let path = remote
+            .rsplit_once(':')
+            .map(|(_, path)| path)
+            .or_else(|| remote.split_once("://").map(|(_, value)| value))
+            .unwrap_or(remote);
+        let components = path
+            .split('/')
+            .filter(|component| !component.is_empty())
+            .collect::<Vec<_>>();
+        if components.len() >= 2 {
+            return Some(format!(
+                "{}/{}",
+                components[components.len() - 2],
+                components[components.len() - 1]
+            ));
+        }
+    }
+    None
+}
+
+fn git_branch(root: &Path) -> Option<String> {
+    let head = fs::read_to_string(root.join(".git").join("HEAD")).ok()?;
+    let value = head.trim();
+    value
+        .strip_prefix("ref: refs/heads/")
+        .map(str::trim)
+        .filter(|branch| !branch.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn migrate_projecttasks_data(mut data: ProjectTasksData) -> ProjectTasksData {
+    let now = unix_time_millis();
+    for project in &mut data.projects {
+        if project.project_id.trim().is_empty() {
+            project.project_id = project_id_for_root(&project.root);
+        }
+        if let Some(profile) = data
+            .project_profiles
+            .iter_mut()
+            .find(|profile| profile.id == project.project_id || profile.root == project.root)
+        {
+            project.project_id = profile.id.clone();
+            continue;
+        }
+        data.project_profiles.push(ProjectProfile {
+            id: project.project_id.clone(),
+            name: project.name.clone(),
+            root: project.root.clone(),
+            created_at: project.last_scanned_at.max(1),
+            last_visited_at: project.last_scanned_at,
+            status: if Path::new(&project.root).is_dir() {
+                "ready".to_string()
+            } else {
+                "missing".to_string()
+            },
+            repository_hint: None,
+        });
+    }
+    for profile in &mut data.project_profiles {
+        if profile.id.trim().is_empty() {
+            profile.id = project_id_for_root(&profile.root);
+        }
+        if profile.created_at == 0 {
+            profile.created_at = now;
+        }
+        profile.status = if Path::new(&profile.root).is_dir() {
+            "ready".to_string()
+        } else {
+            "missing".to_string()
+        };
+    }
+    let mut unique = HashMap::<String, ProjectProfile>::new();
+    let mut order = Vec::new();
+    for profile in data.project_profiles {
+        if !unique.contains_key(&profile.id) {
+            order.push(profile.id.clone());
+            unique.insert(profile.id.clone(), profile);
+        }
+    }
+    data.project_profiles = order
+        .into_iter()
+        .filter_map(|id| unique.remove(&id))
+        .take(MAX_PROJECT_PROFILES)
+        .collect();
+    data.task_argument_presets.retain(|preset| {
+        !preset.project_id.trim().is_empty()
+            && !preset.provider.trim().is_empty()
+            && !preset.source_key.trim().is_empty()
+            && !preset.value.trim().is_empty()
+            && preset.value.len() <= 512
+    });
+    data.task_argument_presets
+        .sort_by(|left, right| right.last_used_at.cmp(&left.last_used_at));
+    let mut seen_argument_presets = HashSet::new();
+    data.task_argument_presets.retain(|preset| {
+        seen_argument_presets.insert((
+            preset.project_id.clone(),
+            preset.provider.clone(),
+            preset.source_key.clone(),
+            preset.value.clone(),
+        ))
+    });
+    data.task_argument_presets
+        .truncate(MAX_TASK_ARGUMENT_PRESETS);
+    data.schema_version = PROJECTTASKS_SCHEMA_VERSION;
+    data
+}
+
+fn ensure_project_profile(
+    data: &mut ProjectTasksData,
+    root: &Path,
+    task_count: usize,
+    scanned_files: usize,
+) -> ProjectProfile {
+    let root_value = root.to_string_lossy().into_owned();
+    let now = unix_time_millis();
+    let name = project_name(root);
+    let hint = repository_hint(root);
+    let profile = if let Some(profile) = data
+        .project_profiles
+        .iter_mut()
+        .find(|profile| profile.root == root_value)
+    {
+        profile.name = name.clone();
+        profile.last_visited_at = now;
+        profile.status = "ready".to_string();
+        profile.repository_hint = hint.clone();
+        profile.clone()
+    } else {
+        let profile = ProjectProfile {
+            id: project_id_for_root(&root_value),
+            name: name.clone(),
+            root: root_value.clone(),
+            created_at: now,
+            last_visited_at: now,
+            status: "ready".to_string(),
+            repository_hint: hint,
+        };
+        data.project_profiles.insert(0, profile.clone());
+        data.project_profiles.truncate(MAX_PROJECT_PROFILES);
+        profile
+    };
+    let summary = ScannedProject {
+        project_id: profile.id.clone(),
+        root: root_value.clone(),
+        name,
+        task_count: task_count as u32,
+        scanned_files: scanned_files as u32,
+        last_scanned_at: now,
+    };
+    if let Some(index) = data
+        .projects
+        .iter()
+        .position(|project| project.project_id == profile.id || project.root == root_value)
+    {
+        data.projects[index] = summary;
+    } else {
+        data.projects.insert(0, summary);
+        data.projects.truncate(MAX_PROJECT_PROFILES);
+    }
+    data.last_root = root_value;
+    profile
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunmeTask {
     pub id: String,
+    pub provider: String,
+    pub provider_label: String,
+    pub source_key: String,
     pub name: String,
     pub file: String,
     pub line: usize,
@@ -97,11 +460,17 @@ pub struct RunmeTask {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunmeDiscovery {
+    pub project_id: String,
     pub root: String,
     pub project_name: String,
     pub runme_available: bool,
     pub runme_version: Option<String>,
     pub scanned_files: usize,
+    pub providers: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub git_branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repository_hint: Option<String>,
     pub tasks: Vec<RunmeTask>,
     pub warnings: Vec<String>,
 }
@@ -123,13 +492,36 @@ struct ParsedMarkdownBlock {
 }
 
 #[tauri::command]
-pub async fn discover_runme_tasks(root: String) -> Result<RunmeDiscovery, String> {
-    tauri::async_runtime::spawn_blocking(move || discover_runme_tasks_blocking(&root))
-        .await
-        .map_err(|error| format!("任务扫描线程失败：{error}"))?
+pub async fn discover_project_tasks(
+    app: tauri::AppHandle,
+    root: String,
+) -> Result<RunmeDiscovery, String> {
+    let mut discovery =
+        tauri::async_runtime::spawn_blocking(move || discover_project_tasks_blocking(&root))
+            .await
+            .map_err(|error| format!("任务扫描线程失败：{error}"))??;
+    let path = projecttasks_data_path(&app);
+    let mut data = read_projecttasks_data_from_path(&path)?;
+    let profile = ensure_project_profile(
+        &mut data,
+        Path::new(&discovery.root),
+        discovery.tasks.len(),
+        discovery.scanned_files,
+    );
+    discovery.project_id = profile.id;
+    write_projecttasks_data_to_path(&path, &data)?;
+    Ok(discovery)
 }
 
-fn discover_runme_tasks_blocking(root: &str) -> Result<RunmeDiscovery, String> {
+#[tauri::command]
+pub async fn discover_runme_tasks(
+    app: tauri::AppHandle,
+    root: String,
+) -> Result<RunmeDiscovery, String> {
+    discover_project_tasks(app, root).await
+}
+
+pub fn discover_project_tasks_blocking(root: &str) -> Result<RunmeDiscovery, String> {
     let root_path = canonical_directory(root)?;
     let mut files = Vec::new();
     collect_markdown_files(&root_path, &mut files, 0)?;
@@ -171,26 +563,36 @@ fn discover_runme_tasks_blocking(root: &str) -> Result<RunmeDiscovery, String> {
         warnings
             .push("未检测到 Runme CLI；仍可查看任务，但执行前需要安装并加入 PATH。".to_string());
     }
+    let package_tasks = discover_package_scripts(&root_path, &mut warnings)?;
+    let has_package_tasks = !package_tasks.is_empty();
+    tasks.extend(package_tasks);
     if tasks.is_empty() {
         warnings.push(
-            "没有发现显式命名的 Runme 任务；可使用页面中的 AI 重构提示词整理 README 或 TASKS.md。"
+            "没有发现显式命名的 Runme 任务或 package scripts；可使用页面中的 AI 重构提示词整理项目任务。"
                 .to_string(),
         );
     }
 
-    let project_name = root_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.is_empty())
-        .unwrap_or("项目")
-        .to_string();
+    let project_name = project_name(&root_path);
+    let mut providers = Vec::new();
+    if tasks.iter().any(|task| task.provider == "runme") {
+        providers.push("runme".to_string());
+    }
+    if has_package_tasks {
+        providers.push("package".to_string());
+    }
+    let repository_hint = repository_hint(&root_path);
 
     Ok(RunmeDiscovery {
+        project_id: String::new(),
         root: root_path.to_string_lossy().into_owned(),
         project_name,
         runme_available,
         runme_version,
-        scanned_files: files.len(),
+        scanned_files: files.len() + usize::from(has_package_tasks),
+        providers,
+        git_branch: git_branch(&root_path),
+        repository_hint,
         tasks,
         warnings,
     })
@@ -200,10 +602,110 @@ fn discover_runme_tasks_blocking(root: &str) -> Result<RunmeDiscovery, String> {
 /// The command is returned to the frontend so the user keeps existing terminal behavior.
 #[tauri::command]
 pub fn runme_task_command(root: String, file: String, name: String) -> Result<String, String> {
+    let root_path = canonical_directory(&root)?;
+    runme_task_command_for_root(&root_path, &file, &name)
+}
+
+#[tauri::command]
+pub fn project_task_command(
+    app: tauri::AppHandle,
+    project_id: String,
+    provider: String,
+    source_key: String,
+    file: String,
+    name: String,
+    arguments: Option<Vec<String>>,
+) -> Result<String, String> {
+    resolve_project_task_command_with_arguments(
+        &projecttasks_data_path(&app),
+        &project_id,
+        &provider,
+        &source_key,
+        &file,
+        &name,
+        arguments.as_deref().unwrap_or_default(),
+    )
+}
+
+pub fn resolve_project_task_command(
+    data_path: &Path,
+    project_id: &str,
+    provider: &str,
+    source_key: &str,
+    file: &str,
+    name: &str,
+) -> Result<String, String> {
+    resolve_project_task_command_with_arguments(
+        data_path,
+        project_id,
+        provider,
+        source_key,
+        file,
+        name,
+        &[],
+    )
+}
+
+pub fn resolve_project_task_command_with_arguments(
+    data_path: &Path,
+    project_id: &str,
+    provider: &str,
+    source_key: &str,
+    file: &str,
+    name: &str,
+    arguments: &[String],
+) -> Result<String, String> {
+    validate_task_arguments(arguments)?;
+    let data = read_projecttasks_data_from_path(data_path)?;
+    let profile = data
+        .project_profiles
+        .iter()
+        .find(|profile| profile.id == project_id)
+        .ok_or_else(|| "项目档案不存在，请重新扫描项目".to_string())?;
+    if profile.status != "ready" {
+        return Err("项目需要重新定位后才能执行任务".to_string());
+    }
+    let root = canonical_directory(&profile.root)?;
+    match provider {
+        "runme" if source_key == name => {
+            runme_task_command_for_root_with_arguments(&root, file, name, arguments)
+        }
+        "runme" => Err("Runme 任务引用无效".to_string()),
+        "package" => {
+            package_task_command_for_root_with_arguments(&root, source_key, file, name, arguments)
+        }
+        _ => Err(format!("不支持的项目任务来源：{provider}")),
+    }
+}
+
+fn validate_task_arguments(arguments: &[String]) -> Result<(), String> {
+    if arguments.len() > 64 {
+        return Err("单次执行最多支持 64 个参数".to_string());
+    }
+    if arguments.iter().any(|argument| {
+        argument.len() > 512
+            || argument
+                .chars()
+                .any(|character| character == '\0' || character == '\n' || character == '\r')
+    }) {
+        return Err("任务参数包含无效字符或长度超过限制".to_string());
+    }
+    Ok(())
+}
+
+fn runme_task_command_for_root(root_path: &Path, file: &str, name: &str) -> Result<String, String> {
+    runme_task_command_for_root_with_arguments(root_path, file, name, &[])
+}
+
+fn runme_task_command_for_root_with_arguments(
+    root_path: &Path,
+    file: &str,
+    name: &str,
+    arguments: &[String],
+) -> Result<String, String> {
     if name.trim().is_empty() || name.chars().any(|character| character.is_control()) {
         return Err("Runme 任务名称无效".to_string());
     }
-    let root_path = canonical_directory(&root)?;
     let file_path = root_path.join(&file);
     let canonical_file = file_path
         .canonicalize()
@@ -222,31 +724,49 @@ pub fn runme_task_command(root: String, file: String, name: String) -> Result<St
 
     let relative = display_relative_path(&root_path, &canonical_file);
     let source = fs::read_to_string(&canonical_file).map_err(|error| error.to_string())?;
-    let parsed_task_exists = parse_markdown_tasks(&relative, &source)
+    let blocks = parse_markdown_blocks(&source);
+    let named_block = blocks
         .iter()
-        .any(|task| task.name == name);
-    let cli_task_exists = runme_list_tasks(&root_path).ok().is_some_and(|cli_tasks| {
-        cli_tasks.iter().any(|task| {
-            task.name == name
-                && normalize_cli_file(&root_path, &task.file).as_deref() == Some(relative.as_str())
-        })
-    });
-    let task_exists = parsed_task_exists || cli_task_exists;
-    if !task_exists {
+        .find(|block| block.name.as_deref() == Some(name));
+    let cli_task = named_block
+        .is_none()
+        .then(|| runme_list_tasks(&root_path))
+        .and_then(Result::ok)
+        .and_then(|cli_tasks| {
+            cli_tasks.into_iter().find(|task| {
+                task.name == name
+                    && normalize_cli_file(&root_path, &task.file).as_deref()
+                        == Some(relative.as_str())
+            })
+        });
+    if named_block.is_none() && cli_task.is_none() {
         return Err("任务名称已不存在，建议重新扫描项目".to_string());
     }
 
-    let runme = resolve_runme_executable()
-        .map(|path| shell_quote(&path.to_string_lossy()))
-        .unwrap_or_else(|| "runme".to_string());
-    Ok(format!(
-        "cd {} && {} run {} --project {} --filename {}",
-        shell_quote(&root_path.to_string_lossy()),
-        runme,
-        shell_quote(&name),
-        shell_quote(&root_path.to_string_lossy()),
-        shell_quote(&relative),
-    ))
+    let block = named_block.or_else(|| {
+        cli_task.as_ref().and_then(|task| {
+            blocks
+                .iter()
+                .find(|block| first_command_matches(block, &task.first_command))
+        })
+    });
+    let block = block.ok_or_else(|| "无法定位 Runme 任务代码块，请重新扫描项目".to_string())?;
+    if !is_supported_language(&block.language) {
+        return Err(format!("暂不支持执行 {} 任务", block.language));
+    }
+
+    let mut command = block.command.trim().to_string();
+    if !arguments.is_empty() {
+        command.push(' ');
+        command.push_str(
+            &arguments
+                .iter()
+                .map(|argument| shell_quote(argument))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+    }
+    Ok(command)
 }
 
 #[tauri::command]
@@ -331,6 +851,138 @@ fn collect_markdown_files(
         }
     }
     Ok(())
+}
+
+fn discover_package_scripts(
+    root: &Path,
+    warnings: &mut Vec<String>,
+) -> Result<Vec<RunmeTask>, String> {
+    let path = root.join("package.json");
+    if !path.is_file() {
+        return Ok(Vec::new());
+    }
+    let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    if metadata.len() > MAX_MARKDOWN_BYTES {
+        warnings.push("已跳过过大的 package.json".to_string());
+        return Ok(Vec::new());
+    }
+    let source =
+        fs::read_to_string(&path).map_err(|error| format!("无法读取 package.json：{error}"))?;
+    let value: serde_json::Value = match serde_json::from_str(&source) {
+        Ok(value) => value,
+        Err(error) => {
+            warnings.push(format!("package.json JSON 无效：{error}"));
+            return Ok(Vec::new());
+        }
+    };
+    let Some(scripts) = value.get("scripts").and_then(|value| value.as_object()) else {
+        return Ok(Vec::new());
+    };
+    let manager = package_manager(root);
+    let mut tasks = scripts
+        .iter()
+        .filter_map(|(name, value)| {
+            let declared = value.as_str()?.trim();
+            if name.trim().is_empty() || declared.is_empty() {
+                return None;
+            }
+            let command = format!("{manager} run {}", shell_quote(name));
+            Some(RunmeTask {
+                id: format!("package:package.json:{name}"),
+                provider: "package".to_string(),
+                provider_label: "Package Scripts".to_string(),
+                source_key: name.clone(),
+                name: name.clone(),
+                file: "package.json".to_string(),
+                line: package_script_line(&source, name),
+                language: "package-script".to_string(),
+                command: command.clone(),
+                category: classify_category(name, declared),
+                risk: classify_risk(name, declared),
+                runnable: true,
+            })
+        })
+        .collect::<Vec<_>>();
+    tasks.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(tasks)
+}
+
+fn package_manager(root: &Path) -> &'static str {
+    if root.join("pnpm-lock.yaml").is_file() {
+        "pnpm"
+    } else if root.join("yarn.lock").is_file() {
+        "yarn"
+    } else if root.join("bun.lock").is_file() || root.join("bun.lockb").is_file() {
+        "bun"
+    } else {
+        "npm"
+    }
+}
+
+fn package_script_line(source: &str, name: &str) -> usize {
+    let needle = format!("\"{name}\"");
+    source
+        .lines()
+        .position(|line| line.contains(&needle))
+        .map(|index| index + 1)
+        .unwrap_or(1)
+}
+
+#[cfg(test)]
+fn package_task_command_for_root(
+    root: &Path,
+    source_key: &str,
+    file: &str,
+    name: &str,
+) -> Result<String, String> {
+    package_task_command_for_root_with_arguments(root, source_key, file, name, &[])
+}
+
+fn package_task_command_for_root_with_arguments(
+    root: &Path,
+    source_key: &str,
+    file: &str,
+    name: &str,
+    arguments: &[String],
+) -> Result<String, String> {
+    if file != "package.json" {
+        return Err("Package 任务必须来自项目根目录的 package.json".to_string());
+    }
+    if source_key.trim().is_empty()
+        || source_key != name
+        || source_key.chars().any(|character| character.is_control())
+    {
+        return Err("Package 任务引用无效".to_string());
+    }
+    let source = fs::read_to_string(root.join("package.json"))
+        .map_err(|error| format!("无法读取 package.json：{error}"))?;
+    let value: serde_json::Value = serde_json::from_str(&source)
+        .map_err(|error| format!("package.json JSON 无效：{error}"))?;
+    let exists = value
+        .get("scripts")
+        .and_then(|scripts| scripts.get(source_key))
+        .and_then(|script| script.as_str())
+        .is_some_and(|script| !script.trim().is_empty());
+    if !exists {
+        return Err("Package 任务已不存在，请重新扫描项目".to_string());
+    }
+    let mut command = format!(
+        "cd {} && {} run {}",
+        shell_quote(&root.to_string_lossy()),
+        package_manager(root),
+        shell_quote(source_key),
+    );
+    if !arguments.is_empty() {
+        command.push_str(" -- ");
+        command.push_str(
+            &arguments
+                .iter()
+                .map(|argument| shell_quote(argument))
+                .collect::<Vec<_>>()
+                .join(" "),
+        );
+    }
+    Ok(command)
 }
 
 fn runme_cli_info(root: &Path) -> (bool, Option<String>) {
@@ -440,6 +1092,9 @@ fn build_tasks_from_cli(root: &Path, cli_tasks: Vec<RunmeCliTask>) -> Vec<RunmeT
 
             Some(RunmeTask {
                 id: format!("runme:{relative}:{line}:{}", cli_task.name),
+                provider: "runme".to_string(),
+                provider_label: "Runme".to_string(),
+                source_key: cli_task.name.clone(),
                 category: classify_category(&cli_task.name, &command),
                 risk: classify_risk(&cli_task.name, &command),
                 runnable,
@@ -519,6 +1174,9 @@ fn parse_markdown_tasks(file: &str, source: &str) -> Vec<RunmeTask> {
             let name = block.name?;
             Some(RunmeTask {
                 id: format!("runme:{file}:{}:{name}", block.line),
+                provider: "runme".to_string(),
+                provider_label: "Runme".to_string(),
+                source_key: name.clone(),
                 category: classify_category(&name, &block.command),
                 risk: classify_risk(&name, &block.command),
                 runnable: is_supported_language(&block.language),
@@ -767,12 +1425,15 @@ fn shell_quote(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        attribute_value, build_tasks_from_cli, classify_category, parse_markdown_blocks,
-        parse_markdown_tasks, parse_runme_list_json, read_projecttasks_data_from_path,
-        runme_task_command, write_projecttasks_data_to_path, FavoriteTaskRef, ProjectTasksData,
-        RunmeCliTask, ScannedProject,
+        attribute_value, build_tasks_from_cli, classify_category, discover_package_scripts,
+        migrate_projecttasks_data, package_task_command_for_root,
+        package_task_command_for_root_with_arguments, parse_markdown_blocks, parse_markdown_tasks,
+        parse_runme_list_json, read_projecttasks_data_from_path, runme_task_command,
+        runme_task_command_for_root_with_arguments, write_projecttasks_data_to_path,
+        FavoriteTaskRef, ProjectTasksData, RunmeCliTask, ScannedProject, TaskArgumentPreset,
     };
     use std::fs;
+    use std::process::Command;
     use tempfile::tempdir;
 
     #[test]
@@ -781,6 +1442,7 @@ mod tests {
         let path = directory.path().join("projecttasks_data.json");
         let data = ProjectTasksData {
             projects: vec![ScannedProject {
+                project_id: String::new(),
                 root: "/projects/demo".into(),
                 name: "demo".into(),
                 task_count: 3,
@@ -794,6 +1456,7 @@ mod tests {
             }],
             config_favorites: Vec::new(),
             last_root: "/projects/demo".into(),
+            ..ProjectTasksData::default()
         };
 
         write_projecttasks_data_to_path(&path, &data).expect("write project task data");
@@ -803,6 +1466,85 @@ mod tests {
         assert_eq!(loaded.projects[0].task_count, 3);
         assert_eq!(loaded.task_favorites[0].name, "test");
         assert_eq!(loaded.last_root, "/projects/demo");
+        assert_eq!(loaded.schema_version, 3);
+        assert_eq!(loaded.project_profiles.len(), 1);
+        assert_eq!(loaded.projects[0].project_id, loaded.project_profiles[0].id);
+    }
+
+    #[test]
+    fn migrates_and_deduplicates_task_argument_presets() {
+        let data = ProjectTasksData {
+            task_argument_presets: vec![
+                TaskArgumentPreset {
+                    project_id: "project-demo".into(),
+                    provider: "package".into(),
+                    source_key: "test".into(),
+                    value: "--check".into(),
+                    last_used_at: 2,
+                },
+                TaskArgumentPreset {
+                    project_id: "project-demo".into(),
+                    provider: "package".into(),
+                    source_key: "test".into(),
+                    value: "--check".into(),
+                    last_used_at: 1,
+                },
+            ],
+            ..ProjectTasksData::default()
+        };
+        let migrated = migrate_projecttasks_data(data);
+        assert_eq!(migrated.schema_version, 3);
+        assert_eq!(migrated.task_argument_presets.len(), 1);
+        assert_eq!(migrated.task_argument_presets[0].last_used_at, 2);
+    }
+
+    #[test]
+    fn appends_quoted_arguments_to_package_tasks() {
+        let directory = tempdir().expect("temporary project directory");
+        fs::write(
+            directory.path().join("package.json"),
+            r#"{"scripts":{"test":"vitest"}}"#,
+        )
+        .expect("write package json");
+        let arguments = vec!["--check".to_string(), "hello world".to_string()];
+        let command = package_task_command_for_root_with_arguments(
+            directory.path(),
+            "test",
+            "package.json",
+            "test",
+            &arguments,
+        )
+        .expect("resolve package command");
+        assert!(command.ends_with("run 'test' -- '--check' 'hello world'"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn passes_arguments_to_revalidated_markdown_blocks() {
+        let directory = tempdir().expect("temporary project directory");
+        fs::write(
+            directory.path().join("TASKS.md"),
+            "```sh { name=args }\nprintf '<%s>\\n'\n```\n",
+        )
+        .expect("write tasks markdown");
+        let arguments = vec!["--check".to_string(), "hello world".to_string()];
+        let root = directory
+            .path()
+            .canonicalize()
+            .expect("canonical project root");
+        let command =
+            runme_task_command_for_root_with_arguments(&root, "TASKS.md", "args", &arguments)
+                .expect("resolve markdown command");
+        assert_eq!(command, "printf '<%s>\\n' '--check' 'hello world'");
+        let output = Command::new("/bin/zsh")
+            .args(["-lc", &command])
+            .output()
+            .expect("execute generated markdown command");
+        assert!(output.status.success());
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout),
+            "<--check>\n<hello world>\n"
+        );
     }
 
     #[test]
@@ -921,7 +1663,7 @@ mod tests {
     }
 
     #[test]
-    fn validates_task_file_and_quotes_command_arguments() {
+    fn validates_task_file_and_returns_declared_command() {
         let directory = tempdir().expect("temporary project directory");
         let markdown = "```bash {name=\"task ' one\"}\nprintf 'ok\\n'\n```\n";
         fs::write(directory.path().join("README.md"), markdown).expect("write markdown");
@@ -932,12 +1674,58 @@ mod tests {
             "task ' one".to_string(),
         )
         .expect("valid task command");
-        assert!(command.contains("'task '\\'' one'"));
+        assert_eq!(command, "printf 'ok\\n'");
         assert!(runme_task_command(
             directory.path().to_string_lossy().into_owned(),
             "../README.md".to_string(),
             "task ' one".to_string(),
         )
         .is_err());
+    }
+
+    #[test]
+    fn discovers_package_scripts_without_running_them() {
+        let directory = tempdir().expect("temporary project directory");
+        fs::write(
+            directory.path().join("package.json"),
+            r#"{
+  "scripts": {
+    "test": "vitest run",
+    "release": "git push origin main"
+  }
+}"#,
+        )
+        .expect("write package.json");
+        fs::write(
+            directory.path().join("pnpm-lock.yaml"),
+            "lockfileVersion: '9.0'\n",
+        )
+        .expect("write lockfile");
+        let root = directory
+            .path()
+            .canonicalize()
+            .expect("canonical project path");
+        let mut warnings = Vec::new();
+        let tasks = discover_package_scripts(&root, &mut warnings).expect("discover scripts");
+        assert!(warnings.is_empty());
+        assert_eq!(tasks.len(), 2);
+        let test = tasks
+            .iter()
+            .find(|task| task.name == "test")
+            .expect("test task");
+        assert_eq!(test.provider, "package");
+        assert_eq!(test.command, "pnpm run 'test'");
+        let release = tasks
+            .iter()
+            .find(|task| task.name == "release")
+            .expect("release task");
+        assert_eq!(release.risk, "review");
+
+        let command = package_task_command_for_root(&root, "test", "package.json", "test")
+            .expect("package task command");
+        assert!(command.contains("pnpm run 'test'"));
+        assert!(
+            package_task_command_for_root(&root, "missing", "package.json", "missing").is_err()
+        );
     }
 }

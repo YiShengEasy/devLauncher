@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { planTerminalChunk } from "./workflowTerminal";
+import { encodeTerminalInput, planTerminalChunk } from "./workflowTerminal";
+
+describe("encodeTerminalInput", () => {
+  it("preserves control bytes and UTF-8 input", () => {
+    expect(atob(encodeTerminalInput("\u0003"))).toBe("\u0003");
+    expect(new TextDecoder().decode(
+      Uint8Array.from(atob(encodeTerminalInput("运行")), (char) => char.charCodeAt(0)),
+    )).toBe("运行");
+  });
+});
 
 describe("planTerminalChunk", () => {
   it("appends a new chunk", () => {

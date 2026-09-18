@@ -20,6 +20,7 @@ unsafe impl Sync for SendableMaster {}
 pub struct PtySession {
     writer: Box<dyn Write + Send>,
     master: SendableMaster,
+    killer: Box<dyn portable_pty::ChildKiller + Send + Sync>,
 }
 
 pub struct TerminalState {
@@ -152,6 +153,7 @@ fn spawn_pty_process_in_dir(
     }
 
     let child = pair.slave.spawn_command(cb).map_err(|e| e.to_string())?;
+    let killer = child.clone_killer();
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
     let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let output = Arc::new(Mutex::new(Vec::new()));
@@ -164,6 +166,7 @@ fn spawn_pty_process_in_dir(
             PtySession {
                 writer,
                 master: SendableMaster(pair.master),
+                killer,
             },
         );
     }
@@ -190,19 +193,16 @@ fn spawn_pty_process_in_dir(
                     break;
                 }
                 Ok(n) => {
-                    let offset = if let Ok(mut output) = captured.lock() {
+                    let b64 = BASE64.encode(&buf[..n]);
+                    if let Ok(mut output) = captured.lock() {
                         let offset = output.len();
                         output.extend_from_slice(&buf[..n]);
-                        offset
-                    } else {
-                        0
-                    };
-                    let b64 = BASE64.encode(&buf[..n]);
-                    let _ = app.emit(&format!("terminal-data-{}", sid), b64.clone());
-                    let _ = app.emit(
-                        &format!("terminal-data-v2-{}", sid),
-                        TerminalDataChunk { offset, data: b64 },
-                    );
+                        let _ = app.emit(&format!("terminal-data-{}", sid), b64.clone());
+                        let _ = app.emit(
+                            &format!("terminal-data-v2-{}", sid),
+                            TerminalDataChunk { offset, data: b64 },
+                        );
+                    }
                 }
             }
         }
@@ -245,6 +245,47 @@ pub fn terminal_snapshot(
     })
 }
 
+fn find_terminal_output(
+    state: &TerminalState,
+    session_id: &str,
+) -> Result<Arc<Mutex<Vec<u8>>>, String> {
+    state
+        .outputs
+        .lock()
+        .map_err(|_| "terminal output lock poisoned".to_string())?
+        .get(session_id)
+        .cloned()
+        .ok_or_else(|| "terminal session output not found".to_string())
+}
+
+fn with_cleared_terminal_output<T>(
+    state: &TerminalState,
+    session_id: &str,
+    after_clear: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let output = find_terminal_output(state, session_id)?;
+    let mut bytes = output
+        .lock()
+        .map_err(|_| "terminal session output lock poisoned".to_string())?;
+    bytes.clear();
+    let result = after_clear();
+    drop(bytes);
+    result
+}
+
+/// Clear one terminal's retained output without stopping its PTY process.
+#[tauri::command]
+pub fn terminal_clear(
+    app: tauri::AppHandle,
+    session_id: String,
+    state: tauri::State<'_, TerminalState>,
+) -> Result<(), String> {
+    with_cleared_terminal_output(&state, &session_id, || {
+        app.emit(&format!("terminal-clear-{session_id}"), ())
+            .map_err(|error| error.to_string())
+    })
+}
+
 /// Send raw bytes (base64-encoded) to the PTY's stdin.
 #[tauri::command]
 pub fn terminal_write(
@@ -253,10 +294,18 @@ pub fn terminal_write(
     state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
     let bytes = BASE64.decode(&data).map_err(|e| e.to_string())?;
-    let mut sessions = state.sessions.lock().unwrap();
-    if let Some(s) = sessions.get_mut(&session_id) {
-        s.writer.write_all(&bytes).map_err(|e| e.to_string())?;
-    }
+    let mut sessions = state
+        .sessions
+        .lock()
+        .map_err(|_| "terminal session lock poisoned".to_string())?;
+    let session = sessions
+        .get_mut(&session_id)
+        .ok_or_else(|| "terminal session not found".to_string())?;
+    session
+        .writer
+        .write_all(&bytes)
+        .map_err(|e| e.to_string())?;
+    session.writer.flush().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -284,12 +333,35 @@ pub fn terminal_resize(
 }
 
 /// Kill a PTY session and release its resources.
+pub fn kill_workflow_sessions(state: &TerminalState, run_id: &str) -> Result<(), String> {
+    let prefix = format!("workflow-{run_id}-");
+    let mut sessions = state.sessions.lock().map_err(|_| "terminal session lock poisoned".to_string())?;
+    let ids: Vec<String> = sessions.keys().filter(|id| id.starts_with(&prefix)).cloned().collect();
+    let mut errors = Vec::new();
+    for id in ids {
+        if let Some(session) = sessions.get_mut(&id) {
+            match session.killer.kill() {
+                Ok(()) => { sessions.remove(&id); }
+                Err(error) => errors.push(format!("{id}: {error}")),
+            }
+        }
+    }
+    if errors.is_empty() { Ok(()) } else { Err(errors.join("\n")) }
+}
+
 #[tauri::command]
 pub fn terminal_kill(
     session_id: String,
     state: tauri::State<'_, TerminalState>,
 ) -> Result<(), String> {
-    state.sessions.lock().unwrap().remove(&session_id);
+    let session = state
+        .sessions
+        .lock()
+        .map_err(|_| "terminal session lock poisoned".to_string())?
+        .remove(&session_id);
+    if let Some(mut session) = session {
+        session.killer.kill().map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -330,4 +402,68 @@ pub fn toggle_terminal_window(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workflow_stop_closes_all_its_sessions_and_keeps_other_runs() {
+        let state = test_state();
+        let mut children = Vec::new();
+        for id in ["workflow-one-api-attempt-1", "workflow-one-web-attempt-1", "workflow-two-api-attempt-1"] {
+            let pair = native_pty_system().openpty(PtySize { rows: 24, cols: 80, pixel_width: 0, pixel_height: 0 }).unwrap();
+            let mut command = CommandBuilder::new(if cfg!(windows) { "cmd.exe" } else { "/bin/sh" });
+            if cfg!(windows) { command.args(["/C", "ping -n 30 127.0.0.1 > nul"]); }
+            else { command.args(["-c", "sleep 30"]); }
+            let child = pair.slave.spawn_command(command).unwrap();
+            state.sessions.lock().unwrap().insert(id.into(), PtySession {
+                writer: pair.master.take_writer().unwrap(),
+                master: SendableMaster(pair.master),
+                killer: child.clone_killer(),
+            });
+            children.push(child);
+        }
+        let result = kill_workflow_sessions(&state, "one");
+        let remaining: Vec<_> = state.sessions.lock().unwrap().keys().cloned().collect();
+        let other_running = children[2].try_wait().unwrap().is_none();
+        // Always clean up before asserting, including when the behavior regresses.
+        for child in &mut children { let _ = child.kill(); let _ = child.wait(); }
+        result.unwrap();
+        assert_eq!(remaining, vec!["workflow-two-api-attempt-1"]);
+        assert!(other_running);
+    }
+
+    fn test_state() -> TerminalState {
+        TerminalState {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            outputs: Arc::new(Mutex::new(HashMap::new())),
+            pending_cmd: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    #[test]
+    fn clearing_terminal_output_only_changes_selected_session() {
+        let state = test_state();
+        let selected = Arc::new(Mutex::new(b"selected output".to_vec()));
+        let other = Arc::new(Mutex::new(b"other output".to_vec()));
+        {
+            let mut outputs = state.outputs.lock().unwrap();
+            outputs.insert("selected".to_string(), selected.clone());
+            outputs.insert("other".to_string(), other.clone());
+        }
+
+        with_cleared_terminal_output(&state, "selected", || Ok(())).unwrap();
+
+        assert!(selected.lock().unwrap().is_empty());
+        assert_eq!(other.lock().unwrap().as_slice(), b"other output");
+    }
+
+    #[test]
+    fn clearing_unknown_terminal_reports_an_error() {
+        let error = with_cleared_terminal_output(&test_state(), "missing", || Ok(())).unwrap_err();
+
+        assert_eq!(error, "terminal session output not found");
+    }
 }

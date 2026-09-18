@@ -36,6 +36,8 @@ function actionIdentityKey(action: Action): string {
     }
     case "script":
       return `script:${action.file ?? action.name}:${action.shell}`;
+    case "project_task":
+      return `project-task:${action.projectId}:${action.provider}:${action.sourceKey}`;
     case "system":
       return `system:${action.command}`;
     case "builtin":
@@ -46,6 +48,8 @@ function actionIdentityKey(action: Action): string {
     }
     case "workflow":
       return `workflow:${action.workflowId}`;
+    case "capability":
+      return `capability:${action.capabilityId}`;
   }
 }
 

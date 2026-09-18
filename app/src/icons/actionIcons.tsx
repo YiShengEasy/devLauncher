@@ -108,6 +108,17 @@ export function WorkflowIcon(props: IconProps) {
   );
 }
 
+export function CapabilityIcon(props: IconProps) {
+  return (
+    <IconBase {...withIconColor(props, iconColors.builtin)}>
+      <path d="M5 12h14" />
+      <path d="M12 5v14" />
+      <circle cx="12" cy="12" r="3.5" />
+      <path d="m5.6 5.6 2.5 2.5M15.9 15.9l2.5 2.5M18.4 5.6l-2.5 2.5M8.1 15.9l-2.5 2.5" opacity={0.65} />
+    </IconBase>
+  );
+}
+
 export const ACTION_ICON_COMPONENTS = {
   app: AppGridIcon,
   folder: FolderIcon,
@@ -115,8 +126,10 @@ export const ACTION_ICON_COMPONENTS = {
   url: UrlIcon,
   ssh: ServerTerminalIcon,
   script: ScriptIcon,
+  project_task: ScriptIcon,
   system: SystemIcon,
   builtin: BuiltinToolIcon,
   plugin: PluginIcon,
   workflow: WorkflowIcon,
+  capability: CapabilityIcon,
 } satisfies Record<ActionType, IconComponent>;

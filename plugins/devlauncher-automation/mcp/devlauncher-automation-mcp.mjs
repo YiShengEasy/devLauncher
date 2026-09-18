@@ -36,7 +36,10 @@ function id(prefix) {
 }
 
 function defaultCompletion(action = {}) {
-  if (action.type === "script") {
+  if (action.type === "capability") {
+    return { type: "capability_completed" };
+  }
+  if (action.type === "script" || action.type === "project_task") {
     return { type: "process_exit", successCodes: [0], timeoutMs: 120000 };
   }
   if (action.type === "app") {
@@ -88,6 +91,18 @@ function normalizeWorkflow(input) {
               ? step.completion
               : defaultCompletion(action),
             delayMs: Number.isFinite(step.delayMs) ? Math.max(0, Math.trunc(step.delayMs)) : 0,
+            ...(step.retry && typeof step.retry === "object"
+              ? {
+                  retry: {
+                    maxAttempts: Number.isFinite(step.retry.maxAttempts)
+                      ? Math.trunc(step.retry.maxAttempts)
+                      : 1,
+                    delayMs: Number.isFinite(step.retry.delayMs)
+                      ? Math.trunc(step.retry.delayMs)
+                      : 0,
+                  },
+                }
+              : {}),
             ...(step.onFailure === "continue" || step.onFailure === "stop"
               ? { onFailure: step.onFailure }
               : {}),
@@ -228,6 +243,15 @@ const workflowSchema = {
           condition: { type: "object" },
           completion: { type: "object" },
           delayMs: { type: "number" },
+          retry: {
+            type: "object",
+            properties: {
+              maxAttempts: { type: "integer", minimum: 1, maximum: 5 },
+              delayMs: { type: "integer", minimum: 0, maximum: 300000 },
+            },
+            required: ["maxAttempts", "delayMs"],
+            additionalProperties: false,
+          },
           onFailure: { type: "string", enum: ["stop", "continue"] },
         },
         required: ["action"],
@@ -246,6 +270,23 @@ const tools = [
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
+    name: "devlauncher_list_capabilities",
+    description: "List stable workflow capability IDs, schemas, permissions, and platform support before generating a workflow.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_get_capability",
+    description: "Get the complete schema for one stable workflow capability ID.",
+    inputSchema: {
+      type: "object",
+      properties: { capabilityId: { type: "string" } },
+      required: ["capabilityId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
     name: "devlauncher_list_workflows",
     description: "List saved DevLauncher workflows and return the current configuration revision.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
@@ -260,6 +301,46 @@ const tools = [
       required: ["identifier"],
       additionalProperties: false,
     },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_list_projects",
+    description: "List local DevLauncher project profiles without exposing absolute filesystem paths.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_list_project_tasks",
+    description: "Rescan and list declared tasks for one project profile. Returns stable references, not executable commands.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" } },
+      required: ["projectId"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_preview_project_task",
+    description: "Check that a saved project-task reference still resolves without executing it or returning its command.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        provider: { type: "string", enum: ["runme", "package"] },
+        sourceKey: { type: "string" },
+        file: { type: "string" },
+        taskName: { type: "string" },
+      },
+      required: ["projectId", "provider", "sourceKey", "file", "taskName"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true, openWorldHint: false },
+  },
+  {
+    name: "devlauncher_list_run_history",
+    description: "List sanitized workflow run history. Command output, terminal sessions, and project paths are not included.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { readOnlyHint: true, openWorldHint: false },
   },
   {
@@ -345,10 +426,36 @@ function handleToolCall(params = {}) {
 
   if (name === "devlauncher_get_capabilities") {
     result = ctlInvocation("capabilities");
+  } else if (name === "devlauncher_list_capabilities") {
+    const response = ctlInvocation("capabilities");
+    result = {
+      ...response,
+      data: response?.data?.workflowCapabilities ?? [],
+    };
+  } else if (name === "devlauncher_get_capability") {
+    const response = ctlInvocation("capabilities");
+    const capability = response?.data?.workflowCapabilities?.find(
+      (entry) => entry.id === args.capabilityId,
+    );
+    result = capability
+      ? { ok: true, data: capability }
+      : {
+          ok: false,
+          code: "CAPABILITY_NOT_FOUND",
+          message: `Unknown workflow capability: ${args.capabilityId}`,
+        };
   } else if (name === "devlauncher_list_workflows") {
     result = ctlInvocation("list");
   } else if (name === "devlauncher_get_workflow") {
     result = ctlInvocation("get", undefined, args.identifier);
+  } else if (name === "devlauncher_list_projects") {
+    result = ctlInvocation("projects");
+  } else if (name === "devlauncher_list_project_tasks") {
+    result = ctlInvocation("project-tasks", undefined, args.projectId);
+  } else if (name === "devlauncher_preview_project_task") {
+    result = ctlInvocation("project-task-preview", args);
+  } else if (name === "devlauncher_list_run_history") {
+    result = ctlInvocation("run-history");
   } else if (name === "devlauncher_preview_workflow") {
     const workflow = normalizeWorkflow(args.workflow);
     result = ctlInvocation("preview", workflow);

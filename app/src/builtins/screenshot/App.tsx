@@ -18,6 +18,12 @@ import {
 } from "./geometry";
 import type { Pt, Rect } from "./geometry";
 import type { StoredScreenshotAnnotation } from "../screenshotStore";
+import {
+  cancelScreenshotWorkflowCapture,
+  completeScreenshotWorkflowCapture,
+  readActiveScreenshotWorkflowRequest,
+  type ScreenshotWorkflowRequest,
+} from "./workflowCapture";
 
 // 鈹€鈹€ Types 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 type Phase = "init" | "selecting" | "annotating";
@@ -40,7 +46,6 @@ type TranslateResponse = {
   sourceText: string;
   targetText: string;
 };
-
 type Ann =
   | { t: "marker";  pos: Pt; label: number; color: string; note?: string }
   | { t: "boxCallout"; rect: Rect; label: number; labelPos: Pt; color: string; lw: number; note?: string }
@@ -936,6 +941,7 @@ export function ScreenshotApp() {
   const bgRectRef = useRef<Rect | null>(null);
   const editScaleRef = useRef(1);
   const editingScreenshotIdRef = useRef<string | null>(null);
+  const workflowRequestRef = useRef<ScreenshotWorkflowRequest | null>(null);
 
   // 鈹€鈹€ React state (drives JSX) 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
   const [phase,       setPhaseState]  = useState<Phase>("init");
@@ -1287,11 +1293,21 @@ export function ScreenshotApp() {
     // before reading innerWidth/innerHeight and sizing the canvas.
     const unlistenPromise = listen<string>("screenshot-ready", (event) => {
       if (!event.payload) return;
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          loadScreenshotData(event.payload);
+      void readActiveScreenshotWorkflowRequest(invoke)
+        .then((request) => {
+          workflowRequestRef.current = request;
+        })
+        .catch((error) => {
+          console.error("read screenshot workflow request failed", error);
+          workflowRequestRef.current = null;
+        })
+        .finally(() => {
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              loadScreenshotData(event.payload);
+            });
+          });
         });
-      });
     });
     const unlistenErrorPromise = listen<string>("screenshot-error", (event) => {
       setCaptureError(event.payload || "截图失败");
@@ -1670,6 +1686,43 @@ export function ScreenshotApp() {
     return ok;
   };
 
+  const completeWorkflowCapture = async (out: HTMLCanvasElement): Promise<boolean> => {
+    const request = workflowRequestRef.current;
+    if (!request) return false;
+    try {
+      const base64 = await new Promise<string>((resolve, reject) => {
+        out.toBlob(blob => {
+          if (!blob) {
+            reject(new Error("截图图片生成失败"));
+            return;
+          }
+          blob.arrayBuffer()
+            .then(buffer => resolve(toBase64(buffer)))
+            .catch(reject);
+        }, "image/png");
+      });
+      let copiedToClipboard = false;
+      if (request.copyToClipboard) {
+        await invoke("set_clipboard_image", { data: base64 });
+        copiedToClipboard = true;
+      }
+      await completeScreenshotWorkflowCapture(invoke, {
+        requestId: request.requestId,
+        data: base64,
+        width: out.width,
+        height: out.height,
+        copiedToClipboard,
+      });
+      workflowRequestRef.current = null;
+      showToast("工作流截图已完成");
+      return true;
+    } catch (error) {
+      console.error("complete workflow screenshot failed", error);
+      showToast(`工作流截图失败：${String(error)}`);
+      return false;
+    }
+  };
+
   const handleOcr = async () => {
     if (ocrBusy) return;
     commitTextInput();
@@ -1832,7 +1885,20 @@ export function ScreenshotApp() {
         });
         if (!path) return;
         const base64 = toBase64(await blob.arrayBuffer());
-        await invoke("screenshot_write_file", { path, data: base64 });
+        const workflowRequest = workflowRequestRef.current;
+        if (workflowRequest) {
+          await completeScreenshotWorkflowCapture(invoke, {
+            requestId: workflowRequest.requestId,
+            data: base64,
+            width: out.width,
+            height: out.height,
+            copiedToClipboard: false,
+            destinationPath: path,
+          });
+          workflowRequestRef.current = null;
+        } else {
+          await invoke("screenshot_write_file", { path, data: base64 });
+        }
         showToast("已保存，可继续编辑");
         handleCancel();
       } catch (err) {
@@ -1890,6 +1956,17 @@ export function ScreenshotApp() {
 
   const handleConfirm = async () => {
     commitTextInput();
+    if (workflowRequestRef.current) {
+      const out = buildResult();
+      if (!out) {
+        showToast("没有可确认内容");
+        return;
+      }
+      if (await completeWorkflowCapture(out)) {
+        handleCancel();
+      }
+      return;
+    }
     const copied = await handleCopy();
     if (copied) {
       handleCancel();
@@ -1897,6 +1974,13 @@ export function ScreenshotApp() {
   };
 
   const handleCancel = () => {
+    const workflowRequest = workflowRequestRef.current;
+    workflowRequestRef.current = null;
+    if (workflowRequest) {
+      void cancelScreenshotWorkflowCapture(invoke, workflowRequest.requestId).catch((error) => {
+        console.error("cancel workflow screenshot failed", error);
+      });
+    }
     editingScreenshotIdRef.current = null;
     selRef.current   = null;
     bgRectRef.current = null;

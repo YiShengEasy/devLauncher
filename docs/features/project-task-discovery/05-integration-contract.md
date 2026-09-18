@@ -54,4 +54,4 @@ name 使用项目内唯一的 kebab-case。没有 name 的代码块不会进入 
 
 ## 外部 Runme contract
 
-DevLauncher 依赖 Runme CLI 的公开命令行行为：runme --version 和 runme run <name> --project <project> --filename <file>。具体平台 shell 能力和安装方式以 [Runme 官方 CLI 文档](https://docs.runme.dev/getting-started/cli/) 为准。
+DevLauncher 可选使用 Runme CLI 的 `runme --version` 与 `runme list --json --project <root>` 增强任务发现。任务执行不依赖 `runme run`，而是由 Rust 后端重新校验 Markdown 命名代码块后，将原始 shell 命令发送到项目终端。Runme 的安装方式仍以 [Runme 官方 CLI 文档](https://docs.runme.dev/getting-started/cli/) 为准。

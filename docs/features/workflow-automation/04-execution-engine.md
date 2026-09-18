@@ -102,6 +102,18 @@ A cancellation token is checked:
 Managed children are terminated on cancellation. Already-launched external GUI
 applications are not closed automatically.
 
+## Terminal Lifecycle
+
+The embedded terminal forwards keyboard input to the active managed PTY. This
+includes ordinary interactive input and the standard `Ctrl+C` byte. Cancelling
+the workflow remains a separate control that uses `cancel_workflow_run`.
+
+Completion adapters such as `process_started`, `port_ready`, and `timer` may
+leave a healthy process attached to its terminal after the workflow has
+finished. The run terminal reports that live state and exposes an independent
+close action. Closing it calls `terminal_kill`, terminates the stored child
+handle, and releases the PTY without changing the completed workflow result.
+
 ## Concurrency
 
 - One active run per workflow by default.

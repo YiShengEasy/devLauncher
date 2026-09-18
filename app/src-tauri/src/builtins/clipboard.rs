@@ -397,6 +397,11 @@ pub fn clear_clipboard_history(state: tauri::State<'_, ClipboardState>) {
 }
 
 #[tauri::command]
+pub fn save_clipboard_markdown(path: String, content: String) -> Result<(), String> {
+    fs::write(path, content.as_bytes()).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn toggle_clipboard_window(app: tauri::AppHandle) -> Result<(), String> {
     if let Some(win) = app.get_webview_window("clipboard") {
         if win.is_visible().unwrap_or(false) {
@@ -518,6 +523,21 @@ mod tests {
         let other = image_fingerprint(2, 2, &[4, 3, 2, 1]);
 
         assert!(!should_suppress_image(&suppressed, &other));
+    }
+
+    #[test]
+    fn saves_markdown_as_utf8() {
+        let dir = tempfile::tempdir().expect("temp directory should be created");
+        let path = dir.path().join("备忘录.md");
+        let content = "# 今日备忘\n\n- 完成 Markdown 预览";
+
+        save_clipboard_markdown(path.to_string_lossy().into_owned(), content.to_string())
+            .expect("markdown should be saved");
+
+        assert_eq!(
+            fs::read_to_string(path).expect("markdown should be readable"),
+            content
+        );
     }
 }
 
